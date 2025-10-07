@@ -1,12 +1,40 @@
 """
 tcn_training_script.py
 
-Title: Full TCN Training Loop Script
+Title: Full Temporal Convolutional Network (TCN) Training Script
 
 Summary:
+- Implements the complete training loop for a Temporal Convolutional Network (TCN) on patient-level ICU time-series data.
+- Handles three prediction targets simultaneously:
+    1. max_risk_binary (binary classification)
+    2. median_risk_binary (binary classification)
+    3. pct_time_high (regression)
+- Uses PyTorch with GPU acceleration if available.
+- Employs multi-task loss (BCEWithLogits for classification + MSE for regression).
+- Uses DataLoader for efficient mini-batch training and memory handling.
+- Tracks both training and validation loss across epochs.
+- Implements:
+    - Early stopping (based on validation loss)
+    - Learning rate scheduling (ReduceLROnPlateau)
+    - Full reproducibility via fixed random seeds across Python, NumPy, and PyTorch.
+- Automatically saves:
+    - Best-performing model (lowest validation loss)
+    - Training configuration (hyperparameters, architecture, optimiser, etc.)
+    - Full epoch-wise loss history for plotting and analysis.
+- Ensures reproducibility, traceability, and interpretability through saved configuration and metadata files.
 
-Ouput:
+Outputs:
+1. **Trained model weights** → `trained_models/tcn_best.pt`
+2. **Training configuration** → `trained_models/config.json`
+3. **Training history** (train/validation losses per epoch) → `trained_models/training_history.json`
+4. **Console logs**:
+    - Epoch-wise training/validation losses
+    - Early stopping trigger (if activated)
+    - Sanity checks for NaN/Inf in tensors
+    - Target tensor shape verification
 
+Purpose:
+- Provides a fully controlled, reproducible pipeline for temporal deep learning experiments, ensuring consistent and interpretable results across runs.
 """
 # -------------------------------------------------------------
 # Imports
@@ -20,6 +48,8 @@ import pandas as pd                                         # data manipulation 
 import joblib                                               # save and load scalers (StandardScaler) and preprocessing objects.                            
 import json                                                 # Read/write JSON files.
 from tcn_model import TCNModel                              # TCN architecture implementation (class we defined in tcn_model.py)
+import random                                               # Python built-in random module for setting seeds        
+import numpy as np                                          # numerical operations, array manipulations
 
 # -------------------------------------------------------------
 # Configuration
@@ -39,6 +69,67 @@ SCALER_DIR = SCRIPT_DIR / "deployment_models/preprocessing"
 # Create new directory to save trained models if it doesn't exist
 MODEL_SAVE_DIR = SCRIPT_DIR / "trained_models"
 MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Path to save training history
+history_path = MODEL_SAVE_DIR / "training_history.json"
+
+# Path to save training configuration
+config_path = MODEL_SAVE_DIR / "config.json"
+
+# -------------------------------------------------------------
+# Reproducibility / Random Seed
+# -------------------------------------------------------------
+# Ensures that random operations (data shuffling, weight initialisation) produce the same results
+# Final trained model and results can be consistently reproduced.
+SEED = 42
+random.seed(SEED) # fixes randomness from Python’s built-in random number generator (e.g. when DataLoader shuffles batches or any code internally uses random.choice).
+np.random.seed(SEED) # ensures NumPy operations that use randomness (e.g. any preprocessing or augmentation) are deterministic.
+
+# PyTorch seeds ensure weight initialisation, dropout, and any random sampling from PyTorch are reproducible.
+torch.manual_seed(SEED)              # seeds CPU operations
+torch.cuda.manual_seed(SEED)         # seeds current GPU
+torch.cuda.manual_seed_all(SEED)     # seeds all GPUs if multiple
+
+# Enforce deterministic behaviour in PyTorch
+torch.backends.cudnn.deterministic = True  # forces deterministic convolution algorithms
+torch.backends.cudnn.benchmark = False     # disables autotuner for benchmarking → ensures reproducibility
+
+# -------------------------------------------------------------
+# Save Configuration for Reproducibility
+# -------------------------------------------------------------
+config_data = {
+    "device": DEVICE,
+    "batch_size": BATCH_SIZE,
+    "epochs": EPOCHS,
+    "learning_rate": LR,
+    "early_stopping_patience": EARLY_STOPPING_PATIENCE,
+    "model_architecture": {
+        "num_channels": [64, 64, 128],
+        "head_hidden": 64,
+        "kernel_size": 3,
+        "dropout": 0.2
+    },
+    "optimizer": "Adam",
+    "scheduler": {
+        "type": "ReduceLROnPlateau",
+        "mode": "min",
+        "patience": 3,
+        "factor": 0.5
+    },
+    "loss_functions": {
+        "classification": "BCEWithLogitsLoss",
+        "regression": "MSELoss"
+    },
+    "data_paths": {
+        "prepared_datasets": str(DATA_DIR),
+        "scaler_dir": str(SCALER_DIR),
+        "patient_features_path": str(SCRIPT_DIR.parent.parent / 'data/processed-data/news2_features_patient.csv')
+    }
+}
+
+with open(config_path, "w") as f:
+    json.dump(config_data, f, indent=4) 
+print(f"[INFO] Training configuration saved to {config_path}") # saves all key hyperparameters and settings to config.json
 
 # -------------------------------------------------------------
 # Load datasets
@@ -172,6 +263,10 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", pa
 best_val_loss = float("inf")        # validation loss starts as infinity, so any first real validation loss will be smaller and count as “best”.
 patience_counter = 0                # counts how many consecutive epochs the validation loss has not improved.
 
+# Store training progress for visualisation
+train_losses = []
+val_losses = []
+
 # ---- Epoch Loop ----
 # epoch = one full pass over the training dataset.
 # run multiple epochs (10–100+) so the model gradually learns.
@@ -240,6 +335,10 @@ for epoch in range(1, EPOCHS + 1):
     # If avg_val_loss hasn’t improved for a while, it automatically lowers the learning rate to make training more fine-grained.
     scheduler.step(avg_val_loss)
 
+    # ---- Record losses for later visualisation ----
+    train_losses.append(avg_train_loss)
+    val_losses.append(avg_val_loss)
+
     # ---- Progress reporting ----
     # track learning across epochs.
     # Normally, train loss ↓ and val loss ↓ if model learns well.
@@ -250,14 +349,22 @@ for epoch in range(1, EPOCHS + 1):
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         patience_counter = 0
-        torch.save(model.state_dict(), MODEL_SAVE_DIR / "tcn_best.pt") # If validation loss improves → save model.
+        torch.save(model.state_dict(), MODEL_SAVE_DIR / "tcn_best.pt") # If validation loss improves → save model, final model state will be best one.
     else:
         patience_counter += 1                               # No improvement → increment counter.
         if patience_counter >= EARLY_STOPPING_PATIENCE:     # If no improvement for 7 epochs → stop training (saves time, avoids overfitting).
             print(f"Early stopping at epoch {epoch}")
             break
 
-print("Training complete. Best model saved to tcn_best.pt")     # tcn_best.pt stores the best model weights.
+# -------------------------------------------------------------
+# Save training history for visualisation
+# -------------------------------------------------------------
+
+with open(history_path, "w") as f:
+    json.dump({"train_loss": train_losses, "val_loss": val_losses}, f, indent=4) 
+print(f"[INFO] Training history saved to {history_path}")
+
+print("Training complete. Best model saved to tcn_best.pt")
 
 print(y_train_max.unique())
 print(y_train_median.unique())

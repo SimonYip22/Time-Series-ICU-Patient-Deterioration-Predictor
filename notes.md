@@ -2037,7 +2037,7 @@ src/
 
 ### Phase 4: Temporal Convolutional Network (TCN) Training + Validation (Steps 1-5)
 **Goal: Build, validate, and document a temporal deep learning model (TCN) on sequential EHR features. Deliver a trained model (`tcn_best.pt`) that generalises well on validation data.**
-1. **Dataset Preparation (Sequential Features)**
+1. **Dataset Preparation (Sequential Features) `prepare_tcn_dataset.py`**
   - **Input**: timestamp-level EHR data (vitals, labs, obs) `news2_features_timestamp.csv`, `news2_features_patient.csv`
   - **Output**: padded sequences ready for temporal modelling.
   -	**Steps**:
@@ -2048,7 +2048,7 @@ src/
     - Conversion to tensors with padding + masks.
     - Saving scaler + config JSON for reproducibility.
   - **Reasoning**: handling realistic, messy temporal data is my clinical-technologist edge.
-2. **Model Architecture (TCN)**
+2. **Model Architecture (TCN) `tcn_model.py`**
   - **Base**: Temporal Convolutional Network (stacked causal dilated 1D convolutions).  
   - **Design**:
     - **Input**: `(batch, sequence_length, features)` → permuted to `(batch, channels, sequence_length)` for Conv1d.  
@@ -2072,32 +2072,44 @@ src/
     - Dilated convolutions give long temporal memory without very deep stacks.  
     - Residual connections + LayerNorm = stable training, even with many blocks.  
     - Chosen as a modern, efficient alternative to RNNs (LSTM/GRU) and Transformers, showing a deliberate design choice.  
-3. **Model Training**
+3. **Model Training `tcn_training_script.py`**
 	- **Loss functions**: Binary cross-entropy (for classification heads), MSE (regression).
 	-	**Optimiser**: Adam with learning-rate scheduler (reduce on plateau).
 	-	**Regularisation**: dropout within TCN, gradient clipping, early stopping (patience=7).
-	-	**Training loop**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update.
+	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
+  - **Reproducibility controls**: Fixed seeds for Python/NumPy/PyTorch, enforced deterministic CuDNN ops, saved hyperparameter config (`config.json`) and training/validation loss history (`training_history.json`) to ensure bit-for-bit reproducibility.
   - **Reasoning**: This phase ensures the model learns from patient sequences in a stable, controlled way. Shows deep learning maturity (correct loss functions, imbalance handling, monitoring).
 4. **Validation (during training)**
 	-	**Setup**: Patient-level validation split (not seen during training).
 	-	**Metrics tracked**: Validation loss per epoch.
 	-	**Logic**:
-    -	When validation loss improves → save checkpoint (`tcn_best.pt`).
-    -	When validation loss stagnates/gets worse → patience counter increases.
-    -	Training stops early when overfitting begins.
+    -	When validation loss improves (validation loss ↓) → save checkpoint (`tcn_best.pt`).
+    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
+    -	Training stops early when overfitting begins (after 7 epochs of no improvement).
   - **Reasoning**: Validation ensures the model generalises and doesn’t just memorise training data.
-5. **Generate Visualisations**
-	-	Training vs Validation loss curves (per epoch) → `plots/loss_curve.png`
-  - **Reasonings**: focus on training behaviour and convergence, show whether the model converged, where early stopping kicked in, whether overfitting started.
+5. **Generate Visualisations `plot_training_curves.py`**
+  - **Input**: `trained_models/training_history.json`
+  - **Output**: `plots/loss_curve.png`
+  - **Features**:
+    -	Plots Training vs Validation loss curves across epochs.
+    -	Highlights the best epoch (red dashed line + dot).
+    -	Text annotation shows epoch and validation loss value.
+    -	Optional “overfitting region” annotation marks where validation loss rises.
+    -	Grid and layout optimised for clarity and interpretability.
+  - **Reasonings**: 
+    - Transforms numerical loss logs into a visual understanding of model learning behaviour.
+    - Focus on training behaviour and convergence, show whether the model converged, generalisation, where early stopping kicked in, whether overfitting started.
 **Why Not Go Further**
 - Skip ensembling, hyperparameter sweeps, AutoML, Transformers.
 - Adds weeks of complexity with minimal recruiter payoff.
-- Phase 4’s goal is just to train a robust, reproducible TCN.
+- The aim is a robust, interpretable, and reproducible baseline, not research-grade complexity.
+- Phase 4 delivers a scientifically sound foundation for model evaluation and comparison.
 **End Products of Phase 4**
-- `trained_models/tcn_best.pt`
-- Logs of training + validation loss curves
+- `trained_models/tcn_best.pt`→ best-performing model checkpoint.
+- `trained_models/config.json` → hyperparameter and architecture record.
+- `trained_models/training_history.json` → epoch-wise loss tracking.
+- `plots/loss_curve.png` → visualisation of training vs validation loss.
 - Debugged and reproducible training + validation pipeline.
-- **Notes.md**: Diagram of pipeline (raw EHR → preprocessing → TCN), capture debugging lessons (e.g. imputation pitfalls, consciousness bug fix).
 
 ### Goals
 -	Build a robust, reproducible temporal dataset for TCN training.
@@ -3163,7 +3175,7 @@ optimizer.zero_grad()    # reset gradients for next batch
 
 ### Summary Output
 **Console Log Output**
-```md
+```bash
 [INFO] Targets loaded:
  - train: torch.Size([70]) torch.Size([70]) torch.Size([70])
  - val: torch.Size([15]) torch.Size([15]) torch.Size([15])
@@ -3240,7 +3252,7 @@ tensor(False) tensor(False)
 -	Training output showed Train Loss = nan, Val Loss = nan from the very first epoch.
 -	This indicated a numerical instability/data issue, not a problem with the TCN model itself.
 - Either the data fed into the model was invalid (NaNs, wrong label encoding), or the optimiser blew up due to too-high learning rate + extreme inputs.
-```md
+```bash
 [INFO] Targets loaded:
  - train: torch.Size([70]) torch.Size([70]) torch.Size([70])
  - val: torch.Size([15]) torch.Size([15]) torch.Size([15])
@@ -3326,6 +3338,359 @@ df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], 0.0)
 	-	Training vs Validation loss curves (per epoch) → `plots/loss_curve.png`
 **Start Phase 5**
 
+---
+
+## Day 21 Notes — Finish Phase 4: Reproducibility & Generate Visualisations (Step 5)
+
+### Goals
+- Finalise **Phase 4** by completing full model reproducibility and visualisation capability.  
+- Extend `tcn_training_script.py` with:
+  1. **Reproducibility / Random Seed Control** → fix random initialisation across Python, NumPy, and PyTorch for deterministic results.
+  2. **Save Configuration for Reproducibility (`config.json`)** → record all hyperparameters, model architecture, optimiser, and scheduler settings.
+  3. **Save Training History for Visualisation (`training_history.json`)** → log per-epoch training and validation losses for later plotting.
+- Create `plot_training_curves.py` to **generate interpretable visualisations** of model learning, convergence, and overfitting patterns.
+
+
+### What We Did
+**Enhanced Reproducibility and Traceability**
+- Added random seed control across **Python, NumPy, and PyTorch (CPU/GPU)** to ensure **identical results on reruns**.  
+- Set `torch.backends.cudnn.deterministic=True` and `benchmark=False` to remove GPU-level stochasticity.  
+- **Reasoning**:  
+  - Deep learning models are inherently stochastic; reproducibility requires controlling all randomness sources.  
+  - This ensures identical weight initialisations, batch orders, and convergence patterns.
+**Saved Model Configuration (`config.json`)**
+- Automatically exports all critical hyperparameters to a structured JSON file for scientific reproducibility:
+  - Device, batch size, epochs, learning rate, dropout, kernel size, and optimiser/scheduler settings.
+  - Ensures future reruns can be **exactly reconstructed** from metadata.
+- **Reasoning**: Recording hyperparameters makes the experiment auditable and publishable.
+**Saved Training History (`training_history.json`)**
+- Logged training and validation loss per epoch for analysis and visualisation.  
+- Provides quantitative trace of how the model learned over time.  
+- Used this file in the visualisation script.
+**Generated Visualisations (`plot_training_curves.py`)**
+- **Loaded `training_history.json` and plotted**: Training vs Validation loss per epoch to visualise learning, convergence, and generalisation.
+- **Added key annotations for interpretability**:
+  - Red dashed line → best validation epoch (early stopping point).  
+  - Red dot → lowest validation loss value.  
+  - “Overfitting region” label → when validation loss starts rising.  
+- **Reasoning**:  
+  - Allows visual diagnosis of model performance → convergence, early stopping, and onset of overfitting.
+  - Makes training behaviour transparent and interpretable.
+
+
+### Plotting Training Curves `plot_training_curves.py`
+**Purpose**
+- Visualises **training vs validation loss per epoch** to understand how the TCN model learned over time.  
+- Reveals **convergence**, **overfitting**, and **early stopping behaviour**.  
+- Provides a transparent, reproducible diagnostic of model learning dynamics.
+**Why It Matters**
+- **Interpretability**: Shows how well the model generalises to unseen data.  
+- **Debugging**: Detects overfitting (training ↓, validation ↑).  
+- **Scientific transparency**: Visual evidence of convergence and stability.  
+- **Model tuning**: Guides adjustments to learning rate, regularisation, or architecture.
+**Annotation Summary**
+| **Annotation** | **Purpose** |
+|----------------|-------------|
+| **Red dashed line + dot** | Marks the epoch where validation loss was lowest — the point of **best generalisation**. |
+| **Text label (“Best epoch = X”)** | Displays the **exact epoch number** and **validation loss value** for clarity. |
+| **“Overfitting region” label (optional)** | Highlights the region **after the best epoch** where validation loss rises. |
+| **Grid and smooth formatting** | Improves visual clarity, showing trends and divergence more distinctly. |
+**Rationale**
+- The annotated plot turns a simple loss curve into a **scientifically meaningful diagnostic**.  
+- Identifies **when the model learned optimally**, **where overfitting began**, and **how stable convergence was**.  
+- When combined with `training_history.json`, it forms a complete, **reproducible visual record** of training dynamics.
+**Interpretation**
+- **Both losses ↓** → good learning and generalisation.  
+- **Train ↓, Val ↑** → overfitting detected.  
+- **Best epoch marker** confirms where early stopping captured optimal generalisation.  
+- Plot + JSON history = transparent, reproducible performance evidence.
+
+
+
+### Completed Full Temporal Convolutional Network (TCN) Training Loop Script `tcn_training_script.py`
+#### Summary
+- Built a **complete PyTorch training pipeline** for the TCN model.  
+- Covered **data loading, dataset preparation, target construction, model definition, training, validation, early stopping, checkpoint saving**, and **reproducibility measures**.  
+- **Introduced key deep learning concepts**: loss functions, optimisers, gradient flow, overfitting prevention, early stopping, and learning rate scheduling.
+- This script forms the core of **Phase 4**, moving from data preparation into real deep learning training.
+
+#### Output
+- `trained_models/tcn_best.pt` — the best-performing model weights (lowest validation loss).  
+- Console logs of **training and validation loss per epoch**, with early stopping.
+- `trained_models/training_history.json` — saved per-epoch loss values for later visualization.
+- `trained_models/config.json` — hyperparameters saved as JSON to enable reproducibility.
+- **Debug prints confirming**:
+  - Binary targets (`y_train_max`, `y_train_median`) are clean.
+  - Regression target (`y_train_reg`) is bounded, no NaNs/Infs.
+- Confirmed the pipeline runs end-to-end with no runtime errors.
+
+#### Step-by-Step Flow
+1. **Imports & Config**
+	-	Import PyTorch, Pandas, JSON, and our custom TCNModel.
+	-	**Define hyperparameters**:
+    -	`DEVICE` (GPU/CPU)
+    -	`BATCH_SIZE`, `EPOCHS`, `LR` (learning rate)
+    -	`EARLY_STOPPING_PATIENCE` (stop when val loss doesn’t improve).
+  -	Create `MODEL_SAVE_DIR` → ensures trained models are stored.
+  - Create `history_path` → ensures training history is stored.
+  - Create `config_path` → ensures training configuration is stored.
+2. **Reproducibility**
+  - **Set random seeds for reproducibility**: 
+    - Fixes randomness in Python, NumPy and PyTorch.
+    - Ensures that random operations (data shuffling, weight initialisation) produce the same results.
+    - Final trained model and results can be consistently reproduced.
+  - **Save defined hyperparameters to JSON for reproducibility**: `trained_models/config.json`
+  - **Rationale**: model now fully traceable, interpretable, and repeatable.
+3. **Load Prepared Data**
+	-	Use `torch.load()` to bring in padded sequence tensors (`x_train, mask_train` etc.) created from `prepare_tcn_dataset.py`.
+	-	These are the time-series features per patient, already standardised + padded to equal length.
+	-	Masks mark valid timesteps vs padding (prevents model from “learning noise”).
+4. **Build Target Tensors (Patient Labels)**
+	-	Load patient-level CSV (`news2_features_patient.csv`).
+	-	**Recreate binary labels**:
+    -	**max_risk_binary**: high vs not-high risk.
+    -	**median_risk_binary**: low vs medium.
+	-	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
+	-	Define `get_targets()`:
+    -	Pulls the right patients.
+    -	Converts labels into PyTorch tensors (`y_train_max, y_train_median, y_train_reg`) for each split.
+  - **Rationale**: features (time-series) and labels (patient outcomes) are stored separately. We need to align them so that each input sequence (x_train) has its corresponding target outcome (ground-truth) to train on. This ensures you have paired data: (`x_train[i], mask_train[i]`) → (`y_train_max[i], y_train_median[i], y_train_reg[i]`).
+5. **TensorDatasets & DataLoaders**
+	-	TensorDataset groups together (inputs, masks, targets) into one dataset object.
+	-	**DataLoader breaks this dataset into mini-batches**:
+    -	batch_size=32 → model sees 32 patients per step.
+    -	shuffle=True for training → prevents learning artefacts from patient order.
+  - **Rationale**: mini-batching improves GPU efficiency and stabilises gradient descent.
+6. **Model Setup**
+  - Defines the architecture (what the model looks like, how it processes inputs).
+	-	**Instantiate TCNModel with**:
+    -	Input dimension = 171 features.
+    -	**Residual conv blocks**: [64, 64, 128] → 3 conv blocks with number of channels (filters/kernels). Residual is defined within the block.
+    -	**Dense head**: 64 neurons → mixes all features before final outputs (comes once, after the stack finishes)
+	-	Send model to GPU/CPU (.to(DEVICE)).
+7. **Loss Functions**
+  - We train on three parallel tasks (multi-task learning). 
+  - Each target needs its own loss, calculated by the loss function:
+    -	`criterion_max / criterion_median`: BCEWithLogitsLoss → binary classification.
+    -	`criterion_reg`: MSELoss → regression task.
+8. **Optimiser + Scheduler**
+  - Uses batch-by-batch output heads from the dense head to optimise parameters. 
+	-	Optimiser = Adam with LR=1e-3.
+	-	Scheduler = ReduceLROnPlateau (halves LR if val loss plateaus).
+  - **Rationale**: 
+    - Adam adapts learning rate per parameter → faster convergence. 
+    - Scheduler prevents the model from “getting stuck”.
+9. **Training Loop**
+	-	Loop over epochs (one full pass through the entire training dataset).
+  - Network jointly learns classification and regression.
+	-	**For each batch**:
+    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`).
+    -	Compute losses with loss functions for all 3 tasks → compare predictions to true labels (`y_max, y_median, y_reg`).
+    - Combine losses into 1 (`loss = loss_max + loss_median + loss_reg`) → one scalar loss value means each task contributes equally (multi-task learning).
+    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter.
+    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients so their norm ≤ 1, keeps training stable).
+    -	Optimiser step → updates weights in opposite direction of the gradients.
+	-	**Track average training loss per epoch**:
+    - Loss for batch * batch size, then sum these values for every batch, then divide by number of patients in dataset = average loss across all patients in training set → no matter how batch sizes vary we ensure the epoch loss is the mean loss per patient. 
+    - Logged and compared with validation loss for analysis → this is how you see if your model is learning.
+  - **Save training history as JSON for later visualisation**:
+    - Saves average loss per epoch (11) for both training loss (`train_loss`) and validation losses (`val_loss`)
+    - **Saves as a JSON file**: `trained_models/training_history.json`
+  - **This is the heart of deep learning**: forward → loss → backward → update.
+  - Saved training history data allows for later visualisation plots
+10. **Validation Loop**
+	-	Run the model on validation set (no gradients).
+	-	Compute average validation loss.
+	-	Update LR scheduler.
+	-	Print progress.
+  - **Rationale**: validation loss tells us if the model is generalising or just memorising.
+11. **Early Stopping**
+	-	If validation loss improves → save model (`tcn_best.pt`).
+	-	If no improvement for 7 epochs → stop training early.
+  - **Rationale**: protects against overfitting and wasted compute.
+12. **Debug Prints**
+  - Sanity checks ensure training data is valid:
+    -	Show unique values of targets.
+    - Binary targets are present (0 and 1).
+    -	Show regression range is healthy (min/max).
+    -	Check for NaN/Inf in inputs (pipeline clean)
+### Summary of Flow
+**Inputs → Targets → Training → Validation → Early stopping → Saved best model + training history**
+1. **Forward pass**: model computes predictions for the batch.
+2. **Loss computation (BCE, MSE)**: predictions are compared to true labels → gives `loss_max, loss_median, loss_reg`.
+3. **Combine losses**: summed to get overall batch loss.
+4. **Backward pass**: compute gradients → tells how to adjust weights to reduce loss.
+5. **Optimizer step**: update weights using the gradients, gradients determine direction, learning rate determines size.
+6. Repeat until early stoppage to prevent overfitting.
+
+
+### Output Directory finalised
+```text
+ml-models-tcn/
+│
+├── tcn_model.py
+├── tcn_training_script.py
+├── plot_training_curves.py
+│
+├── trained_models/
+│   ├── tcn_best.pt                 ← best weights
+│   ├── training_history.json       ← per-epoch loss log
+│   ├── config.json                 ← hyperparameters + settings
+│
+├── prepared_datasets/              ← .pt tensors
+├── deployment_models/preprocessing/
+│   └── patient_splits.json, scalers, padding_config.json
+└── plots/
+    └── loss_curve.png              ← visualisation output
+```
+
+### Final reproducible run
+```bash
+[INFO] Targets loaded:
+ - train: torch.Size([70]) torch.Size([70]) torch.Size([70])
+ - val: torch.Size([15]) torch.Size([15]) torch.Size([15])
+ - test: torch.Size([15]) torch.Size([15]) torch.Size([15])
+Epoch 1: Train Loss = 1.4591, Val Loss = 1.1229
+Epoch 2: Train Loss = 1.1120, Val Loss = 0.9924
+Epoch 3: Train Loss = 0.9797, Val Loss = 0.9587
+Epoch 4: Train Loss = 0.9369, Val Loss = 0.9585
+Epoch 5: Train Loss = 0.8809, Val Loss = 0.9766
+Epoch 6: Train Loss = 0.7894, Val Loss = 1.0038
+Epoch 7: Train Loss = 0.7231, Val Loss = 1.0696
+Epoch 8: Train Loss = 0.6498, Val Loss = 1.1479
+Epoch 9: Train Loss = 0.6040, Val Loss = 1.1606
+Epoch 10: Train Loss = 0.5602, Val Loss = 1.2033
+Epoch 11: Train Loss = 0.5267, Val Loss = 1.2606
+Early stopping at epoch 11
+[INFO] Training history saved to /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml-models-tcn/trained_models/training_history.json
+Training complete. Best model saved to tcn_best.pt
+tensor([0., 1.])
+tensor([0., 1.])
+tensor(0.) tensor(0.4407)
+tensor(False) tensor(False)
+```
+
+#### Key Concepts
+**Training Loss**:
+  - Measures how well the model fits the data it is learning from. 
+  - A decreasing training loss indicates successful internal weight adjustments.
+**Validation Loss**:  
+  - Reflects model generalisation to unseen data. 
+  - Ideally, validation loss follows a similar downward trend to training loss; divergence signals overfitting.
+**Overfitting**: 
+  - When the model learns training-specific noise or patterns that do not generalise. 
+  - Characterised by a continually decreasing training loss with rising validation loss.
+**Early Stopping**:
+  - Prevents overfitting by halting training when validation loss stops improving for several epochs. 
+  - Retains weights from the epoch with best generalisation.
+**Reproducibility (Deterministic Training)**:  
+  - Ensures that every run produces identical results — same weight initialisations, same data shuffling, same training/validation curves. 
+  - Achieved via fixed seeds and deterministic settings in Python, NumPy, and PyTorch.
+
+#### What Happened in the Run
+**Epoch 1–3:**  
+  - Both training and validation loss decreased steadily (Train: 1.46 → 0.98, Val: 1.12 → 0.96).  
+  - The model was learning generalisable temporal patterns early in training.
+**Epoch 4–5:**  
+  - Training loss continued to fall (0.93 → 0.88), but validation loss began to rise (0.96 → 0.98).  
+  - Marks the onset of overfitting — model starting to specialise too much on the training distribution.
+**Epoch 6–11:**  
+  - Training loss kept decreasing (0.79 → 0.53) while validation loss rose consistently (1.00 → 1.26).  
+  - Confirms strong overfitting beyond epoch 4–5, the model is memorising rather than generalising.
+**Early Stopping:**  
+  - Triggered at epoch 11 after no improvement in validation loss for several epochs.  
+  - Automatically preserved the best model weights (around epoch 3–4), ensuring the optimal generalising model was saved.
+
+#### The Debug Prints Confirm
+- `y_train_max.unique()` → `tensor([0., 1.])` → binary classification targets correctly encoded.  
+- `y_train_median.unique()` → `tensor([0., 1.])` → both classes present, no imbalance artefacts.  
+- `y_train_reg.min()`, `y_train_reg.max()` → `(0.0, 0.4407)` → regression target bounded and realistic.  
+- `torch.isnan(x_train).any() = False`, `torch.isinf(x_train).any() = False` → inputs are numerically stable, no corruption.
+
+#### Interpretation
+- **The training pattern matches previous runs**: rapid convergence early on, then divergence between training and validation losses.  
+- **This consistent pattern across three independent runs strongly supports that**:  
+  - The model architecture is implemented correctly.  
+  - The training and validation splits are consistent and meaningful.  
+  - Loss functions and data preprocessing pipelines are stable.  
+- The overfitting behaviour is expected and not a flaw → it arises from a small dataset (70 patients for training).  
+- Early stopping operated correctly, preserving the epoch with the best generalisation.
+
+
+#### Reproducibility and Determinism
+**To verify the stability and scientific integrity of the experiment, this final run locked all sources of stochasticity and documented expected behaviours of inherently random processes:**
+
+| Source                     | Controlled via / Expected Behaviour                                           | Purpose                                                   |
+|-----------------------------|-------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| Python built-in random      | `random.seed(SEED)`                                                           | Ensures deterministic behaviour in any Python random operations (e.g., shuffling IDs). |
+| NumPy                       | `np.random.seed(SEED)`                                                        | Fixes randomness in array sampling and preprocessing steps.              |
+| PyTorch (CPU)               | `torch.manual_seed(SEED)`                                                     | Fixes model weight initialisation and CPU tensor operations.             |
+| PyTorch (GPU)               | `torch.cuda.manual_seed(SEED)` + `torch.cuda.manual_seed_all(SEED)`          | Fixes GPU computation order and initialisation.                          |
+| CuDNN backend               | `torch.backends.cudnn.deterministic = True`<br>`torch.backends.cudnn.benchmark = False` | Forces deterministic convolution algorithms and disables autotuning variance. |
+| Random weight initialisation | Different starting points → slightly different convergence                  | Prevents model from getting stuck in one local minimum                   |
+| Shuffled mini-batches       | Each epoch sees data in a new order                                           | Better generalisation                                                      |
+| Dropout                     | Randomly deactivates neurons                                                  | Regularisation; reduces overfitting                                       |
+| GPU numerical nondeterminism| Minor floating-point differences                                              | Harmless                                                                  |
+**This combination eliminates stochastic variance, ensuring that**:
+- The model, losses, and saved weights are identical across reruns on the same machine.
+- Experimental results can be reliably replicated, meeting scientific and academic reproducibility standards.
+- Any remaining variability in unconstrained runs (e.g., weight initialisation, mini-batch shuffling, dropout) is now controlled for, producing a true reproducible baseline.
+
+#### Why the Final Run Was Locked
+- Prior runs showed nearly identical training dynamics despite random variation, implying the underlying model and data are stable.
+- To make this baseline scientifically defensible and comparable, it was essential to remove the remaining stochastic noise (due to random initialisation and shuffling).
+- **Locking all seeds and enforcing deterministic computation ensures**:
+  - Every future run on the same code yields the exact same losses.
+  - Changes in results can now only come from intentional modifications (architecture, hyperparameters, or data).
+  - **We have a true reference baseline**: a frozen, reproducible experiment for paper-level reporting or future benchmarking.
+
+#### Conclusion
+- The final reproducible run confirms that the entire TCN pipeline (data loading → model → training loop → early stopping) is working correctly and deterministically.
+- Overfitting behaviour remains stable across all runs, reinforcing that the model and hyperparameters are sound.
+- The experiment is now fully traceable, interpretable, and repeatable.
+- This final configuration can be safely tagged as the reproducible baseline version of the TCN training script.
+
+
+### Reflection
+#### Challenges
+- Initially, every training run produced slightly different curves and early-stopping epochs.
+- Realised deep learning is **stochastic by design**, due to random weight initialisation, shuffling, and dropout.
+- Needed deterministic control for scientific reproducibility.
+#### Solutions and Learnings
+- Implemented **comprehensive seed control** to lock all randomness sources (Python, NumPy, PyTorch CPU/GPU, and CuDNN backend).
+- Added **config.json** to store all hyperparameters, this made the pipeline fully traceable.
+- Logged **training history** to JSON, enabling later visualisation and verification.
+- **Learned that**:
+  - Small differences between runs are normal until seeds are fixed.
+  - Overfitting behaviour and curve shape consistency are more important than identical numbers.
+  - Reproducibility converts exploratory experiments into **scientifically valid baselines**.
+
+### Summary
+**Phase 4 completed successfully, the TCN model training pipeline is now**: 
+  - Deterministic, auditable, scientifically reproducible, visualisable, interpretable, and ready for formal evaluation.
+**Final Outputs:**
+1. `trained_models/tcn_best.pt` → best-performing model weights.  
+2. `trained_models/config.json` → hyperparameters and model configuration.  
+3. `trained_models/training_history.json` → full epoch-wise training record.  
+4. `plots/loss_curve.png` → visualised training vs validation loss curves.  
+5. Console logs → with early stopping, sanity checks, and tensor validation.
+**This marks the completion of Phase 4**:  
+- From reproducible model training to visual interpretability.
+
+### Next Steps (Start Phase 5: Evaluation)
+- Load `tcn_best.pt` and perform **final evaluation** on the held-out test set.
+- **Compute and visualise**:
+  - **Classification metrics**: ROC-AUC, F1-score, accuracy.  
+  - **Regression metrics**: RMSE, R², residual analysis.
+- **Generate plots**:
+  - ROC Curves  
+  - Calibration Curves  
+  - Regression Scatterplots and Residual Histograms.
+- **Compare the TCN’s performance against**:
+  - **LightGBM baseline**  
+  - **NEWS2 baseline**  
+  For both technical and clinical interpretability.
+  
 ---
 
 # Phase 5: Evaluation, Baselines & Comparison

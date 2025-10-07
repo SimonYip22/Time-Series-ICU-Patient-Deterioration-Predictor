@@ -1,0 +1,33 @@
+{
+    "device": "cpu",
+    "batch_size": 32,
+    "epochs": 50,
+    "learning_rate": 0.001,
+    "early_stopping_patience": 7,
+    "model_architecture": {
+        "num_channels": [
+            64,
+            64,
+            128
+        ],
+        "head_hidden": 64,
+        "kernel_size": 3,
+        "dropout": 0.2
+    },
+    "optimizer": "Adam",
+    "scheduler": {
+        "type": "ReduceLROnPlateau",
+        "mode": "min",
+        "patience": 3,
+        "factor": 0.5
+    },
+    "loss_functions": {
+        "classification": "BCEWithLogitsLoss",
+        "regression": "MSELoss"
+    },
+    "data_paths": {
+        "prepared_datasets": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml-models-tcn/prepared_datasets",
+        "scaler_dir": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml-models-tcn/deployment_models/preprocessing",
+        "patient_features_path": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/data/processed-data/news2_features_patient.csv"
+    }
+}
