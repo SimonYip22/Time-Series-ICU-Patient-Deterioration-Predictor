@@ -26,8 +26,8 @@
         "regression": "MSELoss"
     },
     "data_paths": {
-        "prepared_datasets": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml-models-tcn/prepared_datasets",
-        "scaler_dir": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml-models-tcn/deployment_models/preprocessing",
-        "patient_features_path": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/data/processed-data/news2_features_patient.csv"
+        "prepared_datasets": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml_models_tcn/prepared_datasets",
+        "scaler_dir": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml_models_tcn/deployment_models/preprocessing",
+        "patient_features_path": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/data/processed_data/news2_features_patient.csv"
     }
 }

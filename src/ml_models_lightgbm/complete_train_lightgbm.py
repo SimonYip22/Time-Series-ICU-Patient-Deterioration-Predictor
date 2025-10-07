@@ -41,7 +41,7 @@ import csv                                                                      
 # -----------------------------
 # Paths
 SCRIPT_DIR = Path(__file__).resolve().parent
-CSV_PATH = SCRIPT_DIR.parent.parent / "data" / "processed-data" / "news2_features_patient.csv"
+CSV_PATH = SCRIPT_DIR.parent.parent / "data" / "processed_data" / "news2_features_patient.csv"
 MODEL_DIR = SCRIPT_DIR / "baseline_models"                                                          # Define folder to save trained LightGBM models (3 targets × 5 folds = 15 files total)
 
 # Ensure output folder exists

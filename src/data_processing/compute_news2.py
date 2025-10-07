@@ -102,7 +102,7 @@ def score_vital(vital_name, value, co2_retainer=False, fio2=None, gcs=None):
 # ------------------------------
 # 3. Load long-format CSV
 # Columns: subject_id, stay_id, charttime, itemid, label, valuenum, co2_retainer.
-df = pd.read_csv("data/interim-data/news2_vitals_with_co2.csv")
+df = pd.read_csv("data/interim_data/news2_vitals_with_co2.csv")
 
 # ------------------------------
 # 4. Standardise labels to NEWS2 names

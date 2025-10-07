@@ -12,8 +12,8 @@ Summary:
 import pandas as pd
 
 # File paths
-CHARTEVENTS_PATH = "data/raw-data/icu/chartevents.csv"
-DITEMS_PATH = "data/raw-data/icu/d_items.csv"
+CHARTEVENTS_PATH = "data/raw_data/icu/chartevents.csv"
+DITEMS_PATH = "data/raw_data/icu/d_items.csv"
 
 # Load d_items to filter out only ABG related itemids
 d_items = pd.read_csv(DITEMS_PATH)

@@ -25,8 +25,8 @@ from numpy import trapezoid   # Imports the trapezoidal integration function to 
 # ------------------------------
 # Config: file paths
 # ------------------------------
-DATA_DIR_INPUT = Path("../../data/interim-data")       # where the input lives
-DATA_DIR_OUTPUT = Path("../../data/processed-data")    # where the output should go
+DATA_DIR_INPUT = Path("../../data/interim_data")       # where the input lives
+DATA_DIR_OUTPUT = Path("../../data/processed_data")    # where the output should go
 
 INPUT_FILE = DATA_DIR_INPUT / "news2_scores.csv"
 OUTPUT_FILE = DATA_DIR_OUTPUT / "news2_features_timestamp.csv"

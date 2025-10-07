@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 # Directories
 #-------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed-data/news2_features_patient.csv"
+DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_patient.csv"
 FEATURE_DIR = SCRIPT_DIR / "feature_importance_runs"
 FEATURE_DIR.mkdir(parents=True, exist_ok=True)
 

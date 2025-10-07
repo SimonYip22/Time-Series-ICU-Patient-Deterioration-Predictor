@@ -37,8 +37,8 @@ from sklearn.model_selection import train_test_split  # patient-level train/val/
 #-------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 # Input dir
-DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed-data/news2_features_timestamp.csv"
-PATIENT_FEATURES_PATH = SCRIPT_DIR.parent.parent / "data/processed-data/news2_features_patient.csv"
+DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_timestamp.csv"
+PATIENT_FEATURES_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_patient.csv"
 
 # Output dirs
 # Folder for training/validation/test tensors and masks 

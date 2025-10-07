@@ -24,7 +24,7 @@ from pathlib import Path  # For dynamic file paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Build path to CSV relative to project root
-CSV_PATH = SCRIPT_DIR.parent.parent / "data" / "processed-data" / "news2_features_patient.csv"
+CSV_PATH = SCRIPT_DIR.parent.parent / "data" / "processed_data" / "news2_features_patient.csv"
 TARGETS = ["max_risk", "median_risk", "pct_time_high"] # Loop through each outcome we want to predict
 N_FOLDS = 5 # Number of folds for cross-validation (not fully used in this quick test, but needed later).
 

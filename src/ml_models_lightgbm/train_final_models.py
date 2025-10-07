@@ -26,7 +26,7 @@ import json
 # Directories
 #-------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed-data/news2_features_patient.csv"
+DATA_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_patient.csv"
 DEPLOY_DIR = SCRIPT_DIR / "deployment_models"
 DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
 TUNE_DIR = SCRIPT_DIR / "hyperparameter_tuning_runs"

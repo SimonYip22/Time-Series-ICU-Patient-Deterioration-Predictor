@@ -38,7 +38,7 @@ import csv
 # Paths & configuration
 #-------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_PATH = SCRIPT_DIR.parent.parent / "data" / "processed-data" / "news2_features_patient.csv"
+DATA_PATH = SCRIPT_DIR.parent.parent / "data" / "processed_data" / "news2_features_patient.csv"
 
 # Output folders
 TUNE_DIR = SCRIPT_DIR / "hyperparameter_tuning_runs"

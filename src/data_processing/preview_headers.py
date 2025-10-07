@@ -13,11 +13,11 @@ import os # gives access to operating system functions, like checking if a file 
 
 # List of files to preview (adjust paths if needed)
 files = [
-    "data/raw-data/demo_subject_id.csv",
-    "data/raw-data/hosp/admissions.csv",
-    "data/raw-data/hosp/patients.csv",
-    "data/raw-data/icu/chartevents.csv",
-    "data/raw-data/icu/d_items.csv"
+    "data/raw_data/demo_subject_id.csv",
+    "data/raw_data/hosp/admissions.csv",
+    "data/raw_data/hosp/patients.csv",
+    "data/raw_data/icu/chartevents.csv",
+    "data/raw_data/icu/d_items.csv"
 ]
 
 for f in files:

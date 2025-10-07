@@ -18,7 +18,7 @@ from sklearn.model_selection import KFold # tool for splitting dataset into k fo
 # -----------------------------
 # Configuration
 # -----------------------------
-CSV_PATH = "../../data/processed-data/news2_features_patient.csv"  # input CSV
+CSV_PATH = "../../data/processed_data/news2_features_patient.csv"  # input CSV
 TARGETS = ["max_risk", "median_risk", "pct_time_high"]
 N_FOLDS = 5  # for cross-validation
 

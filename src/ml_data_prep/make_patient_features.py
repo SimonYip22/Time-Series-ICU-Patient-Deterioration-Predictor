@@ -22,8 +22,8 @@ from pathlib import Path # handling file paths in a cleaner, cross-platform way 
 # ------------------------------
 # Config: file paths
 # ------------------------------
-DATA_DIR_INPUT = Path("../../data/interim-data")         
-DATA_DIR_OUTPUT = Path("../../data/processed-data")
+DATA_DIR_INPUT = Path("../../data/interim_data")         
+DATA_DIR_OUTPUT = Path("../../data/processed_data")
 
 INPUT_FILE = DATA_DIR_INPUT / "news2_scores.csv"
 OUTPUT_FILE = DATA_DIR_OUTPUT / "news2_features_patient.csv"
@@ -198,7 +198,7 @@ def main():
     df_patient_with_missingness = compute_missingness(df_raw, df_patient_imputed)
     df_patient_final = encode_risk_and_summarise(df_raw, df_patient_with_missingness)
     
-    # Ensure output directory (processed-data) exists and save
+    # Ensure output directory (processed_data) exists and save
     DATA_DIR_OUTPUT.mkdir(parents=True, exist_ok=True)
     save_patient_features(df_patient_final, OUTPUT_FILE)
 

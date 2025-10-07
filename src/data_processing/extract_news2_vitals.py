@@ -15,12 +15,12 @@ import pandas as pd
 # ------------------------------
 # 1. Define file paths
 # ------------------------------
-CHARTEVENTS_PATH = "data/raw-data/icu/chartevents.csv"
-DITEMS_PATH = "data/raw-data/icu/d_items.csv"
-ADMISSIONS_PATH = "data/raw-data/hosp/admissions.csv"
-PATIENTS_PATH = "data/raw-data/hosp/patients.csv"
-OUTPUT_PATH = "data/interim-data/news2_vitals_with_co2.csv"       # CSV with True/False for CO2 retainer
-DETAILS_PATH = "data/interim-data/co2_retainer_details.csv"       # CSV with ABG details
+CHARTEVENTS_PATH = "data/raw_data/icu/chartevents.csv"
+DITEMS_PATH = "data/raw_data/icu/d_items.csv"
+ADMISSIONS_PATH = "data/raw_data/hosp/admissions.csv"
+PATIENTS_PATH = "data/raw_data/hosp/patients.csv"
+OUTPUT_PATH = "data/interim_data/news2_vitals_with_co2.csv"       # CSV with True/False for CO2 retainer
+DETAILS_PATH = "data/interim_data/co2_retainer_details.csv"       # CSV with ABG details
 
 # ------------------------------
 # 2. Define NEWS2 mapping

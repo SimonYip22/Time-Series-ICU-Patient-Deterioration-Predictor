@@ -160,7 +160,7 @@ target_cols = ["max_risk_binary", "median_risk_binary", "pct_time_high"] # targe
 # Already have the features (x_train, x_val, x_test) from prepare_tcn_dataset.py
 # Only need the patient-level CSV here to build the target tensors (y_train_max, y_train_median, y_train_reg).
 # Paths
-PATIENT_FEATURES_PATH = SCRIPT_DIR.parent.parent / "data/processed-data/news2_features_patient.csv"
+PATIENT_FEATURES_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_patient.csv"
 SPLITS_PATH = SCALER_DIR / "patient_splits.json"
 
 # Load patient-level outcomes
