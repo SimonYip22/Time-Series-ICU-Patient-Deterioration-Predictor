@@ -4,8 +4,9 @@ tcn_model.py
 Title: Temporal Convolutional Network (TCN) model for patient-level predictions
 
 Summary: 
+- Defines a Temporal Convolutional Network (TCN) architecture for ICU time series data.
 - Processes timestamp-level ICU sequences (up to 96 hours per patient).
-- input → causal convolutions → stacked into Temporal Residual Blocks → pooling → dense head
+- Input → causal convolutions → stacked into Temporal Residual Blocks → pooling → dense head
 - Outputs patient-level outcomes:
     - Classification head → max_risk, median_risk (binary tasks).
     - Regression head → pct_time_high (continuous task).
@@ -20,7 +21,7 @@ Inputs:
 - `x`: FloatTensor of shape (batch, seq_len, num_features).  
 - `mask`: FloatTensor of shape (batch, seq_len), with 1.0 for valid timesteps, 0.0 for padding.  
 Outputs:
-- Dictionary:
+- State dictionary that contains all the learned parameters (weights & biases):
     - `'logit'`: (batch,) → classification head (use BCEWithLogitsLoss).  
     - `'regression'`: (batch,) → regression head (use MSELoss).  
 """

@@ -4,17 +4,21 @@ evaluation_metrics.py
 Title: Centralised Metric Computation Utilities
 
 Summary:
+- Compares ground-truth labels vs model predictions.
 - Provides reusable functions for computing standard evaluation metrics for:
     1. Binary classification tasks (ROC-AUC, F1, Accuracy, Precision, Recall)
     2. Regression tasks (RMSE, R²)
+- Handles input conversion (PyTorch tensors, lists) to NumPy arrays for compatibility with sklearn.
+- Includes error handling for edge cases (e.g. ROC-AUC with single-class data).
+- Modular design allows easy integration into various evaluation scripts.
 - Used across Phase 5 evaluation scripts for TCN, LightGBM, and NEWS2 baselines.
 """
 
 # -------------------------------------------------------------
 # Imports
 # -------------------------------------------------------------
-import numpy as np
-from sklearn.metrics import (
+import numpy as np  # for numerical operations
+from sklearn.metrics import (  # for standard metric computations
     roc_auc_score,
     f1_score,
     accuracy_score,
@@ -29,12 +33,15 @@ from sklearn.metrics import (
 # -------------------------------------------------------------
 """
 Computes classification metrics for binary tasks.
+Compares ground-truth labels vs predicted probabilities.
 Args:
-- y_true (array-like): Ground-truth binary labels (0/1)
-- y_prob (array-like): Predicted probabilities (0–1)
+- y_true (array): Ground-truth binary labels (0/1)
+- y_prob (array): Predicted probabilities (0–1)
 - threshold (float): Decision threshold to binarise probabilities (default = 0.5)
+Computes:
+- Standard metrics: ROC-AUC, F1, Accuracy, Precision, Recall
 Returns:
-- dict: containing ROC-AUC, F1, Accuracy, Precision, Recall
+- Dictionary: containing ROC-AUC, F1, Accuracy, Precision, Recall
 """
 def compute_classification_metrics(y_true, y_prob, threshold=0.5):
 
@@ -75,11 +82,15 @@ def compute_classification_metrics(y_true, y_prob, threshold=0.5):
 # -------------------------------------------------------------
 """
 Computes regression metrics (RMSE, R²)
+Compares ground-truth continuous labels vs predicted continuous values.
 Args:
-- y_true (array-like): Ground-truth continuous labels
-- y_pred (array-like): Model-predicted continuous values
+- y_true (array): Ground-truth continuous labels
+- y_pred (array): Model-predicted continuous values
+Computes:
+- RMSE: Root Mean Squared Error → average prediction error magnitude
+- R²: Coefficient of Determination → proportion of variance explained by the model
 Returns:
-- dict: containing RMSE and R²
+- Dictionary: containing RMSE and R²
 """
 def compute_regression_metrics(y_true, y_pred):
 
