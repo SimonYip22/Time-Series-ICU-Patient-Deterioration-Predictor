@@ -3851,7 +3851,7 @@ tensor(False) tensor(False)
 
 ---
 
-## Day 21-22 Notes - Start Phase 5: Evaluation, Baselines & Comparison (Steps 1-3)
+## Day 21-22 Notes - Start Phase 5: Evaluation Metrics & Final TCN Test Evaluation (Steps 1-3)
 
 ### Goals
 - Establish a centralised metrics utility (`evaluation_metrics.py`) for consistent evaluation across TCN, LightGBM, and NEWS2.  
@@ -3898,195 +3898,6 @@ tensor(False) tensor(False)
   - Metrics are imported, not reimplemented
   - Prevents code duplication
 - Makes maintenance easy if later want to add more metrics (e.g., AUPRC or MAE).
-
-
-
-model.eval()
-This line switches the model to evaluation mode.
-Why?
-Some layers behave differently in training vs inference:
-Layer Type
-Training Behaviour
-Evaluation Behaviour
-Dropout
-Randomly deactivates neurons (adds noise to prevent overfitting).
-Disabled → uses full network deterministically.
-BatchNorm
-Uses running batch statistics (mean/variance) to normalise activations.
-Uses fixed learned running averages instead.
-
-So, model.eval() ensures the model behaves deterministically and consistently during testing — no random dropout, no unstable normalisation.
-
-
-with torch.no_grad():
-    outputs = model(x_test, mask_test)
-
-This context manager tells PyTorch:
-
-“Do not track gradients or build computation graphs.”
-
-Without it, PyTorch would:
-	•	Store all intermediate tensors for gradient calculation.
-	•	Use more memory and time (since it thinks you might call .backward() later).
-
-During inference, we never call .backward().
-So, using torch.no_grad():
-	•	Saves ~30–50% GPU memory.
-	•	Makes inference faster.
-	•	Prevents unnecessary tracking of gradients.
-
-
-These two lines always go together for test-time inference:
-
-model.eval()          # disable dropout + batchnorm updates
-with torch.no_grad(): # stop tracking gradients to save memory
-    outputs = model(x_test, mask_test)
-This combination ensures clean, efficient, and deterministic predictions.
-
-
-Why is threshold=0.5 used for classification?
-
-When your model predicts a probability (after applying the sigmoid function),
-the value represents how likely it thinks a sample belongs to the positive class (1).
-
-For binary classification:
-	•	p(y=1 | x) = model output between 0 and 1
-	•	We must choose a decision threshold above which we call the case “positive”.
-
-⚙️ Default convention:
-	•	threshold = 0.5 is used because it’s the midpoint between 0 and 1.
-	•	It means:
-	•	If the model thinks there’s >50% probability of being positive → label = 1
-	•	If ≤50% → label = 0.
-
-This is mathematically neutral and appropriate unless:
-	•	Class imbalance is extreme (e.g., positives are <5%)
-	•	You have a different cost sensitivity (e.g., missing positives is worse than false alarms)
-	•	You’re optimising a specific metric like F1 and want to find the threshold that maximises it.
-
-Then, you might tune the threshold using the validation set — but 0.5 is the standard baseline for fair comparison across models.
-
-What happens internally in your evaluation:
-
-In compute_classification_metrics, this line converts probabilities to hard 0/1 predictions:
-y_pred = (y_prob >= threshold).astype(int)
-
-That’s how metrics like accuracy, F1, precision, and recall are computed.
-roc_auc_score, however, ignores the threshold — it uses the full continuous probabilities to assess how well the model ranks positives above negatives.
-
-
-•	Absolute imports fixed via sys.path:
-	•	Added src/ to sys.path so Python can find ml_models_tcn and prediction_evaluations packages directly.
-	•	Now we can use:
-from prediction_evaluations.evaluation_metrics import (
-    compute_classification_metrics,
-    compute_regression_metrics
-)
-
-	•	Needed because this script lives in a different folder (prediction_evaluations) but imports another module in the same package.
-	•	Direct execution (python3 evaluate_tcn_testset.py) fails for cross-folder imports unless Python knows the package root.
-  •	Avoids needing python -m or wrapper scripts.
-
-
-got confused as to the imports of tcn_model.py and tcn_best.pt and prupose of each and what they actually are for. 
-
-  Python code (tcn_model.py)
-	•	Purpose: defines the architecture of your TCN network.
-	•	Contents: classes, layers, forward pass, masked pooling, residual connections, task-specific heads.
-	•	What it is: just Python instructions. No actual trained weights are stored here.
-	•	When used: whenever you want to create a model object in memory:
-
-  from ml_models_tcn.tcn_model import TCNModel
-
-model = TCNModel(num_features=NUM_FEATURES)
-
-	•	After this line, the model exists with the correct structure, but weights are random.
-
-
-pt files (PyTorch tensor files)
-
-There are two main types in your workflow:
-
-a) tcn_best.pt
-	•	What it is: a saved state dictionary (state_dict) containing all trained weights and biases from Phase 4.
-	•	Contents: for each layer, PyTorch stores tensors representing weights, biases, and any other parameters (e.g., layernorm scale/shift).
-	•	Why needed: without these, your network is just a random-initialized model. To reproduce training results, you load these tensors.
-
-  state_dict = torch.load(TRAINED_MODEL_PATH, map_location=device)
-model.load_state_dict(state_dict)
-
-	•	This copies the tensors into the model object’s layers so that model behaves exactly like your trained network.
-
-b) x_test.pt, mask_test.pt
-	•	What they are: preprocessed input tensors for inference.
-	•	x_test.pt: shape (num_patients, seq_len, num_features)
-	•	3D tensor of floats representing time-series features (e.g., vitals, labs) for each patient.
-	•	mask_test.pt: shape (num_patients, seq_len)
-	•	1 = valid timestep, 0 = padded timestep. Needed for masked mean pooling so padding doesn’t distort averages.
-	•	Why needed: you can’t just feed a CSV into your TCN. The model expects tensors of shape (batch, seq_len, features).
-  x_test = torch.load(TEST_DATA_DIR / "test.pt", map_location=device)
-mask_test = torch.load(TEST_DATA_DIR / "test_mask.pt", map_location=device)
-
-Why we need both .py + .pt files
-Component
-Purpose
-Why Both Needed
-tcn_model.py
-Defines the structure of the network
-Without it, PyTorch doesn’t know what layers to create; the .pt file alone is just weights, no architecture info
-tcn_best.pt
-Stores the trained parameters (weights/biases)
-Without it, the network is just random-initialized; you won’t reproduce training results
-x_test.pt / mask_test.pt
-Inputs for inference
-Without them, the model can’t process patient sequences; Python objects only define structure, they don’t carry patient data
-
-
-
-
-
-Error: RuntimeError: Error(s) in loading state_dict for TCNModel
-
-Cause: The architecture defined in the evaluation script (num_channels=[64,128,128]) didn’t match the architecture used in training (num_channels=[64,64,128]).
-
-Fix: Match the layer configuration exactly when reconstructing the model for evaluation, since PyTorch checkpoints strictly enforce matching tensor shapes and layer names.
-
-
-	•	You import tcn_model.py in evaluation because you need the architecture definition to load trained weights.
-	•	The parameters must match those from training, or the weights won’t load correctly.
-	•	The defaults in tcn_model.py are irrelevant unless you forget to specify parameters.
-	•	The dictionary outputs will only be valid if the model’s shape exactly matches the trained configuration.
-
-- The `tcn_model.py` defines architecture only; actual parameters & weights come from `tcn_best.pt`
-You load:
-	•	Weights (tcn_best.pt) → because they contain learned numbers.
-	•	Config (config.json) → because it remembers how to rebuild the architecture.
-	•	Data tensors (test.pt, test_mask.pt) → because you need inputs.
-
-But the architecture code itself is not data — it’s already defined in your project’s codebase.
-PyTorch assumes you have the same class code available and just fills in the learned weights.
-
-
-with open(SRC_DIR / "ml_models_tcn" / "trained_models" / "config.json") as f:
-    config = json.load(f)
-arch = config["model_architecture"]
-
-model = TCNModel(
-    num_features=NUM_FEATURES,          # Input feature dimension (171 per-timestep features)
-    num_channels=arch["num_channels"],  # 3 TCN layers with increasing channels
-    kernel_size=arch["kernel_size"],    # Kernel size of 3 for temporal convolutions
-    dropout=arch["dropout"],            # Regularisation: randomly zero 20% of activations during training
-    head_hidden=arch["head_hidden"]     # Hidden layer size of 64 in the final dense head
-)
-
-loaded json and actually used those instead of manually entering the hyperparamters myself. better to load like this to prevent mistakes 
-
-
-
-
-
-
-
 
 #### Step 2 + 3: Final TCN Evaluation on Test Set (`evaluate_tcn_testset.py`)
 **Purpose**
@@ -4202,14 +4013,98 @@ Regression — RMSE: 0.135, R²: -1.586
 - These results provide a clear baseline for retraining and comparison against LightGBM/NEWS2.  
 - With class weighting and loss adjustments, both classification and regression heads should improve.
 
+---
 
+### Reflection
+#### Challenges
+1. **Unrealistic Test Metrics**
+  - The TCN achieved near-perfect F1 (0.929) for *max risk* but **zero F1 (0.000)** for *median risk* and **negative R² (-1.586)** for regression.  
+  - Initially appeared as catastrophic model failure.
+2. **Understanding the Metric Behaviour**
+  - Confusion around why the model produced “good” F1 but poor AUC on the same task.  
+  - **Realisation**: **F1 is threshold-dependent**, whereas **ROC-AUC** assesses ranking ability across thresholds.  
+  - Class imbalance heavily distorted F1 and accuracy metrics.
+3. **Realising Evaluation Mode Importance**
+  - **Confusion about why we must explicitly call**:
+     ```python
+     model.eval()
+     with torch.no_grad():
+     ```
+  - `model.eval()` ensures deterministic behaviour by disabling dropout and freezing BatchNorm statistics.  
+  - `torch.no_grad()` prevents gradient tracking, saving memory and speeding up inference.  
+  - Both are essential for reproducible and stable test-time evaluation.
+4. **Cross-Module Imports**
+  - Running `evaluate_tcn_testset.py` initially failed because Python couldn’t find the required modules (`tcn_model.py`, `evaluation_metrics.py`).  
+  - **Required fixing absolute imports using**:
+     ```python
+     sys.path.append(str(SRC_DIR))
+     ```
+    to allow clean cross-folder imports without using `python -m`.
+5. **Confusion Between Model Architecture (.py) and Model Weights (.pt)**
+  - Initially misunderstood why both were required:
+     | Component | Purpose | Why Needed |
+     |------------|----------|-------------|
+     | **tcn_model.py** | Defines architecture | Without it, PyTorch doesn’t know the layer structure |
+     | **tcn_best.pt** | Stores learned weights | Without it, model is untrained (random init) |
+     | **x_test.pt / mask_test.pt** | Preprocessed inputs | Needed for inference; models can’t take CSVs directly |
+  - The `.pt` file only stores numbers (weights/biases); PyTorch reconstructs the full model only when the class definition (`tcn_model.py`) is available.
+6. **Mismatch Between Architecture and Checkpoint**
+  - Encountered a **RuntimeError: Error(s) in loading state_dict for TCNModel** due to mismatched layer configuration (`num_channels` values differed).  
+  - **Fixed by reading architecture parameters directly from**:
+     ```python
+     with open(config.json)
+     ```
+    instead of manually specifying hyperparameters.
+7. **Missing Evaluation Metrics Utility**
+  - Initially attempted to compute metrics directly inside the evaluation script, which i realised would cause duplication and potential inconsistency across models.  
+  - Realised the need for a **centralised metrics module (`evaluation_metrics.py`)** to ensure every model uses identical metric functions.
 
-- Model diagnostics and retraining occur **between Phase 4 and Phase 5**, so introduce an intermediate **Phase 4.5: Diagnostics and Re-training**.
-- **This approach ensures full pipeline continuity; making the project auditable, reproducible, and scientifically defensible.**
+#### Solutions and Learnings
+1. **Centralising Metric Computation**
+  - Created `evaluation_metrics.py` containing:
+    - `compute_classification_metrics()` for binary tasks.
+    - `compute_regression_metrics()` for continuous targets.
+  - **Benefits**:
+    - Enforces **consistency** across all baselines (NEWS2, LightGBM, TCN).  
+    - Reduces **implementation drift** between scripts.  
+    - Simplifies evaluation reproducibility.
+2. **Improving Understanding of Evaluation Mode**
+  - Learned that `model.eval()` + `torch.no_grad()` are **mandatory for inference**:
+    - `model.eval()` → disables training randomness.  
+    - `torch.no_grad()` → saves GPU memory, avoids unnecessary gradient computation.  
+  - Together ensure **deterministic, efficient inference**.
+3. **Correct Import Handling**
+  - Fixed import path issues by dynamically appending the project’s root path to `sys.path`, enabling modular and portable evaluation scripts.
+4. **Architecture Consistency**
+  - Prevented mismatched layer errors by **loading hyperparameters dynamically** from `config.json`.  
+  - Guarantees model reconstruction is identical to the training configuration.
+5. **Diagnostic Insight — Not Failure**
+  - Recognised that poor test metrics were **not coding errors**, but signals of **dataset limitations**:
+    - **Median Risk (F1 = 0):** due to severe class imbalance; model predicts all negatives.  
+    - **Regression (R² = −1.586):** target too skewed, model predicts near-mean values.
+  - Learned to interpret metrics contextually rather than reactively.
+6. **Action Plan: Phase 4.5**
+  - **Decided to create Phase 4.5: Diagnostics & Retraining, focusing on**:
+    - Verifying dataset integrity and label reconstruction.
+    - Adding **class weighting** or **oversampling** for imbalanced targets.
+    - Applying **Huber or MAE loss** for robust regression.
+    - Re-evaluating threshold calibration post-retraining.
+7. **Mindset Shift**
+  - Learned that **unexpected results are part of the scientific process**, not project failure.  
+  - Established confidence in diagnosing model behaviour systematically rather than by trial-and-error.
 
-
+#### Summary
+- **This phase proved pivotal**: it highlighted the **importance of diagnostic evaluation**, led to the creation of **Phase 4.5 (Diagnostics & Retraining)**, and reinforced that poor metrics are often **signals of dataset limitations**, not project failure.  
+- Through this process, I deepened my understanding of **model evaluation**, **inference behaviour**, and **data–model interactions**.  
+- The decision to introduce Phase 4.5 ensures the pipeline remains **rigorous, auditable, and scientifically defensible**.  
+- Overall, the project continues to progress logically; from **data → model → evaluation → diagnosis → retraining → comparison**; and the day ultimately ended not in failure, but in clarity.
 
 ### Overall Summary
+**Difficult day**
+- This was one of the most technically and emotionally challenging stages of the pipeline.  
+It focused on establishing a **reproducible and standardised evaluation framework** for all models (NEWS2, LightGBM, TCN) and running the **final held-out test evaluation** of the trained TCN.  
+- Although the code executed successfully, the **test metrics (F1, R²)** were unexpectedly poor, initially suggesting a model failure.  
+- After systematic troubleshooting, it became clear that the issues were **data-driven**, caused by **class imbalance and low variance**, not errors in the model or code.  
 **No cause for concern**  
 - The project is **not failed**; these results represent valid diagnostic outputs.  
 - The pipeline, codebase, and evaluation logic are **technically sound and reproducible**.  
@@ -4237,7 +4132,6 @@ Regression — RMSE: 0.135, R²: -1.586
    - Metric improvements after retraining.  
    - Remaining limitations (small dataset, class imbalance, skewed targets). 
 
-   
 ---
 
 
