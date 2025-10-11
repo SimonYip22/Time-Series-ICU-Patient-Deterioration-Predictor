@@ -41,7 +41,7 @@ from prediction_evaluations.evaluation_metrics import (
 )
 
 # --- Import the trained TCN model definition from Phase 4 (from tcn_model.py) ---
-# tcn_models.py efines the architecture: all layers, residual blocks, pooling, and heads.
+# tcn_models.py defines the architecture: all layers, residual blocks, pooling, and heads.
 from ml_models_tcn.tcn_model import TCNModel
 
 # -------------------------------------------------------------
@@ -99,20 +99,28 @@ print(f"[INFO] Using device: {device}")
 x_test = torch.load(TEST_DATA_DIR / "test.pt", map_location=device)
 mask_test = torch.load(TEST_DATA_DIR / "test_mask.pt", map_location=device)
 
-# --- 2. Create the model architecture / structure (tcn_model.py) ---
+# --- 2. Load the hyperparameters into the model architecture / structure ---
+# Model architecture defined in TCNModel imported from tcn_model.py, which needs hyperparameters to instantiate
+# Load architecture hyperparameters from config.json created during training (tcn_training_script.py)
+with open(SRC_DIR / "ml_models_tcn" / "trained_models" / "config.json") as f:
+    config = json.load(f)
+arch = config["model_architecture"]
+
 # Automatically get feature dimension (171 features = input channels in first convolutional layer)
 NUM_FEATURES = x_test.shape[2] 
-# Instantiate the TCN model architecture defined in tcn_model.py 
+
+# Instantiate the TCN model architecture (defined in tcn_model.py) with same hyperparameters as training (tcn_training_script.py)
 # Must match exactly what was used during training, otherwise the weight shapes won't align
 model = TCNModel(
-    num_features=NUM_FEATURES, # Input feature dimension (171 per-timestep features)
-    num_channels=[64, 128, 128], # 3 TCN layers with increasing channels
-    kernel_size=3,            # Kernel size of 3 for temporal convolutions
-    dropout=0.2,            # Regularisation: randomly zero 20% of activations during training
-    head_hidden=64          # Hidden layer size of 64 in the final dense head
+    num_features=NUM_FEATURES,          # Input feature dimension (171 per-timestep features)
+    num_channels=arch["num_channels"],  # 3 TCN layers with increasing channels
+    kernel_size=arch["kernel_size"],    # Kernel size of 3 for temporal convolutions
+    dropout=arch["dropout"],            # Regularisation: randomly zero 20% of activations during training
+    head_hidden=arch["head_hidden"]     # Hidden layer size of 64 in the final dense head
 )
 
 # --- 3. Load the trained model weights (tcn_best.pt) ---
+# Weights are the learned parameters (filters, biases) that the model adjusted during training to minimise loss
 # tcn_best.pt = serialized 'state_dict' containing all trained layer weights + biases (tensors)
 state_dict = torch.load(TRAINED_MODEL_PATH, map_location=device)
 # Copies the saved weights (state_dict) into the model architecture we just instantiated (model)
@@ -240,3 +248,7 @@ print(f"Max Risk — AUC: {metrics_max['roc_auc']:.3f}, F1: {metrics_max['f1']:.
 print(f"Median Risk — AUC: {metrics_median['roc_auc']:.3f}, F1: {metrics_median['f1']:.3f}, Acc: {metrics_median['accuracy']:.3f}")
 print(f"Regression — RMSE: {metrics_reg['rmse']:.3f}, R²: {metrics_reg['r2']:.3f}")
 print("==========================")
+
+print(f"Test IDs used: {sorted(list(test_ids))}")
+print(f"Mean of y_true_reg: {y_true_reg.mean():.4f}, Std: {y_true_reg.std():.4f}")
+print(f"Mean of y_pred_reg: {y_pred_reg.mean():.4f}, Std: {y_pred_reg.std():.4f}")

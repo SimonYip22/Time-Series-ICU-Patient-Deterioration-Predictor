@@ -184,9 +184,10 @@ class TCNModel(nn.Module):
     # -------------------------------------------------------------
     def __init__(
         # ---- Input parameters ----
+        # arbitrary, only to verify that the class works, that forward passes run, and that shapes match
         self,
         num_features: int,                       # number of input variables (features) per timestep
-        num_channels: list = [64, 128, 128],     # number of output channels for each TemporalBlock
+        num_channels: list = [64, 64, 128],     # number of output channels for each TemporalBlock
         kernel_size: int = 3,                    # convolution kernel width (number of timesteps each kernel sees locally)
         dropout: float = 0.2,                    # dropout rate, probability of randomly zeroing an activation during training (regularisation)                     
         head_hidden: Optional[int] = 64,         # optional dense hidden layer size before outputs
