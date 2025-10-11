@@ -4080,6 +4080,7 @@ Regression — RMSE: 0.135, R²: -1.586
   - Guarantees model reconstruction is identical to the training configuration.
 5. **Diagnostic Insight — Not Failure**
   - Recognised that poor test metrics were **not coding errors**, but signals of **dataset limitations**:
+    - **Max Risk (AUC = 0.577, F1 = 0.929):** superficially strong F1, but driven by class imbalance, model likely overpredicts the majority class, inflating F1 despite weak discriminative ability (low AUC).
     - **Median Risk (F1 = 0):** due to severe class imbalance; model predicts all negatives.  
     - **Regression (R² = −1.586):** target too skewed, model predicts near-mean values.
   - Learned to interpret metrics contextually rather than reactively.
@@ -4134,227 +4135,247 @@ It focused on establishing a **reproducible and standardised evaluation framewor
 
 ---
 
+# Phase 4.5: Diagnostics and Re-training
+
+---
+
+## Day 23-24 Notes - Start Phase 4.5: Diagnostics and Re-training (Step 1)
+
+### Goal
+- Establish **Phase 4.5: Diagnostics & Re-training** as a dedicated stage for model verification and evaluation integrity.  
+- Run **diagnostic script** to perform a full audit of classification and regression performance across test and validation sets.  
+- Identify whether poor metrics (low F1, negative R²) were caused by **model limitations or data issues**.  
+- Validate the **evaluation pipeline** for correctness, ensuring predictions and labels are perfectly aligned.  
+- Update and rerun the **evaluation script** to fix any misalignment or ordering inconsistencies (patient ID bug).  
+- Confirm that both **diagnostic and evaluation outputs** now produce identical metrics, establishing a **verified, reproducible baseline** before retraining.  
+- Prepare the groundwork for **Phase 4.5 retraining**, ensuring all future results are reliable, comparable, and scientifically defensible.
+
+### What We Did
+#### Step 1: Full TCN Diagnostic Analysis `tcn_diagnostics.py`
+**Overview**
+- This script (`tcn_diagnostics.py`) performs a **comprehensive diagnostic evaluation** of the Temporal Convolutional Network (TCN) trained in **Phase 4**.  
+- It verifies that the model’s predictions, probability outputs, and regression behaviour are statistically sound across both **test** and **validation** sets.
+- **Note:** The diagnostic results and interpretations below have been updated to reflect the final, validated metrics after fixing the evaluation misalignment (JSON ordering correction). Older outputs showing low ROC-AUC or negative R² have been superseded.
+**Primary Purpose**
+- Confirm the **integrity** and **generalisation** of the trained model.
+- Diagnose whether performance issues are due to **model architecture**, **data imbalance**, or **target skew**.
+- Produce reproducible metrics and plots that form a **baseline for refinement (Phase 4.5 → Phase 5)**.
+**Key Functional Components**
+1. **Data and Model Loading**
+  - Loads model configuration (`config.json`) and trained weights (`tcn_best.pt`).
+  - **Reads processed patient-level data and split indices**:
+    - `train`, `val`, and `test` from `patient_splits.json`.
+  - **Loads padded sequence tensors and masks**:
+    - `test.pt`, `test_mask.pt`, `val.pt`, `val_mask.pt`.
+  - Dynamically imports `TCNModel` from `tcn_model.py` and reconstructs using saved architecture hyperparameters `config.json` and `tcn_best.pt` to guarantee `state_dict`compatibility.
+  - **Recreates targets directly from patient CSV**:
+    - `max_risk_binary = (max_risk > 2)`
+    - `median_risk_binary = (median_risk == 2)`
+    - `pct_time_high` = continuous regression target.
+2. **Prediction Extraction**
+  - Runs inference (`model.eval()` + `torch.no_grad()`) on **test** and **validation** sets.
+  - **Returns**:
+    - `prob_max` = sigmoid(`logit_max`)
+    - `prob_median` = sigmoid(`logit_median`)
+    - `pred_reg` = regression head output (continuous).
+  - Uses identical architecture and weights to ensure metrics match Phase 4 outputs.
+  - Ensures output dimensions, activation, and precision match training architecture.
+3. **Probability Distribution Histograms**
+  - Generates histograms of predicted probabilities for both classification heads (Max and Median Risk).  
+  - **Purpose**:
+    - Detect **collapse** (e.g. all predictions near 0.0 or 1.0).
+    - Visualise **output calibration**.
+  - **Saved to:** `src/prediction_diagnostics/plots/`  
+  - **Outputs:**
+    - `prob_hist_max_test.png`
+    - `prob_hist_max_val.png`
+    - `prob_hist_median_test.png`
+    - `prob_hist_median_val.png`
+4. **Threshold Sweep (Classification Stability)**
+  - Sweeps thresholds from 0.1 → 0.9 and reports F1 + Accuracy for both classification heads.  
+  - **Purpose:**  
+    - Identify class separability.  
+    - Assess calibration and sensitivity to thresholds. 
+  - **Example output**:
+```bash
+Threshold sweep: Max Risk
+  Th=0.50 → F1=0.929, Acc=0.867
+Threshold sweep: Median Risk
+  Th=0.50 → F1=0.000, Acc=0.800
+```
+  - **Interpretation:**  
+    - `Max Risk`: F1 remains stable (0.929) and seperated across thresholds → model strongly separates classes and is well-calibrated.
+    - `Median Risk`: F1 collapses beyond 0.4 → F1 drops to 0 at 0.5+, confirming model predicts almost all 0s due to class imbalance and poor recall.
+5. **Regression Diagnostics**
+  - Uses regression outputs from `tcn_predictions.csv` (ensuring identical values to Phase 4 evaluation).
+  - **Produces scatter and residual plots for `pct_time_high` regression head**:
+    - **Scatter plot**: predicted vs. true (`test_reg_scatter.png` / `val_reg_scatter.png`)
+	  - **Residual plot**: residuals vs. predicted (`test_reg_residuals.png` / `val_reg_residuals.png`) 
+  - **Calculates and prints RMSE and R² for both test and validation sets**
+```bash
+Test Regression → RMSE: 0.0767, R²: 0.1664
+Validation Regression → RMSE: 0.0744, R²: 0.2207
+```
+  - **Interpretation:**
+    - Test R² = 0.166 → model captures moderate signal but leaves most variance unexplained.
+    - Validation R² = 0.22 → similar magnitude → no overfitting detected.
+    - Confirms regression head generalises modestly; further gains need target transformation or feature expansion.
+6. **Data Distribution Diagnostics**
+  - **Prints and plots class balance for both binary targets**:
+    - `dist_test_max_risk_labels.png`
+    - `dist_test_median_risk_labels.png`
+```bash
+Test Max Risk → 1s: 13, 0s: 2 (pos=0.87)
+Test Median Risk → 1s: 3, 0s: 12 (pos=0.20)
+```
+  - **Plots distributions of true vs predicted regression targets**:
+    - `dist_test_pct_time_high_true.png`
+    - `dist_test_pct_time_high_pred.png`
+  - **Confirms**:
+    - **Median Risk imbalance (20% positives)** → explains zero recall and F1 collapse.
+    - Regression target skewed → compressed range (causing low variance and poor R²)
+7. **Training Label Distribution**
+  - Prints summarised training-level distributions for `max_risk`, `median_risk`, and `pct_time_high`.  
+  - Confirms **highly skewed regression target** and **uneven binary ratios across tasks**, explaining imbalanced learning behaviour.
+8. **Summary Metrics**
+  - **Computes**:
+    - F1 and ROC-AUC for both classification heads (threshold = 0.5).  
+    - RMSE and R² for regression (test + validation). 
+  - **Saves summary JSON**: `/results/tcn_diagnostics_summary.json`.   
+  - **Prints terminal summary:**
+```bash
+=== SUMMARY ===
+Max Risk → F1 (0.5 threshold)=0.929, ROC-AUC=0.923
+Median Risk → F1 (0.5 threshold)=0.000, ROC-AUC=0.778
+Test Regression → RMSE=0.0767, R²=0.1664
+Validation Regression → RMSE=0.0744, R²=0.2207
+```
+  - Notes that low F1 or negative R² implies data imbalance or target noise, not coding error.
+  - **Interpretation**:
+    -	**Max Risk**: Excellent separability; reliable head.
+    -	**Median Risk**: Imbalanced → needs class weighting.
+    -	**Regression**: Moderate positive R² → partial learning success, not overfit.
+
+**Summary of Purpose**
+| Function | Purpose |
+|-----------|----------|
+| `get_predictions()` | Inference wrapper for consistent TCN outputs |
+| `plot_hist()` | Detect probability collapse or saturation |
+| `threshold_sweep()` | Visualise threshold sensitivity (F1/Accuracy) |
+| `regression_diagnostics()` | Quantify regression accuracy and bias |
+| **Final Summary Block** | Consolidates all metrics and saves JSON summary |
+
+**Interpretation of Results**
+| Task | Metric | Observation | Interpretation |
+|------|---------|--------------|----------------|
+| **Max Risk Classification** | F1 = 0.929, ROC-AUC = 0.923 | Stable across thresholds | Strong separability; head functioning correctly |
+| **Median Risk Classification** | F1 = 0.000, ROC-AUC = 0.778 | Predicts almost all 0s | Class imbalance and poor calibration; needs loss reweighting |
+| **Regression (pct_time_high)** | R² = 0.166 (test), 0.2207 (val) | Positive R² values | Captures moderate signal; still underfits; skewed target limits variance explained |
+
+**Diagnostic Conclusions:**
+- **Max Risk head:** functioning correctly (stable calibration and high seperability), robust and interpretable; no corrective action needed.  
+- **Median Risk head:** failing due to severe imbalance → retraining with class weighting required.  
+- **Regression head:** improving but limited by target skew → apply target transformation (e.g., log/sqrt) or Huber/MAE loss.  
+- Confirms **data-driven performance limitations**, not architectural errors.
+
+**Why Include Validation Diagnostics**
+- Validation evaluation verifies whether the same weaknesses persist beyond the test set.
+-	Confirms systematic imbalance (median risk) and consistent regression behaviour (R² ≈ 0.2).
+-	Shows model generalises stably but remains data-limited, not code-limited.
+
+**In summary**:
+- This diagnostic phase validates the original pipeline, identifies data-driven weaknesses, and forms a reproducible baseline for targeted model improvement
+- It confirms systemic issues are dataset-derived, not implementation errors.
+- Directly informs targeted reweighting, rescaling, and retraining in Phase 4.5.
+- Hallmark of rigorous, research-grade machine learning work.
 
 
+#### Step 2: Fix Evaluation script
+**Purpose**
+- Initially, **F1 scores were identical** across scripts, but **ROC-AUC values differed**.  
+- This indicated that the problem was **not with model predictions or probabilities**, but with **how the test labels (`y_test`) were constructed and aligned**.  
+- The main issue was caused by **loss of patient ordering** in the evaluation script.  
+```python
+test_ids = set(splits["test"])
+test_df = features_df[features_df["subject_id"].isin(test_ids)].reset_index(drop=True)
+```
+- **The use of `set()` randomised the order of patient IDs, breaking the one-to-one correspondence between**:
+	- The predicted probabilities (`prob_max, prob_median`), and
+	- The ground-truth labels (`y_true_max, y_true_median`).
+	-	As a result, ROC-AUC values were incorrect, since the ranking relationship between predictions and true labels was disrupted.
+**Updated Code**
+```python
+test_ids = splits["test"]  
+test_df = features_df.set_index("subject_id").loc[test_ids].reset_index()
+```
+- **Explanation**:
+	-	.loc[test_ids] preserves the exact patient order from the JSON file (patient_splits.json).
+	-	The CSV (news2_features_patient.csv) may list patients in a different order, so this step guarantees that predictions and ground truths align perfectly.
+	-	This directly fixes the ROC-AUC inconsistency across both evaluation and diagnostic scripts.
+**Updated Terminal Output**
+```bash
+[INFO] Using device: cpu
+[INFO] Loaded TCN model and weights successfully
+[INFO] Running inference on test set...
+[INFO] Inference complete in 0.03 seconds
+[INFO] Saved metrics → results/tcn_metrics.json
+[INFO] Saved predictions → results/tcn_predictions.csv
 
-# Day 23 Notes - Start Phase 4.5: Diagnostics and Re-training
-
-
-Option B: Retrain both models with improved techniques
-	•	Apply consistent fixes to both models:
-	•	Class weighting / oversampling for median risk
-	•	Regression target transformation for pct_time_high
-	•	Then compare:
-	•	TCN vs LightGBM under same improved training setup
-	•	✅ Fair because both models benefit from the same improvements, so metrics reflect model capacity, not data artifacts.
-
-  	•	Document clearly:
-	•	Why the original models failed
-	•	What preprocessing or training changes were applied
-	•	How both models respond to these changes
-	•	This is actually a good narrative: it shows awareness of data limitations and responsible model evaluation.
-
-Accept that retraining is necessary
-	•	Both models (TCN and LightGBM) need to handle the imbalanced/zero-inflated targets to produce meaningful metrics.
-	•	This isn’t “starting over” — it’s iterative refinement, which is expected in real-world ML pipelines.
-	•	Retraining lets you:
-	•	Generate valid metrics for all tasks.
-	•	Produce plots, threshold tuning, and regression analyses that actually make sense.
-	•	Show clear, reproducible methodology in your write-up.
-
-⸻
-
-2️⃣ Retrain both models consistently
-	•	Apply the same fixes/preprocessing to both models:
-	•	Median Risk: class weighting, oversampling, or SMOTE-style balancing.
-	•	pct_time_high: log-transform, scaling, or feature augmentation to reduce skew.
-	•	Use your existing pipeline, just modify:
-	•	Training loops or parameters.
-	•	Data preprocessing step (e.g., compute weights or transform targets).
-	•	Then evaluate both on the same test set, producing a fair comparison.
-
-⸻
-
-3️⃣ Why this is best for a portfolio
-	•	Shows deep understanding of ML pitfalls (imbalanced classes, skewed regression targets).
-	•	Demonstrates ability to debug and improve models, not just “train once and report results.”
-	•	Produces usable metrics for all tasks, which allows you to:
-	•	Compare TCN vs LightGBM across all outputs.
-	•	Showcase your TCN skills, PyTorch pipeline, multi-task learning, etc.
-	•	Keeps your project credible for recruiters.
-
-⸻
-
-4️⃣ How to frame it in your write-up
-	•	Explicitly note that:
-	•	Original models failed on Median Risk & Regression due to data skew/imbalance.
-	•	You applied consistent improvements to both pipelines.
-	•	Present the final metrics for all outputs.
-	•	Recruiters will see thoughtful problem-solving, not a broken model.
-
-✅ TL;DR
-	•	Don’t stick with Option A — leaving Median Risk and Regression broken is damaging.
-	•	Retrain both models consistently with preprocessing/fixes.
-	•	Evaluate and report metrics fairly.
-	•	Use this as a portfolio highlight: demonstrates real-world ML troubleshooting, debugging, and reproducible pipeline skills.
-
-
-
-⚙️ SECTION 3 — Why We Needed the Diagnostics Script
-
-That entire diagnostic script was built precisely to:
-	•	Reveal hidden failure modes (like your median F1=0 problem).
-	•	Quantify threshold sensitivity (your F1 improved at 0.3).
-	•	Visualize regression residuals and label imbalance.
-	•	Cross-check validation vs test consistency.
-
-Each incremental update we made was to rule out possibilities — e.g. “is it a test-set issue?”, “is it a model-wide failure?”, “are predictions constant?”, “are labels imbalanced?”, etc.
-
-So the diagnostics wasn’t just debugging — it’s scientific validation of the model.
-And it led us to exactly the right corrective actions (class weighting and regression transform).
+=== Final Test Metrics ===
+Max Risk — AUC: 0.923, F1: 0.929, Acc: 0.867
+Median Risk — AUC: 0.778, F1: 0.000, Acc: 0.800
+Regression — RMSE: 0.077, R²: 0.166
+==========================
+Test IDs used: [10002428, 10005909, 10007058, 10015931, 10020740, 10021312, 10021666, 10021938, 10022281, 10023771, 10025612, 10027445, 10037928, 10038999, 10039831]
+Mean of y_true_reg: 0.1199, Std: 0.0840
+Mean of y_pred_reg: 0.0990, Std: 0.1132
+```
+**What Changed**
+- **Max Risk ROC-AUC:** increased from **0.577 → 0.923** because the test labels are now correctly aligned with the patient split JSON.  
+- **Median Risk ROC-AUC:** improved slightly from **0.722 → 0.778**, confirming consistent label alignment.  
+- **Regression metrics:** now match the diagnostic script exactly (**RMSE = 0.077**, **R² = 0.166**) after both scripts were re-ran.
+**Why This Is Correct**
+- Both scripts (`evaluate_tcn_testset.py` and `tcn_diagnostics.py`) now use the **ordered JSON split** to define patient IDs.  
+- **Predictions and ground-truth labels** are fully aligned, ensuring **reproducible metrics** across runs.  
+- The **Max Risk head** is now correctly evaluated; previous underestimation was due to **misaligned patient ordering**, not overfitting.
 
 
 ### TCN Diagnostics and Model Validation `tcn_diagnostics.py`
-#### Overview
-- This script (`tcn_diagnostics.py`) performs a **comprehensive post-training diagnostic evaluation** of the Temporal Convolutional Network (TCN) model developed in **Phase 4**.  
-- Its purpose is to verify that the model’s outputs are valid, interpretable, and statistically sound **before proceeding to final evaluation and comparison in Phase 5**.
+**Overview**
+- This script (`tcn_diagnostics.py`) performs a **comprehensive diagnostic evaluation** of the trained Temporal Convolutional Network (TCN) from **Phase 4**.  
+- Its purpose is to **validate model behaviour, interpretability, and consistency** before progressing to final evaluation and baseline comparison in Phase 5.
 - **By running this diagnostic pipeline, we ensure that**:
   - Predictions are not constant (e.g., all 0s or all 1s).
   - Classification heads (`max_risk`, `median_risk`) produce meaningful probability distributions.
-  - Regression head (`pct_time_high`) produces continuous, variable predictions.
-  - F1, RMSE, and R² metrics align with expected model behaviour.
-  - Validation and test sets perform consistently.
-  - Diagnostic plots are reproducible and versioned.
+  - Regression head (`pct_time_high`) outputs continuous and variable predictions.
+  - F1, RMSE, and R² values align with expected model behaviour.
+  - Validation and test sets show consistent patterns.
+  - Diagnostic plots and summaries are reproducible and versioned for auditability.
+**Why This Script Exists**
+- **After Phase 4 training, the TCN showed underperformance in all 3 heads**:
+  - **Max Risk**: F1 = 0.929, AUC = 0.577 → possible overfitting
+  - **Median Risk:** AUC = 0.722, F1 = 0.000 → signal present but failed thresholding, model predicted almost all negatives.
+  - **Regression:** RMSE: 0.135, R² = −1.586 → model predictions collapsed toward mean values (underfitting).
+- **To determine if these failures were due to data distribution or implementation, this diagnostic script**:
+  1. Reloads the model and identical preprocessed tensors.  
+  2. Recreates binary and continuous labels directly from `news2_features_patient.csv`.  
+  3. Reproduces evaluation metrics using stored predictions (`tcn_predictions.csv`).  
+  4. Extends analysis to **validation data**, confirming whether issues generalise beyond the test set.
+- **Therefore systematically diagnosing**:
+  1. Whether each head learned any real signal.  
+  2. Whether probability distributions are saturated or skewed.  
+  3. Whether regression outputs correlate with ground truth.  
+  4. Whether imbalance or label noise explains poor test metrics.
+- Acts as a **verification checkpoint** before retraining and enables evidence-based correction in **Phase 4.5**.
 
-#### Why This Script Exists
-- After initial training, the TCN appeared to underperform on certain tasks (**median risk classification** and **regression stability**):
-  - Median Risk AUC = 0.722, F1 = 0.000 → some signal present, but poor thresholding.
-  - Regression R² = −1.586 → model not generalising at all on test data.
-- **This script was introduced to systematically diagnose**:
-  1. Whether the model learned anything meaningful per target.  
-  2. Whether probability outputs are skewed, saturated, or near-constant.  
-  3. Whether regression predictions correlate with ground truth.  
-  4. Whether class imbalance or label issues exist.
-- It functions as a **debugging and verification checkpoint** before refining the model or comparing it against baselines (LightGBM, NEWS2).
 
-#### Key Functional Components
-1. **Data and Model Loading**
-- Loads the trained model weights (`tcn_best.pt`) and configuration from `config.json`.  
-- Reconstructs the test and validation tensors (`x_test`, `mask_test`, `x_val`, `mask_val`).  
-- Recreates true labels (`y_max`, `y_median`, `y_reg`) from the patient-level CSV using consistent rules:
-  - `max_risk_binary`: high risk = 1, not high risk = 0
-  - `median_risk_binary`: medium risk = 1, low risk = 0
-  - `pct_time_high`: continuous regression target.
-2. **Prediction Extraction**
-- Runs inference using the TCN model (in `eval()` mode, CPU-safe).  
-- Computes:
-  - `prob_max`: sigmoid-activated probabilities from classification head 1.  
-  - `prob_median`: sigmoid-activated probabilities from classification head 2.  
-  - `pred_reg`: continuous predictions from the regression head.
-3. **Probability Distribution Histograms**
-- Histograms of predicted probabilities (`plot_prob_histogram`) are generated for both classification heads.  
-- **Purpose**: detect collapsed outputs (e.g., all 0.0 or all 1.0 probabilities).  
-- **Saved in**: `src/prediction_evaluations/plots_diagnostics/`
-- **Example filenames**:
-  - `prob_hist_max_test.png`
-  - `prob_hist_median_val.png`
-4. **Threshold Sweep**
-- Sweeps through thresholds 0.1 → 0.9 to show how **F1, precision, recall, and accuracy** change.  
-- **This provides insight into**:
-  - Class separability.  
-  - Whether the model has meaningful probabilistic calibration.  
-  - Whether performance sharply collapses beyond certain thresholds.  
-- **Example snippet from output**:
-```bash
-Threshold 0.50: F1=0.929, Acc=0.867, Prec=0.867, Rec=1.000
-```
-- **Interpretation**:
-  - The **Max Risk** head performs strongly and is stable across thresholds (suggesting well-separated probability outputs).
-  - The **Median Risk** head collapses (F1 ≈ 0.0 at threshold 0.5), meaning that it failed to learn a meaningful signal or is affected by class imbalance.
-5. **Regression Diagnostics**
-- Produces two key plots for the `pct_time_high` regression head:
-  - **Scatter Plot:** predicted vs. true values.
-  - **Residual Plot:** residuals vs. predictions.
-- Also prints **RMSE** and **R²** to quantify error and explanatory power.
-- **Example**:
-```bash
-Test: pct_time_high RMSE: 0.077, R²: 0.166
-```
-- **Interpretation**:
-  - RMSE ≈ 0.07 suggests moderate absolute error.
-  - R² = 0.166 indicates weak but non-random correlation—some learning signal present, but incomplete.
-6. **Validation Diagnostics**
-- Mirrors the above workflow for the validation set to check for overfitting or data leakage.  
-- Consistent patterns across validation and test sets confirm generalisation.
-7. **Training Label Distribution**
-- Prints proportions of binary and continuous labels.  
-- Ensures there isn’t extreme imbalance causing instability in classification heads.
-- **Example**:
-max_risk_binary:
-0.0 → 0.6
-1.0 → 0.4
-- **Interpretation**: Balanced enough for binary classification, so zero-F1 on median head likely model-related, not label-related.
-8. **Summary Metrics**
-- **Final diagnostic metrics are printed**:
-  - F1 for both classification heads (at 0.5 threshold).  
-  - R² for regression.
-- Low or zero values flag targets needing retraining or reweighting.
-```bash
-=== SUMMARY ===
-Max Risk F1 (0.5 threshold): 0.929
-Median Risk F1 (0.5 threshold): 0.000
-Regression R²: 0.166
-Note: Median Risk F1=0 or Regression R²<0 indicates further investigation needed.
-```
-
-#### Saved Diagnostic Plots
-**All plots are saved under**: `src/prediction_evaluations/plots_diagnostics/`
-| Plot Type | Example Filename | Description |
-|------------|------------------|--------------|
-| Max Risk Probability Histogram | `prob_hist_max_test.png` | Distribution of predicted probabilities |
-| Median Risk Probability Histogram | `prob_hist_median_test.png` | Detects skew or saturation |
-| Regression Scatter | `test_reg_scatter.png` | Predicted vs. true continuous targets |
-| Regression Residuals | `test_reg_residuals.png` | Bias and variance pattern in regression |
-| Validation counterparts | `*_val_*.png` | Same diagnostics on validation set |
-
-#### Interpretation of Current Results
-| Task | Metric | Observation | Interpretation |
-|------|---------|--------------|----------------|
-| **Max Risk Classification** | F1 ≈ 0.93 | High, stable across thresholds | Model learned clear distinction between high vs non-high risk |
-| **Median Risk Classification** | F1 ≈ 0.00 | Collapsed | Model failed to separate classes; likely label imbalance or weak signal |
-| **Regression (pct_time_high)** | R² ≈ 0.16 | Weak positive correlation | Model learned some relationship, but variance unexplained |
-**Diagnostic Conclusions:**
-- **Max Risk head:** robust and interpretable.  
-- **Median Risk head:** underfitting; requires label rebalancing or loss weighting.  
-- **Regression head:** may need target scaling or loss weighting adjustment.  
-**These findings justify Phase 4.5: TCN Refinement, introducing**:
-1. Reweighted multi-task loss (emphasising weak heads).
-2. Optional target standardisation for regression.
-3. New evaluation paths to confirm improvement.
-
-#### Why Save Visualisations
-**All plots are saved to preserve model auditability and reproducibility**:
-- Enables visual comparison before/after refinement.
-- Makes it easy to verify that improvements are genuine and not due to random noise.
-- Can be included as figures in the final report or GitHub README for clarity.
-
-#### Summary of Purpose
-| Function | Goal |
-|-----------|------|
-| `get_predictions()` | Consistent inference routine for TCN outputs |
-| `plot_prob_histogram()` | Detect prediction collapse or imbalance |
-| `threshold_sweep()` | Evaluate stability across decision thresholds |
-| `regression_diagnostics()` | Quantify regression accuracy and residual bias |
-| **Final Summary Block** | Provide interpretable metrics + guidance for refinement |
-
-#### Output Directory Structure
+#### Diagnostic Output Directory Structure
 ```text
 src/
-└── prediction_evaluations/
+└── prediction_diagnostics/
     ├── results/
-    │   ├── tcn_predictions.csv
-    │   └── tcn_metrics.json
-    └── plots_diagnostics/
+    │   └── tcn_diagnostics_summary.json
+    └── plots/
         ├── prob_hist_max_test.png
         ├── prob_hist_median_test.png
         ├── test_reg_scatter.png
@@ -4362,22 +4383,42 @@ src/
         ├── prob_hist_max_val.png
         ├── prob_hist_median_val.png
         ├── val_reg_scatter.png
-        └── val_reg_residuals.png
+        ├── val_reg_residuals.png
+        ├── dist_test_max_risk_labels.png
+        ├── dist_test_median_risk_labels.png
+        ├── dist_test_pct_time_high_true.png
+        └── dist_test_pct_time_high_pred.png
 ```
-#### Next Step: TCN Refinement Plan
-**The diagnostics demonstrate a partially functional model, we will**:
-1. Duplicate the training script → `tcn_training_script_refined.py`
-2. Adjust loss weights and regression normalisation.
-3. Retrain and compare against this diagnostic baseline using `evaluate_tcn_refined.py`
-4. **Confirm improvement in**:
-  - Median Risk F1
-  - Regression R²
-  - Visual calibration of probability histograms.
-**In short:**  
-This diagnostic phase validates our TCN pipeline, identifies weaknesses per task, and provides a concrete evidence base for targeted model refinement → a key hallmark of reproducible, research-grade machine learning work.
 
 
-### Validation Terminal Output
+### Saved Diagnostic Plots
+**All plots saved under `prediction_diagnostics/plots/`**
+- 8 from test/validation diagnostics (4x probabilities, 2x scatter, 2x residuals)
+- 4 from label distribution (2x) and regression comparison visualisations (2x)
+
+| Plot Type | Example Filename | Description |
+|------------|------------------|--------------|
+| **Max Risk Probability Histogram (Test)** | `prob_hist_max_test.png` | Distribution of Max Risk predicted probabilities on the test set — checks for saturation or collapse |
+| **Median Risk Probability Histogram (Test)** | `prob_hist_median_test.png` | Detects skew or collapse in Median Risk predictions on the test set |
+| **Max Risk Probability Histogram (Validation)** | `prob_hist_max_val.png` | Distribution of Max Risk probabilities on the validation set — confirms generalisation consistency |
+| **Median Risk Probability Histogram (Validation)** | `prob_hist_median_val.png` | Detects class imbalance or saturation in validation predictions |
+| **Regression Scatter (Test)** | `test_reg_scatter.png` | Predicted vs true `pct_time_high` values — assesses correlation strength |
+| **Regression Residuals (Test)** | `test_reg_residuals.png` | Residuals vs predictions — reveals bias, variance, and underfitting patterns |
+| **Regression Scatter (Validation)** | `val_reg_scatter.png` | Predicted vs true values on validation data — checks for overfitting vs generalisation |
+| **Regression Residuals (Validation)** | `val_reg_residuals.png` | Residual analysis on validation data — consistency check for regression head |
+| **Label Distribution — Max Risk (Test)** | `dist_test_max_risk_labels.png` | Class distribution for Max Risk binary labels |
+| **Label Distribution — Median Risk (Test)** | `dist_test_median_risk_labels.png` | Class distribution for Median Risk binary labels |
+| **True Regression Distribution (Test)** | `dist_test_pct_time_high_true.png` | True distribution of regression targets |
+| **Predicted Regression Distribution (Test)** | `dist_test_pct_time_high_pred.png` | Predicted regression target distribution |
+
+**Why Save Visualisations**
+- Verify model behaviour before/after retraining.
+- Enables visual comparison before/after retraining.  
+- Documents model behaviour for transparency and auditability.  
+- Visual proof of dataset skew, collapse, or calibration drift.
+- Supports inclusion in technical reports or repository README.  
+
+### Diagnostic Terminal Output
 ```bash
 Model architecture from training config: {'num_channels': [64, 64, 128], 'head_hidden': 64, 'kernel_size': 3, 'dropout': 0.2}
 
@@ -4410,7 +4451,7 @@ Threshold sweep: Median Risk
   Th=0.70 → F1=0.000, Acc=0.800
   Th=0.80 → F1=0.000, Acc=0.800
   Th=0.90 → F1=0.000, Acc=0.800
-Test Regression (Evaluation CSV) → RMSE: 0.1351, R²: -1.5859
+Test Regression (Evaluation CSV) → RMSE: 0.0767, R²: 0.1664
 
 === VALIDATION SET DIAGNOSTICS ===
 [SAVED] prob_hist_max_val.png
@@ -4464,7 +4505,7 @@ Name: pct_time_high, dtype: float64
 === SUMMARY ===
 Max Risk → F1 (0.5 threshold)=0.929, ROC-AUC=0.923
 Median Risk → F1 (0.5 threshold)=0.000, ROC-AUC=0.778
-Test Regression → RMSE=0.1351, R²=-1.5859
+Test Regression → RMSE=0.0767, R²=0.1664
 Validation Regression → RMSE=0.0744, R²=0.2207
 
 Note: Median Risk F1=0 or Regression R²<0 suggests class imbalance or label noise.
@@ -4473,138 +4514,180 @@ All plots saved to: /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/
 Diagnostics completed successfully ✅
 ```
 
+### Diagnostics vs Evaluation Metric Output Misalignment
+**Patient ID Misalignment**
+- Initial evaluation (`evaluate_tcn_testset.py`) used CSV filtering without enforcing JSON split order.  
+- ROC-AUC metrics were sensitive to this ordering, causing artificially low Max Risk AUC (0.577 → 0.923 after fix).  
+- Threshold-based metrics (F1, Accuracy) were less affected.
+
+**Original Metric Comparison: Evaluation vs Diagnostics Scripts**
+| Task | Metric | `evaluate_tcn_testset.py` | `tcn_diagnostics.py` | Notes |
+|------|--------|---------------------------|---------------------|-------|
+| **Max Risk Classification** | F1 (0.5) | 0.929 | 0.929 | F1 consistent; threshold-independent ROC-AUC differs due to patient ID misalignment in CSV |
+| | ROC-AUC | 0.577 | 0.923 | Diagnostics script uses JSON split for ordering → correct ranking |
+| **Median Risk Classification** | F1 (0.5) | 0.000 | 0.000 | Consistent; class imbalance issue persists |
+| | ROC-AUC | 0.722 | 0.778 | Slight difference due to ordering; corrected by JSON split |
+| **Regression (pct_time_high)** | RMSE | 0.135 | 0.1351 | Consistent |
+| | R² | -1.586 | -1.5859 | Consistent; negative R² indicates underfitting on test set |
+| **Validation Regression** | RMSE | N/A | 0.0744 | Diagnostic script only |
+| | R² | N/A | 0.2207 | Partial signal on validation |
+
+**Key Steps**
+1. **Corrected Evaluation Pipeline**:  
+  - Update `evaluate_tcn_testset.py` to always use JSON split ordering. 
+  - **Rebuild test targets using the JSON split**:
+    ```python
+    test_ids = splits["test"]  
+    test_df = features_df.set_index("subject_id").loc[test_ids].reset_index()
+    ```
+  - Ensures predicted probabilities align correctly with ground truth labels.  
+  - ROC-AUC should now matche `tcn_diagnostics.py`.
+2. **Re-run `tcn_diagnostics.py` and `evaluate_tcn_testset.py`**
+  - Re-run both script to get updated metrics. 
+  - The diagnostic script reads `tcn_predictions.csv` from `evaluate_tcn_testset.py`.
+	-	If that CSV was generated before the evaluation script was fixed, it still contains misaligned test labels.
+  - Re-running the diagnostic script after fixing and re-running the evaluation script will output the correct RMSE and R².
+3. **Documented Final metrics**
+  - Terminal outputs for both scripts are documented for auditibility.
+  - All metric outputs now match. 
+
+**Updated Final Metrics Comparison**
+1. **Interpretation of Metrics Post-Fix**
+  - **Max Risk:** F1 stable at 0.929, ROC-AUC = 0.923 → no overfitting.  
+  - **Median Risk:** F1 = 0, ROC-AUC ~0.778 → confirms class imbalance problem; model underfits.  
+  - **Regression (pct_time_high):** R² = 0.166, RMSE = 0.077 → moderate accuracy, captures some signal but leaves most variance unexplained.
+2. **Data-Driven Insights**
+  - Poor Median Risk performance is **dataset-limited**, not a code or architecture issue.  
+  - Regression underfitting is influenced by **skewed targets and low variance**.  
+  - Max Risk can be considered **robust and reliable**; no corrective action required.
+
+**Updated Final Metrics Comparison: Diagnostics vs. Evaluation Script**
+| Task | Script | F1 / RMSE | ROC-AUC / R² | Accuracy |
+|------|--------|------------|---------------|----------|
+| **Max Risk** | Diagnostics | 0.929 | 0.923 | 0.867 |
+|              | Evaluation  | 0.929 | 0.923 | 0.867 |
+| **Median Risk** | Diagnostics | 0.000 | 0.778 | 0.800 |
+|                 | Evaluation  | 0.000 | 0.778 | 0.800 |
+| **Regression (pct_time_high)** | Diagnostics | 0.077 (RMSE) | 0.166 (R²) | - |
+|                               | Evaluation  | 0.077 (RMSE) | 0.166 (R²) | - |
+**Note:** Post-fix metrics are now consistent between the diagnostics and evaluation scripts, confirming alignment and reproducibility.
+
+**Lessons Learned**
+- Always use **JSON split** for selecting patients to maintain ranking-sensitive metrics like ROC-AUC.  
+- CSV row order alone is insufficient for reproducible evaluation; may lead to misleading conclusions.  
+- **Discrepancies between evaluation scripts can occur due to**:
+  - Patient misalignment
+  - Re-saving or re-training models
+  - Different preprocessing conventions
+- **Phase 4.5 diagnostics confirmed**:
+  - TCN pipeline is functional
+  - Weak heads (Median Risk, Regression) require retraining with class weighting or loss adjustments
+  - Max Risk is robust and interpretable
+- **Key takeaway**: Data-driven limitations must be distinguished from code errors to avoid unnecessary rework.
+
+
+### Reflection
+#### Challenges
+- **Inconsistent AUC values:** The evaluation script (`evaluate_tcn_testset.py`) produced lower ROC-AUC scores than the diagnostic script, even though both used the same model checkpoint (`tcn_best.pt`).
+- **Hidden data ordering bug:** The test set in the evaluation script was filtered using `.isin()`, which did **not preserve JSON split order**, causing predicted probabilities to mismatch ground-truth labels.
+- **Regression R² mismatch:** The diagnostics script initially reported a different R² due to manual computation and minor numeric instability on the small test set.
+- The project’s directory structure would become cluttered if new Phase 4.5 scripts and outputs would be mixed in both Phase 4 (`src/ml_models_tcn/`) and Phase 5 (`src/prediction_evaluations/`) folders, making traceability difficult.
+#### Solutions & Learnings
+1. **Preserve patient order using `.loc[test_ids]`:**
+  ```python
+  test_df = features_df.set_index("subject_id").loc[test_ids].reset_index()
+  ```
+  - Ensures perfect alignment between y_true and y_pred.
+	-	Fixes ROC-AUC inconsistencies without altering model weights or predictions.
+2. **Diagnostics script as validation tool**:
+	-	Built to identify subtle issues in dataset handling, metric computation, and label alignment.
+	-	Confirmed that F1 and Accuracy were unaffected, while ROC-AUC was highly sensitive to ordering errors.
+	-	Reinforced importance of consistent dataset splits across all scripts.
+3. **Regression R² harmonisation**:
+	-	Adopted the evaluation script’s computation method as the standard.
+	-	Imported predictions from `tcn_predictions.csv` for diagnostics to ensure reproducibility.
+4. **New Folder**
+  - Decided to create a **dedicated Phase 4.5 folder (`src/prediction_diagnostics/`)**, separating all diagnostic scripts, outputs, and validation files from earlier phases.  
+  - This new structure ensures that future retraining can be developed cleanly, without confusion from outdated models or metrics.
+#### Key Learnings
+- **Data alignment is critical**: 
+  - Even minor ordering inconsistencies can invalidate ranking-based metrics such as ROC-AUC. 
+  -	Always reconstruct y_test using the original JSON split, CSV ordering cannot be trusted for reproducible results.
+-	**ROC-AUC is order-sensitive**: Even a perfect model appears random if ground-truth labels are shuffled.
+-	**F1 and accuracy can mask ordering errors**: They depend on thresholding, not ranking.
+- **Diagnostics scripts are indispensable**: They serve as scientific verification tools that reveal silent pipeline errors that standard evaluation may miss.
+- **Good project structure prevents future confusion**: By isolating diagnostics and re-training into a new folder, each phase now has a clear scope, making debugging, replication, and documentation straightforward.  
+- This structural change improves the **clarity, reproducibility, and maintainability** of the entire ML pipeline, aligning with best practices in real-world engineering workflows.
+
+
+### Overall Summary 
+**Overview**
+- Today marked the foundation of **Phase 4.5: Diagnostics & Re-training**, a pivotal milestone in the project’s ML lifecycle.  
+- This session confirmed that the **model architecture and weights were sound, the fault lay within the evaluation pipeline**, specifically in data alignment and ordering.  
+- By enforcing consistent dataset handling, metric computation, and validation across scripts, today’s work **stabilised the project’s foundation**, ensuring that all reported metrics now reflect genuine model performance.  
+- This established a **verified, reproducible baseline** for retraining both **TCN** and **LightGBM** models under improved preprocessing (class weighting and regression target transformation), while reinforcing the **importance of data alignment, metric integrity, and reproducibility** as core principles of reliable ML engineering and deployment.  
+**Key Technical Outcomes**
+1. **Technical Depth**
+  - Identified a **non-obvious evaluation-ordering bug** that caused ROC-AUC inconsistencies while F1 and Accuracy remained stable.  
+  - Diagnosed the issue at the intersection of **data reconstruction and metric computation**, ensuring predictions and labels were perfectly matched.  
+  - Implemented an **ordering-preserving fix** using `.loc[test_ids]` to align patient IDs exactly with the JSON split sequence.
+2. **Scientific Rigor**
+  - Conducted **independent validation** through diagnostic scripts to confirm that evaluation metrics reflect genuine model behaviour.  
+  - Ensured **methodological consistency** across all scripts, every model now rebuilds `y_test` using the same source of truth (`patient_splits.json`).  
+  - Adopted reproducible debugging practices, re-running both evaluation and diagnostic scripts to verify identical outputs.
+3. **Engineering Reliability**
+  - Unified the **evaluation** and **diagnostics** frameworks, producing consistent metrics across both processes.  
+  - Strengthened pipeline robustness — now every component yields verifiable and reproducible results.  
+  - Laid the groundwork for fair model comparison and retraining in later phases.  
+**Impact on the Project**
+- **Verified Baseline:** Established the definitive, reproducible metrics for the TCN before retraining.  
+- **Metric Integrity:** Eliminated discrepancies caused by misalignment, ensuring AUC/F1 values are trustworthy.  
+- **Pipeline Credibility:** Reinforced the core principle that *model reliability depends on data integrity and evaluation validity*.  
+- **Future Readiness:** Created a clean foundation for fair retraining of both TCN and LightGBM under improved preprocessing.
+**Key Lessons**
+- **Order matters:** Misaligned patient IDs silently invalidate ranking-based metrics like ROC-AUC.  
+- **Separate diagnostics from evaluation:** Enables independent verification and faster debugging and ensures unbiased results.  
+- **Trace all metrics to dataset lineage:** Reproducibility begins with deterministic, consistent data handling.  
+- **True ML engineering:** Extends beyond model architecture and performance, it’s about maintaining data, metric, and evaluation integrity end-to-end. It safeguards the entire evaluation ecosystem.
+
+
+### Portfolio Framing 
+**Overview**
+- Through systematic debugging and scientific validation, this session transformed the project from **uncertain evaluation** to **verified reliability**.  
+- **The fix unified the diagnostic and evaluation pipelines, confirming that**: the model was sound, the data alignment was not.
+- **This reinforced one of the most crucial lessons in applied machine learning**: a trustworthy model begins with a trustworthy evaluation pipeline.
+**Why This Matters in ML Pipelines**
+1. **Reproducibility is Foundational**  
+  - Without consistent data alignment, even well-performing models cannot be trusted.  
+  - Real-world ML pipelines must yield **identical results under identical conditions**, which depends on deterministic dataset handling.  
+2. **Metric Validity Underpins Trust**  
+  - Misaligned ground truths can silently produce **misleading metrics**, creating the illusion of poor or inflated model performance.  
+  - This debugging phase ensured all metrics genuinely reflect model capacity and dataset characteristics.  
+3. **Diagnostics as Scientific Tools**  
+  - The diagnostics script functioned as an independent **model integrity testing framework**, revealing hidden issues invisible during standard evaluation.  
+  - This mirrors **industry-grade ML validation practices**, where evaluation reproducibility is just as critical as model accuracy.  
+**Portfolio Narrative**
+- **“This phase was pivotal in transitioning from experimental modelling to reliable ML engineering.”**  
+- By diagnosing and fixing a subtle **evaluation-ordering bug**, I ensured that all future retraining and model comparisons are grounded in **reproducible, validated metrics**.  
+- This work demonstrates a deep understanding of **data integrity, metric reproducibility, and scientific validation** — essential competencies in real-world ML engineering.  
+- It highlights the mindset of a practitioner who not only builds models but verifies the **entire evaluation ecosystem**, ensuring that every performance number is scientifically defensible.  
+
+
+### Next Steps
+**Continue Phase 4.5 - TCN Refinement Plan**
+1. Duplicate training script → `tcn_training_script_refined.py`
+2. Add class weighting to BCE loss (for median_risk imbalance).
+3. Add Huber/MAE loss or target transform for regression stability.
+4. Retrain model with consistent architecture and data splits.
+5. Save refined outputs in `trained_models_refined/` for full traceability.
+6. **Re-run diagnostics → verify improvement in F1, R², and calibration**:
+  -	↑ Median Risk F1
+  -	↑ Regression R²
+  -	Stable Max Risk performance
+  -	Improved probability distributions.
+7. Compare refined model outputs via `evaluate_tcn_refined.py`.
 
 ---
 
-Why are we refining training script 
+### Day 25 Notes - Continue Phase 4.5: Re-training TCN Model
 
-Because your diagnostics script (which was exhaustive and perfect) revealed two key findings:
-
-Target
-Problem Shown in Diagnostics
-Interpretation
-median_risk
-F1 = 0.000, recall = 0.0 → model never predicts 1
-Data imbalance → too few “1” cases (positives) → model learns to always predict 0
-pct_time_high
-R² = negative (−1.58 originally) → regression head useless
-Skewed / zero-heavy distribution → model outputs a near-constant mean value
-
-So:
-🔹 The classification head failed due to class imbalance.
-🔹 The regression head failed due to skewness and high zero-inflation.
-
-Both are data-level distributional issues, not architecture faults.
-That’s why we don’t rebuild the model; we just adjust loss weighting and target transformation in training.
-
-
-Why Each Refinement Exists
-
-🧩 (A) Class weighting for median_risk (mandatory)
-	•	When your dataset has far more “0” than “1” (as your median risk table showed — 76% vs 24%), the loss function is dominated by negatives.
-	•	BCEWithLogitsLoss assumes balanced classes unless you tell it otherwise.
-	•	So the model can minimize loss by always predicting 0, which yields:
-	•	high accuracy (~80%)
-	•	but zero recall, zero F1 — exactly what you saw.
-
-Solution: use pos_weight in BCEWithLogitsLoss.
-
-This multiplies the loss for positive examples to make them count more.
-
-Inside your training script, after computing the training labels, you can get:
-
-# Count positives/negatives in training data
-num_pos = y_median_train.sum().item()
-num_neg = len(y_median_train) - num_pos
-pos_weight = torch.tensor([num_neg / num_pos]).to(device)
-Then define your loss:
-loss_median_fn = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-Now positive examples have higher contribution.
-compute  pos_weight dynamically as above.
-✅ This fixes the Median Risk head being permanently stuck at predicting 0.
-
-
-
- (B) Log-transform regression
- want better regression head performance.
-
- Your diagnostics and data analysis show:
-	•	pct_time_high has 27% zeros and heavy right skew.
-	•	Regression loss (MSE) assumes normal, symmetric residuals — which this isn’t.
-	•	As a result, model learns a constant mean ~0.11 and performs poorly (R² ≈ 0).
-
-Fix: Log-transform stabilizes variance and compresses the tail.
-
-We use:
-y_reg = torch.log1p(y_reg)
-(log1p = log(1+x), so 0 → 0 safely).
-
-At inference time:
-y_pred = torch.expm1(y_pred)
-So predictions are inverted back to the normal range (0–1).
-
-This transformation changes only the scale, not the meaning — it’s like giving the model a smoother function to learn.
-
-✅ This fix should make regression scatter/residual plots more realistic and improve R² toward 0.2–0.5 depending on data.
-
-
- (C) Saving to a new directory (mandatory for version control)
- You don’t want to overwrite your original model (Phase 4).
-	•	You’ll save refined versions separately in:
-  src/ml_models_tcn/trained_models_refined/
-
-So you can directly compare This keeps full traceability.:
-  Folder
-What it contains
-Purpose
-trained_models/
-Original Phase 4 model
-Baseline reference
-trained_models_refined/
-Weighted, log-transformed model
-Fixed version for Phase 5
-
-
-✅ SECTION 5 — The High-Level Story for Phase 5 Write-Up
-
-You can now write:
-
-“After initial TCN evaluation, diagnostic analyses revealed underperformance on the median risk and regression heads due to class imbalance and target skew.
-A refined model was trained using class-weighted binary cross-entropy for median risk and a log-transformed regression target to stabilize loss variance.
-Both models share identical architectures, enabling a fair ablation-style comparison.
-Results are reported side-by-side as tcn_metrics.json and tcn_metrics_refined.json.”
-
-This shows:
-	•	scientific rigor,
-	•	reproducibility,
-	•	fairness, and
-	•	deep understanding of ML troubleshooting.
-
-
-
----
-
-## Day 23 Notes - Create and Start Phase 4.5: Model Debugging & Refinement
-
-🧩 1️⃣ Why only regression R² differs (and not classification)
-
-✅ Classification metrics are threshold-based and bounded
-	•	The model outputs probabilities via sigmoid(logit_max) and sigmoid(logit_median).
-	•	These are small floating-point values between 0 and 1.
-	•	Even if there are tiny rounding or dtype differences (e.g. float32 vs float64), the values usually round to the same side of a threshold (like 0.5).
-	•	Therefore F1, accuracy, and AUC stay identical.
-
-⚠️ Regression metrics depend on continuous precision and scaling
-	•	Regression outputs are continuous (not bounded to 0–1).
-	•	R² is computed as
-R^2 = 1 - \frac{SS_\text{res}}{SS_\text{tot}}
-where both sums are sensitive to even small numeric shifts or sample differences.
-	•	If the inference was re-run, PyTorch can produce slightly different rounding due to internal tensor ops, dtype casts, or CPU/GPU differences.
-	•	evaluate_tcn_testset.py used your utility function (compute_regression_metrics) which standardises dtypes (float64) and masks NaNs before computing.
-The diagnostics script used raw sklearn directly on numpy.float32 arrays — meaning small residual differences → different R² (especially with only 15 samples).
-
-💡 Hence:
-
-Classification metrics remain stable because of discrete thresholds.
-Regression metrics fluctuate because of continuous sensitivity and dtype differences.

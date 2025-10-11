@@ -1,3 +1,5 @@
+# src/prediction_evaluations/evaluate_tcn_testset.py
+
 """
 evaluate_tcn_testset.py
 
@@ -69,10 +71,12 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 features_df = pd.read_csv(FEATURES_PATIENT_PATH)
 with open(SPLITS_PATH) as f:
     splits = json.load(f)
-test_ids = set(splits["test"]) # Extract test patient IDs
 
-# Filter dataframe to only include patients in test split
-test_df = features_df[features_df["subject_id"].isin(test_ids)].reset_index(drop=True)
+# Keep the test_ids as a list in the order in the JSON (patient_splits.json)
+test_ids = splits["test"]  
+
+# Use .loc with the list to preserve order
+test_df = features_df.set_index("subject_id").loc[test_ids].reset_index()
 
 # Recreate binary targets exactly as defined in Phase 4 (ensures label consistency)
 test_df["max_risk_binary"] = test_df["max_risk"].apply(lambda x: 1 if x > 2 else 0)
