@@ -3698,7 +3698,7 @@ tensor(False) tensor(False)
 ---
 
 ## Phase 5: Evaluation, Baselines & Comparison (Steps 1-10)
-**Goal: Directly compare Phase 4 TCN against the clinical baseline (NEWS2) and Phase 3 LightGBM baseline to demonstrate mastery of both classical ML and modern deep learning. Produce final plots, metrics, interpretability, and inference demo to complete the end-to-end pipeline.**
+**Goal: Directly compare Phase 4 TCN's (baseline vs refined) against the clinical baseline (NEWS2) and Phase 3 LightGBM under identical data splits and metric definitions. Demonstrate mastery of both classical ML and modern deep learning. Produce final plots, metrics, interpretability, and inference demo to complete the end-to-end pipeline.**
 
 1. **Centralised Metrics Utility (`evaluation_metrics.py`)**
   - **Purpose:**  
@@ -3711,13 +3711,15 @@ tensor(False) tensor(False)
     - Guarantees consistency across model evaluations.  
     - Prevents metric drift or implementation bias.  
     - Simplifies later scripts → metrics are imported, not duplicated.  
-2. **Final TCN Evaluation on Test Set (`evaluate_tcn_testset.py`)**
-  - **Purpose:** Run the trained TCN from Phase 4 on held-out patients and generate reproducible predictions and compute metrics.
+2. **Final TCN Evaluation on Test Set (`evaluate_tcn_testset.py` + `evaluate_tcn_testset_refined.py`)**
+  - **Purpose:** 
+    - Run the baseline trained TCN from Phase 4 on held-out patients and generate reproducible predictions and compute metrics.
+    - Run the updated refined TCN from phase 4.5 on on the same test split and compute metrics for fair comparison. 
   - **Process:**
-    - Rebuild test targets (`y_test`) dynamically from patient CSV + JSON split.
+    - Rebuild test targets (`y_test`) dynamically from patient CSV + ordered JSON split.
     - Load preprocessed test tensors (`x_test.pt`, `mask_test.pt`).
-    - Load model architecture from `tcn_model.py` using hyperparameters from `config.json`.
-    - Load trained weights (`tcn_best.pt`) into the model.
+    - Load model architecture from `tcn_model.py` using hyperparameters from respective config files (`config.json`, `config_refined.json`).
+    - Load corresponding model trained weights (`tcn_best.pt`, `tcn_best_refined.pt`) into the model.
     - Move model to device (CPU/GPU) and set `model.eval()` for deterministic inference.
     - Run inference under `torch.no_grad()` to save memory and speed up computation.
     - **Evaluate on test set**: Completely unseen patients (15), final unbiased check.
@@ -3728,23 +3730,39 @@ tensor(False) tensor(False)
   - **Post-processing:**  
     -	Convert logits → probabilities using `torch.sigmoid(logits)` for binary tasks.
     - Save raw predictions and probabilities (e.g. `results/tcn_predictions.csv`) for reproducibility.
+	- **Apply inverse regression transform (refined model `evaluate_tcn_testset_refined.py` only)**:
+    - Original y values were tranformed using log1p during training, so we must convert back from log-transformed quantities to percentages.
+    - Apply `expm1()` to NumPy arrays at the end of evaluation flow, right before computing regression metrics:
+    ```python
+    y_pred_reg = np.expm1(y_pred_reg)
+    y_true_reg = np.expm1(y_true_reg)
+    ```
+    -	Ensures regression metrics are on computedthe original clinical scale (pct_time_high), not on the transformed (logarithmic) scale for interpretability and fair comparison.
+    - Makes regression metrics reflect true domain errors that are the models real-world, clinical prediction accuracy.
   - **Reasoning:**
-    - Ensures reproducible predictions on unseen patients.
+    - Ensures both evaluations have fully reproducible predictions on unseen patients.
     - Guarantees inference is deterministic (dropout & batchnorm disabled).
     - Prepares outputs in a consistent format for metric computation (later on in the script) and comparison with baselines (later in Phase 5).
-3. **Compute Metrics (`evaluate_tcn_testset.py`)**
-  - Call the functions `compute_classification_metrics` and `compute_regression_metrics` from `evaluation_metrics.py` for consistency across models when computing metrics.
-	-	**Classification targets (`max_risk_binary, median_risk_binary`)**:
-    -	ROC-AUC (primary ranking metric for imbalanced tasks)
-    -	F1-score (harmonic mean of precision & recall)
-    -	Accuracy
-    -	Precision & Recall (optional / useful clinically)
-	-	**Regression target (`pct_time_high`)**:
-    -	RMSE (Root Mean Squared Error) 
-    -	R² (explained variance).
-  - Save metric values to a JSON (e.g. `results/tcn_metrics.json`) and log them.
+    - Inverse regression transform allows direct, fair metric-level comparison between refined-TCN and the rest of the models.
+3. **Compute Metrics (`evaluate_tcn_testset.py` + `evaluate_tcn_testset_refined.py`)**
+  - **Purpose:** Quantify model performance on unseen patients using consistent metrics.
+  - **Process:**
+    - Call the functions `compute_classification_metrics` and `compute_regression_metrics` from `evaluation_metrics.py` for consistency across models when computing metrics.
+    -	**Classification targets (`max_risk_binary, median_risk_binary`)**:
+      -	ROC-AUC (primary ranking metric for imbalanced tasks)
+      -	F1-score (harmonic mean of precision & recall)
+      -	Accuracy
+      -	Precision & Recall (optional / useful clinically)
+    -	**Regression target (`pct_time_high`)**:
+      -	RMSE (Root Mean Squared Error) 
+      -	R² (explained variance).
+    - **Save metric values to a JSON and log them**:
+      - `results/tcn_metrics.json` (baseline)
+      - `results/tcn_metrics_refined.json` (refined)
   - **Reasoning:**  
     - Provides a standard, quantitative evaluation for all targets.
+    - Enable clean Phase 5 comparisons (TCN v TCN-Refined v NEWS2 v LightGBM).
+    - Validates the improvements achieved by Phase 4.5 interventions.
 
 4. **NEWS2 Clinical Baseline**
   - **Goal:** Evaluate the standard clinical tool (NEWS2) as a baseline.  
@@ -4139,7 +4157,85 @@ It focused on establishing a **reproducible and standardised evaluation framewor
 
 ---
 
-## Day 23-24 Notes - Start Phase 4.5: Diagnostics and Re-training (Step 1)
+## Phase 4.5: Diagnostics and Retraining (Steps 1-3)
+**Goal: Address performance issues from Phase 4 through targeted, data-level corrections; improving class balance and regression stability; while preserving full reproducibility and comparability for Phase 5 evaluation.**
+
+1. **Full TCN Diagnostic Analysis (`tcn_diagnostics.py`)**
+  - **Purpose:** Identify the root causes of poor median-risk and regression performance in Phase 4.  
+  - **Process:**  
+    - Loaded Phase 4 model and patient-level data; reproduced predictions on validation and test sets.  
+    - Conducted threshold sweeps, probability histograms, and regression diagnostics (RMSE/R²).  
+    - Verified dataset imbalance and regression skew using label distribution plots.  
+  - **Outputs:**  
+    - **Summary file:** `tcn_diagnostics_summary.json` → consolidated summary of classification and regression metrics
+    - **12 diagnostic plots saved to `/plots/`, grouped as follows:**  
+      - **Probability Histograms for classification (4):**  
+        - `prob_hist_max_val.png`, `prob_hist_max_test.png` → distribution of predicted probabilities for Max Risk on validation/test set (confirms strong class separation and calibration stability). 
+        - `prob_hist_median_val.png`, `prob_hist_median_test.png` → median-risk probability spread on validation/test set (shows prediction collapse near 0 due to class imbalance).
+      - **Regression Diagnostics scatter plots (4):**  
+        - `val_reg_scatter.png`, `test_reg_scatter.png` → predicted vs. true regression values on validation/test set (demonstrates modest alignment, signal capture due to positive R²≈ 0.2)
+        - `val_reg_residuals.png`, `test_reg_residuals.png` → residuals vs. predictions on validation/test set; checks for bias or heteroscedasticity (errors evenly distributed around zero, stable residuals).  
+      - **Label Distribution histograms (4):**  
+        - `dist_test_max_risk_labels.png`, `dist_test_median_risk_labels.png` → shows label distribution for Max Risk (mostly positives; highlights class skew) and Median Risk (confirms minority-positive class imbalance ~20%).   
+        - `dist_test_pct_time_high_true.png`, `dist_test_pct_time_high_pred.png` → true regression target distribution (visualises heavy right skew in raw values) and predicted regression output distribution (shows compressed range consistent with underfitting to skewed target)
+  - **Reasoning:**  
+    - Revealed that performance issues were **data-driven (imbalance, skew)**, not architectural; confirming the need for targeted reweighting and transformation in retraining.
+
+2. **Fix Evaluation Script (`evaluate_tcn_testset.py`)**
+  - **Purpose:** Correct ROC-AUC inconsistencies caused by misaligned test patient ordering.  
+  - **Process:**  
+    - Replaced unordered `set()` indexing with ordered `.loc[test_ids]` for perfect alignment.  
+    - Recomputed metrics with corrected label order.  
+  - **Outputs:**  
+    - Accurate and reproducible metrics (ROC-AUC), consistent across all scripts:  
+      - Max Risk: AUC = 0.923, F1 = 0.929  
+      - Median Risk: AUC = 0.778, F1 = 0.000  
+      - Regression: RMSE = 0.077, R² = 0.166 
+  - **Reasoning:**  
+    - Ensured **true one-to-one matching** between predictions and ground truths; restoring metric validity and confirming earlier diagnostic interpretations.
+
+3. **Retrain TCN Model (`tcn_training_script_refined.py`)**
+- **Purpose:** Implement minimal, scientifically controlled fixes while keeping architecture constant.  
+- **Process:**  
+  - **Regression fix:** Applied `log1p(y)` before tensor creation to stabilise variance.  
+  - **Classification fix:** Computed dynamic `pos_weight = neg/pos` for median-risk BCE loss.  
+  - Updated config and training outputs with metadata for reproducibility.  
+- **Outputs:**  
+  - All outputs saved to `/prediction_diagnostics/trained_models_refined/`
+  - `tcn_best_refined.pt` → best model weights.  
+  - `config_refined.json` → metadata with transformations, loss setup, and metrics.  
+  - `training_history_refined.json` → epoch-wise train/val loss for post-hoc analysis.  
+- **Reasoning:**  
+  - Log-transform reduces regression skew (deterministic), while class weighting corrects imbalance (dynamic).  
+  - Both fixes target the observed weaknesses from Phase 4 without altering model architecture.
+
+
+**End Products of Phase 4.5**
+| Output File / Folder | Purpose |
+|-----------------------|----------|
+| `tcn_best_refined.pt` | Final retrained TCN weights saved at best validation epoch (early-stopping checkpoint). |
+| `config_refined.json` | Complete experimental record: includes phase tag, log-transform, class weighting, `pos_weight_median_risk`, and `final_val_loss`. |
+| `training_history_refined.json` | Tracks training/validation loss per epoch for post-hoc visualisation and overfitting detection. |
+| `tcn_diagnostics_summary.json` | Consolidated summary of classification and regression metrics used to identify Phase 4 issues. |
+| `/plots/` (12 diagnostic plots) | Visual evidence of class imbalance, regression skew, and post-fix stability across tasks (classification histograms, regression scatter/residuals, and label distributions). |
+
+**Summary**
+Phase 4.5 established a controlled **“diagnose → correct → retrain”** loop:
+- Diagnosed systemic issues (imbalance, skew).  
+- Implemented minimal reproducible fixes (log-transform, class weighting).  
+- Preserved identical architecture and hyperparameters for scientific comparability.  
+This phase bridges **Phase 4 (baseline training)** and **Phase 5 (evaluation)**, ensuring that the refined model is validated, documented, and ready for clean comparison.
+
+**Portfolio Framing**
+Phase 4.5 demonstrates **rigorous ML experimentation**:
+- Clear separation of diagnosis, retraining, and evaluation.  
+- Reproducible corrections with transparent metadata.  
+- **Traceable lineage:** *Phase 4 (baseline) → Phase 4.5 (refined retrain) → Phase 5 (evaluation)*.  
+A textbook example of iterative model refinement in a real-world ML pipeline.
+
+---
+
+## Day 23-24 Notes - Start Phase 4.5: Diagnostics and Re-training (Step 1 + 2)
 
 ### Goal
 - Establish **Phase 4.5: Diagnostics & Re-training** as a dedicated stage for model verification and evaluation integrity.  
@@ -4689,5 +4785,543 @@ Diagnostics completed successfully ✅
 
 ---
 
-### Day 25 Notes - Continue Phase 4.5: Re-training TCN Model
+## Day 25 Notes - Finish Phase 4.5: Re-training TCN Model `tcn_training_script_refined.py` (Step 3)
 
+### Goals
+- **Create `tcn_training_script_refined.py`:** Add log1p transform + class weighting, update config, outputs, and reproducibility metadata  
+- **Plan `evaluate_tcn_testset_refined.py`:**
+  - Load refined model, apply `expm1` to revert transform, compute metrics  
+  - Compare Phase 4 vs 4.5 results, save evaluation JSON  
+
+### What We Did 
+#### Retrained TCN Model `tcn_training_script_refined.py`
+**Purpose**
+- Implements the refined retraining phase for the TCN, extending Phase 4 by introducing two controlled, data-level corrections
+- Retains the same model architecture, hyperparameters, and optimiser setup for scientific comparability.
+1. **Updated Directory Structure**
+  - Script dynamically locates the project structure and import the TCN implementation (`TCNModel`), without hardcoding absolute paths, which keeps the script portable and reproducible across different machines or directory setups.
+    ```python
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    PROJECT_ROOT = SCRIPT_DIR.parent
+    sys.path.append(str(PROJECT_ROOT / "ml_models_tcn"))
+    from tcn_model import TCNModel
+    ```
+  - Separate output folder for Phase 4.5 ensures reproducibility and prevents overwriting Phase 4 results.
+    ```python
+    MODEL_SAVE_DIR = SCRIPT_DIR / "trained_models_refined"
+    MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    ```
+  - All paths updated to point to refined directories for model weights, config, and history.
+    ```python
+    best_model_path = MODEL_SAVE_DIR / "tcn_best_refined.pt"
+    config_path = MODEL_SAVE_DIR / "config_refined.json"
+    history_path = MODEL_SAVE_DIR / "training_history_refined.json"
+    ```
+2. **Updated JSON Configuration with Metadata**
+  - Stores phase identifier, dynamic parameters (pos_weight, final_val_loss), loss modifications, data transformations, and file paths (`data_path`, `model_save_dir`).
+    ```python
+      "loss_functions": {
+        "max_risk": "BCEWithLogitsLoss (unweighted)",
+        "median_risk": "BCEWithLogitsLoss(pos_weight)",
+        "pct_time_high": "MSELoss (on log1p-transformed target)"
+    },
+    "data_transformations": {
+        "regression_target": "log1p(y) applied during training; expm1(y_pred) at inference",
+        "class_weighting": "dynamic pos_weight computed from training data (num_neg / num_pos)"
+    },
+    ```
+	-	Terminal print confirms the base configuration is loaded.
+  -	**Rationale:** Provides a reproducible, auditable record of the experiment.
+3. **Log-Transform Regression Target (pct_time_high)**
+  - Helper script builds target tensors (with regression log-transform) after loading patient-level targets
+  -	Must happen before tensor creation to ensure tensors hold transformed values.
+    ```python
+    def get_targets(split_ids, apply_log=False):
+        df_split = patient_df.loc[split_ids, target_cols].copy()
+        if apply_log:
+            df_split["pct_time_high"] = np.log1p(df_split["pct_time_high"])
+            print(f"[INFO] Log-transform applied to regression target: min={df_split['pct_time_high'].min():.3f}, max={df_split['pct_time_high'].max():.3f}")
+        return (
+            torch.tensor(df_split["max_risk_binary"].values, dtype=torch.float32),
+            torch.tensor(df_split["median_risk_binary"].values, dtype=torch.float32),
+            torch.tensor(df_split["pct_time_high"].values, dtype=torch.float32),
+        )
+    ```
+  - **Rationale:**:
+    - Reduces skew and stabilises regression loss contribution.
+    -	**Deterministic:** same input → same output. Only min/max printed for verification of transformation.
+4. **Compute Class Weight for Median Risk**
+  - `pos_weight = num_neg / num_pos` Directly fixes BCE loss imbalance by scaling the minority class contribution.
+  - This makes the model pay more attention to the minority class (medium risk) during training.
+  - Applied after tensors are created because BCE loss weighting is a loss-level adjustment.
+    ```python
+    pos_weight = (y_train_median == 0).sum() / (y_train_median == 1).sum()
+    pos_weight = pos_weight.to(DEVICE)  # move to GPU if available
+    print(f"[INFO] Computed pos_weight for median_risk = {pos_weight:.3f}")
+    ```
+  - **Rationale:**
+	  -	Corrects class imbalance (~3:1 negative:positive for median risk).  
+    - **Dynamic:** depends on the training split, hence printed to terminal.
+    - Makes the model “pay more attention” to minority class during early training.
+5. **Updated Loss Function for Median Risk**
+  - Integrates dynamic class weighting into BCE loss.
+	- Ensures faster early learning for minority class and affects validation dynamics.
+    ```python
+    criterion_median = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    ```
+6. **Save Model to Phase 4.5 Folder `trained_models_refined/`**
+	-	Separates best model checkpoint into refined folder.
+	-	Ensures early stopping triggers correctly and preserves best generalising weights.
+    ```python
+    torch.save(model.state_dict(), best_model_path)
+    ```
+  - **Output:** `tcn_best_refined.pt`
+7. **Update and Save JSON Configuration After Training**
+  - Updates earlier JSON dictinary with information post-training.
+  - Records dynamic outputs (`pos_weight_median_risk` and `final_val_loss`) and confirms file locations.
+    ```python
+    config_data["pos_weight_median_risk"] = float(pos_weight.cpu().item())
+    config_data["final_val_loss"] = float(best_val_loss)
+    config_data["outputs_confirmed"] = { 
+        "best_model": str(best_model_path),
+        "training_history": str(history_path),
+        "config": str(config_path)
+    }
+
+    with open(config_path, "w") as f:
+        json.dump(config_data, f, indent=4)
+    print(f"[INFO] Final refined training configuration saved to {config_path}")
+    ```
+  - **Output:** `config_refined.json`
+	-	**Rationale:** Provides a reproducible audit trail for this Phase 4.5 run.
+8. **Save Training History to Refined Directory**
+  -	Saves epoch-wise training and validation losses for downstream analysis.
+	-	Terminal output confirms history and model weight file locations.
+  - **Output:** `training_hisotry_refined.json`
+    ```python
+    with open(history_path, "w") as f:
+        json.dump({"train_loss": train_losses, "val_loss": val_losses}, f, indent=4)
+    print(f"[INFO] Refined training history saved to {history_path}")
+    print(f"[INFO] Best refined model saved to {best_model_path}")
+    ```
+**Summary of Changes**
+| Change | Applied To | Timing / Location | Tensor(s) Affected | Purpose / Rationale |
+|--------|------------|-----------------|------------------|------------------|
+| **Log1p Transform** | Regression target (`pct_time_high`) | Inside `get_targets()` before tensor creation | Changes `y_train_reg`, `y_val_reg`, `y_test_reg` | Reduces skew, stabilises variance, prevents extreme gradients |
+| **Class Weighting** | Median-risk BCE loss | After tensor creation, when defining `criterion_median` | No change to tensors; affects loss calculation only | Corrects class imbalance (~3:1), amplifies minority class gradients, faster early learning |
+| **Configuration metadata** | JSON config (`config_refined.json`) | Before training + updated after training | N/A | Records dynamic values (`pos_weight_median_risk`, `final_val_loss`), experiment notes, reproducibility info |
+| **Training history JSON** | `training_history_refined.json` | After training loop | Stores train/val losses | Enables post-hoc analysis of learning dynamics and overfitting patterns |
+| **Output paths** | Model & history | `trained_models_refined/` | N/A | Ensures reproducibility and traceability; keeps Phase 4 and Phase 4.5 outputs separate. |
+
+**Dynamic vs Deterministic Outputs**
+| Value | Type | How It Varies | Printed? |
+|-------|------|---------------|----------|
+| `pos_weight` | Dynamic | Depends on class ratio in current training split | Yes, each run may differ |
+| `final_val_loss` | Dynamic | Depends on random initialisation, convergence and early stopping | Yes, reflects model’s best validation performance; logged for reproducibility |
+| `log1p(y)` | Deterministic | Same `np.log1p()` transformation applied every run | No, only min/max printed for verification (sanity check) |
+
+**Effects on Training & Validation**
+- **Early Training**:
+  - Faster decrease in training loss for median-risk classification due to weighted loss.  
+  - Regression loss more stable because of log-transform.  
+- **Validation Dynamics**:
+  - Validation loss reaches minimum earlier (epoch ~3) and rises sooner, reflecting faster overfitting of weighted minority-class patterns.  
+  - Log-transform prevents extreme regression errors from dominating total loss.  
+- **Overall**:
+  - Training is reproducible and deterministic.
+  - Early stopping preserves the epoch with the best validation generalisation.
+  - JSON outputs provide both static configuration and dynamic metrics (`pos_weight`, `final_val_loss`) for post-hoc comparison.
+
+**Summary**
+- Phase 4.5 introduced **two controlled refinements** over Phase 4:
+  1. Regression log-transform (`log1p`)  
+  2. Median-risk class weighting (`pos_weight`)  
+- These changes improve early learning stability, correct class imbalance, and allow scientifically reproducible retraining.  
+- Training history and configuration files provide full auditability, enabling downstream comparisons between Phase 4, Phase 4.5, and other models (LightGBM, NEWS2).  
+- The best model checkpoint is automatically saved at the epoch with **lowest validation loss**, ensuring optimal generalisation.
+
+
+
+### Model Retraining Plan — Fixing Median Risk and Regression Heads
+**Overview**
+- Following the first step of Phase 4.5 (Diagnostics & Validation), we confirmed that the model architecture itself was not faulty, the poor metrics originated from data imbalance and target skew.  
+- This retraining step applies targeted, minimal, and principled corrections to address these issues while preserving the stability of all well-performing components.
+
+**Diagnostic Findings Recap**
+| Head | Observed Metric | Issue Identified | Root Cause |
+|------|-----------------|------------------|-------------|
+| **Max Risk** | F1 = 0.929, ROC-AUC = 0.923 | Excellent performance | None: stable calibration, strong separability |
+| **Median Risk** | F1 = 0.000, ROC-AUC = 0.778 | Model predicts all zeros | Severe class imbalance (only 20% positives) |
+| **Regression (pct_time_high)** | R² = 0.166 (test), 0.220 (val) | Low R², flat predictions | Skewed, zero-heavy regression target (27% zeros, right tail) |
+- **Conclusion:**  
+  - The classification collapse and regression underperformance stem from data distributional issues, not architecture, code, or training instability.  
+  - Hence, retraining focuses solely on rebalancing and stabilising these heads.
+
+**Data-Level Insights**
+- **Median Risk:**  
+  - Label ratio → 3 positives : 12 negatives (20% positive rate).  
+  - Model optimised BCE loss by always predicting 0, achieving high accuracy but zero recall.  
+- **Regression (pct_time_high):**  
+  - Highly skewed, with 27% zeros and long right tail up to ~0.44.  
+  - Ordinary MSE loss penalises outliers disproportionately, leading to collapse around the mean (≈0.11).  
+- These issues directly explain the low F1 and R² observed in Phase 4.5 diagnostics.
+
+**Potential Fixes Considered**
+| Problem | Potential Fixes | Evaluation | Final Decision |
+|----------|-----------------|-------------|----------------|
+| **Median Risk imbalance** | (a) Class weighting  (b) Oversampling  (c) SMOTE / synthetic examples | (a) Weighting directly corrects BCE loss dominance.  (b, c) Risk overfitting and data duplication. | **Use class weighting only.** |
+| **Regression skew** | (a) Log-transform target  (b) Huber loss  (c) MAE loss  (d) Resampling zeros | (a) Log-transform stabilises variance and preserves scale.  (b, c) Require new hyperparameters and loss tuning.  (d) Alters distribution artificially. | **Use log1p transformation only.** |
+
+**Final Retraining Plan (Concrete Implementation)**
+- **Max Risk Head**
+  - No changes.
+  - **Rationale:** Metrics demonstrate correct calibration and separability. Modifying this head risks destabilising a functioning component.
+- **Median Risk Head** 
+  - Add Class Weighting.
+  - **Problem:** BCE loss dominated by negatives → model minimises loss by predicting all 0s.
+  - **Fix:** Compute dynamic `pos_weight` based on training label proportions.
+  - **Effect:**
+    -	Positives contribute more strongly to the loss.
+    -	Model learns to recognise minority “1” class, increasing recall and F1 without harming calibration.
+  - **Expected outcome:**
+    -	Median Risk F1 improves from 0.0 → 0.3–0.5 depending on separability.
+    -	ROC-AUC remains ~0.75–0.8, confirming signal presence.
+- **Regression Head** 
+  - Apply Log-Transform to Target.
+  - **Problem:** Skewed, zero-inflated target leads to near-constant predictions and low R².
+  - **Fix:** Apply log1p transform before training and invert with expm1 at inference.
+  - **Rationale**
+    -	Log1p compresses the long tail, reduces variance, and linearises target relationships.
+    -	Keeps zero safely mapped (log1p(0) = 0).
+    -	Requires no loss function change or architectural modification.
+  - **Expected outcome:**
+    -	Regression variance improves; R² increases to 0.2–0.5.
+    -	Residuals become more normally distributed, improving stability and interpretability.
+
+**Why Nothing Else Was Changed**
+ **Component** | **Decision** | **Justification** |
+|----------------|--------------|--------------------|
+| **Architecture** | Unchanged | Model topology already validated; prior failures were data-level, not structural. |
+| **Max Risk Head** | Unchanged | Demonstrated high separability and stability; no imbalance or skew. |
+| **Loss Functions (other heads)** | Unchanged | BCE and MSE remain theoretically sound once data distributions are corrected. |
+| **Hyperparameters** | Unchanged | Learning rate, batch size, and optimiser not linked to prior instability. |
+| **Random Seeds & Data Splits** | Unchanged | Maintains perfect reproducibility and comparability with Phase 4 results. |
+- **Reasoning:** Keeping all constants ensures that any metric improvement in Phase 4.5 can be attributed **solely to the two targeted data-level fixes**, not confounded by unrelated architectural or hyperparameter changes.
+
+**Rationale Summary**
+| **Head** | **Change Implemented** | **Why It’s Necessary** | **Why It’s Sufficient** |
+|-----------|------------------------|--------------------------|---------------------------|
+| **Max Risk** | None | Already optimal | Modifying a stable head risks unnecessary destabilisation |
+| **Median Risk** | Weighted BCE Loss | Corrects severe class imbalance (20% positives) | Restores recall and stabilises F1 without altering feature distribution |
+| **Regression (`pct_time_high`)** | Log1p Target Transform | Reduces skew and compresses long-tailed variance | Normalises target distribution, stabilises loss, improves fit consistency |
+
+**Expected Outcomes**
+| **Metric** | **Phase 4 (Before)** | **Phase 4.5 (After Retraining, Expected)** | **Improvement** |
+|-------------|----------------------|-------------------------------------------|-----------------|
+| **Max Risk F1** | 0.929 | 0.929 | Stable — no change expected |
+| **Median Risk F1** | 0.000 | 0.300–0.500 | Significant improvement in recall and F1 |
+| **Regression R²** | 0.166 (test), 0.220 (val) | 0.300–0.500 | Improved correlation and variance stability |
+
+**Summary**
+This retraining phase introduces **two minimal yet sufficient interventions**, both derived from diagnostic evidence:
+- **Median Risk Head:** Implemented **class-weighted BCE loss** to counteract class imbalance and prevent collapse into all-negative predictions.  
+- **Regression Head:** Applied **log-transform (`log1p`)** to stabilise regression targets and improve variance representation.  
+- **Max Risk Head:** Remains **unchanged**, as metrics confirm robust performance.  
+- **All other parameters:** Retained unchanged for controlled, interpretable retraining.
+
+
+
+### Potential Fixes and Rationale for Final Choice
+#### 1. Median Risk (Class Imbalance)
+**Problem Identified:**  
+- Diagnostics revealed the **Median Risk head consistently predicted all zeros**, giving an F1 score of 0 despite 80% accuracy.  
+- This indicated that the model had learned to ignore positive cases due to the class imbalance (20% positive, 80% negative).
+**Fixes Considered:**
+- 1. **Class Weighting:** Adjust the BCE loss function to penalise misclassified positives more heavily.  
+  - **Pros:** Corrects imbalance *within* the loss function; no data duplication or architecture change required.  
+  - **Mechanism:** Uses `pos_weight = num_neg / num_pos` in `BCEWithLogitsLoss`, directly scaling the loss contribution of minority positives.  
+  - **Effect:** Forces the model to give positive cases sufficient gradient signal during training, improving recall and F1.  
+- 2. **Oversampling Positives:** Duplicate minority-class samples to balance the dataset.  
+  - **Cons:** Introduces duplicate sequences, causing overfitting; distorts sequence variance in small datasets.  
+  - Used in large datasets, but inappropriate for limited ICU data.  
+- 3. **SMOTE / Synthetic Samples:** Interpolates new minority samples between existing ones.  
+  - **Cons:** Invalid for time-series or structured clinical data, as synthetic patients can generate biologically implausible trajectories.
+**Why not transform the target?** 
+- Median risk is binary; the only meaningful adjustment is weighting the loss. 
+- Transforming 0/1 values is nonsensical.
+**Final Decision:** 
+- **Use class weighting only**: Change the loss function →  BCEWithLogitsLoss → use pos_weight.
+- It’s the most controlled, architecture-neutral correction that preserves data integrity and prevents overfitting.  
+- This ensures that any observed F1 improvement reflects true model learning, not artificial dataset inflation.
+
+#### 2. Regression Head (Skewed Target Distribution)
+**Problem Identified:**  
+- **The regression target `pct_time_high` showed**:
+  - ~27% zeros (zero-inflated distribution)
+  - Heavy right skew (most values clustered near 0.1–0.2)
+  - Very low variance → leading to negative R² on test data.
+**Fixes Considered:**
+- 1. **Log-transform Target (`log1p`)**  
+  - **Pros:** Compresses high-end outliers and normalises variance while preserving zero values (`log1p` keeps 0 → 0).  
+  - **Mechanism:**  
+    - During training: `y_reg = log1p(y_reg)`  
+    - During inference: `y_pred = expm1(y_pred)` to revert to the original scale.  
+  - **Effect:** Stabilises regression learning and improves generalisation by giving the model a smoother functional mapping to learn.  
+- 2. **(b) Huber Loss**  
+  - **Cons:** Balances MSE and MAE but requires careful tuning of the delta parameter.  
+  - **Risk:** Introduces an extra hyperparameter, potentially destabilising controlled retraining comparison.  
+- 3. **(c) MAE Loss**  
+  - **Cons:** More robust to outliers but less sensitive to small errors, which harms fine-grained calibration.  
+  - **Outcome:** Would not address skewness directly; only reduces sensitivity to it.  
+- 4. **Resampling or Filtering Zeros**  
+  - **Cons:** Artificially changes data distribution and removes meaningful low-end observations.  
+  - Breaks dataset realism and comparability with Phase 4.
+**Why not just change the loss?**
+- **You could switch to Huber or MAE, but**:
+  - Adds new hyperparameters (δ for Huber)
+  - May require careful learning rate adjustments
+  -	Makes comparison with Phase 4 less direct
+-	Log-transform is simpler, deterministic, and preserves the meaning of the target — a minimal sufficient change.
+**Final Decision:**  
+- Use log1p transformation only to the target tensors.
+- It’s mathematically grounded, non-destructive, and reproducible.  
+- This preserves the data’s natural distribution while directly targeting the skew that caused poor R² values.
+
+#### Summary
+1. **Median Risk:**
+  - **Loss function controls learning priorities:** pos_weight introduces run-specific, dataset-dependent bias that helps learning but increases overfitting risk.
+  - Weighted BCE → model “pays attention” to rare positives.
+2. **Regression head:**
+  - **Target transformations change data scale/distribution:** log1p purely stabilising and deterministic, doesn’t affect variance across runs, only numerical stability.
+  - log1p → stabilises regression learning for skewed, zero-inflated targets. 
+  - Stabilises variance, reduces extreme gradient contributions.
+- In Phase 4.5, these two interventions address the exact data-level issues without touching architecture, hyperparameters, or other heads.
+
+
+### Refined Retraining Run (with Class Weighting + Log Transform)
+#### Terminal Console Output
+```bash
+[INFO] All refined training outputs will be saved to: /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined
+[INFO] Base configuration initialised.
+[INFO] Log-transform applied to regression target: min=0.000, max=0.365
+[INFO] Log-transform applied to regression target: min=0.000, max=0.241
+[INFO] Log-transform applied to regression target: min=0.000, max=0.244
+[INFO] Computed pos_weight for median_risk = 2.889
+[INFO] Targets loaded (Refined Phase 4.5):
+ - train: torch.Size([70]) torch.Size([70]) torch.Size([70])
+ - val: torch.Size([15]) torch.Size([15]) torch.Size([15])
+ - test: torch.Size([15]) torch.Size([15]) torch.Size([15])
+Epoch 1: Train Loss = 1.7663, Val Loss = 1.4496
+Epoch 2: Train Loss = 1.4777, Val Loss = 1.3791
+Epoch 3: Train Loss = 1.3206, Val Loss = 1.3700
+Epoch 4: Train Loss = 1.1545, Val Loss = 1.4158
+Epoch 5: Train Loss = 1.0083, Val Loss = 1.5500
+Epoch 6: Train Loss = 0.8223, Val Loss = 1.7551
+Epoch 7: Train Loss = 0.7313, Val Loss = 2.1282
+Epoch 8: Train Loss = 0.6785, Val Loss = 2.2766
+Epoch 9: Train Loss = 0.6171, Val Loss = 2.3606
+Epoch 10: Train Loss = 0.5767, Val Loss = 2.4318
+Early stopping at epoch 10
+[INFO] Final refined training configuration saved to /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/config_refined.json
+[INFO] Refined training history saved to /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/training_history_refined.json
+[INFO] Best refined model saved to /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/tcn_best_refined.pt
+```
+#### What Happened in the Run
+**Epoch 1–3:**  
+  - Both training and validation losses decreased steadily (Train: 1.77 → 1.32, Val: 1.45 → 1.37).  
+  - Indicates that the model was successfully adapting to both classification and regression tasks under the refined setup.  
+  - Best generalisation observed around **epoch 3**, when validation loss reached its minimum (1.37).  
+**Epoch 4–5:**  
+  - Training loss continued to fall (1.15 → 1.01), but validation loss began to rise (1.42 → 1.55).  
+  - Marks the onset of overfitting — the model starts specialising on the weighted median-risk patterns rather than generalising to unseen patients.  
+**Epoch 6–10:**  
+  - Training loss kept improving (0.82 → 0.58) while validation loss increased consistently (1.76 → 2.43).  
+  - Confirms strong overfitting beyond epoch 3; the model continues to fit the training distribution too tightly.  
+  - **Early stopping** was triggered at **epoch 10**, preserving the weights from the best epoch (epoch 3).
+#### Interpretation
+- The overall learning dynamics mirror Phase 4, but overfitting began earlier, suggesting that:
+  - **Class weighting** (pos_weight = 2.889) successfully amplified minority-class gradients, improving early learning speed and accelerating early convergence but introducing higher variance and faster overfitting.
+  - **Log-transforming the regression target** stabilised numerical gradients and prevented extreme / exploding regression errors, keeping total loss bounded.  
+- The rapid drop in training loss with simultaneous validation rise reflects tighter fitting due to the new weighting, not architectural instability.  
+- Early stopping functioned as expected, halting training when validation loss plateaued, and preserving the **best model checkpoint at epoch 3**.
+- The model trained reproducibly and deterministically, confirming the stability of the refined preprocessing pipeline.
+#### Refinement Insights
+- **Class Weighting (`pos_weight = 2.889`)**  
+  - Balanced the median-risk binary head, correcting for ≈ 3:1 class imbalance (2.889 negative samples for every positive sample). 
+  - Loss function multiplies errors on the minority class (positives) by 2.889, so the model “pays more attention” to learning them correctly. 
+  - Without this, the model could trivially predict the majority class and achieve deceptively low loss.
+  - This printout confirms successful dynamic weight computation.
+- **Regression Log-Transform (`Log-transform applied to regression target:..`)**  
+  - Printout helps with debugging and validation, confirms confirms per-split transformation consistency, and that regression targets have been transformed as intended.
+  - `log1p(y)` Applied automatically during target preparation to reduce heteroscedasticity (variance scaling) thus stabilising variance.  
+  - The transform is deterministic (does not vary per training run) and thus not printed, unlike `pos_weight`, so there’s no need to print a run-specific value to verify beyond an initial min/max check for debugging.
+#### Why This Affects Early Learning and Validation Loss Dynamics
+| Component   | Purpose | Early Training | Validation Dynamics |
+|--------------|----------|----------------|----------------------|
+| **pos_weight** | Amplifies the contribution of minority-class examples in BCE loss for `median_risk_binary`. | Accelerates learning for minority class; training loss drops faster. | Validation loss rises sooner due to overfitting on weighted patterns, especially with a small dataset. |
+| **log1p** | Stabilises regression head by compressing target range and reducing heteroscedasticity. | Smoothes regression contribution to total loss; prevents extreme gradient spikes. | Keeps regression loss bounded, so validation loss mainly reflects classification overfitting rather than extreme regression errors. |
+| **Combined Effect** | Integrates both refinements into multi-task learning. | Total training loss decreases rapidly across early epochs. | Validation loss reaches minimum earlier (epoch 3) and rises sharply after, reflecting early minority-class overfitting and stable regression contribution. |
+#### Summary
+- Phase 4.5 reproduced expected convergence and overfitting patterns, confirming stable integration of both refinements.  
+- The model learned faster initially, generalised best around epoch 3, and diverged after that due to small-sample effects.  
+- **Best validation loss achieved**: 1.3700 (epoch 3), compared to 0.9587 in Phase 4 → higher due to weighting and reduced bias but improved minority sensitivity.
+- **Overall**: refinements were correctly applied, training pipeline remained reproducible, and the model checkpoint at epoch 3 represents the optimal balance between learning and generalisation.
+
+
+
+### Phase 4 vs Phase 4.5 — JSON Configuration Comparison
+**Overview**
+- Phase 4’s `config.json` was a minimal operational setup for the original training model.  
+- Phase 4.5’s `config_refined.json` became a **reproducibility-grade record**, documenting not just parameters but also the rationale, transformations, and dynamically computed values.
+**Key Differences**
+| **Aspect** | **Phase 4** | **Phase 4.5 (Refined)** |
+|-------------|--------------|--------------------------|
+| **Purpose** | Basic run config | Full metadata + audit trail |
+| **Phase Tag** | None | `"phase": "4.5 - Refined Retraining"` |
+| **Loss Functions** | BCE + MSE | Weighted BCE + log-transformed MSE |
+| **Transformations** | Not recorded | `"data_transformations"` field for `log1p` + `pos_weight` |
+| **Dynamic Values** | None | `"pos_weight_median_risk"` = 2.889 , `"final_val_loss"` = 1.37 |
+| **Outputs Logged** | Implicit paths | `"outputs"` + `"outputs_confirmed"` with full paths |
+| **Notes** | None | Added explanation of refinements |
+
+**Why the New Fields Matter**
+| **Field** | **Purpose** |
+|------------|-------------|
+| `phase` | Labels experiment version for traceability |
+| `data_transformations` | Records applied preprocessing (`log1p`, weighting) |
+| `pos_weight_median_risk` | Captures actual computed class-imbalance ratio (~3:1) |
+| `final_val_loss` | Stores best validation loss for direct comparison |
+| `notes` | Explains experiment intent |
+| `outputs_confirmed` | Confirms saved file paths post-training |
+
+Only `pos_weight_median_risk` and `final_val_loss` are dynamic run outputs; the rest provide reproducibility metadata.
+
+**Summary**
+- **Phase 4** → original operational baseline  
+- **Phase 4.5** → scientifically traceable updated version  
+- Adds weighting, log-transform, and explicit documentation for reproducibility.  
+- Enables comparison across runs while maintaining the same model architecture and training logic.
+
+
+
+### Folder Structure
+data/
+ ├── processed_data/
+ │     └── news2_features_patient.csv
+src/
+ ├── ml_models_tcn/                   # Phase 4 original models
+ │     ├── prepared_datasets/
+ │     │     ├── train.pt
+ │     │     ├── val.pt
+ │     │     └── test.pt
+ │     ├── deployment_models/
+ │     │     └── preprocessing/
+ │     │           ├── standard_scaler.pkl
+ │     │           ├── padding_config.json
+ │     │           └── patient_splits.json
+ │     └── tcn_model.py
+ ├── prediction_diagnostics/          # Phase 4.5 (diagnostics + retraining)
+ │     ├── tcn_diagnostics.py
+ │     ├── tcn_training_script_refined.py
+ │     ├── plots/
+ │     ├── results/
+ │     └── trained_models_refined/
+ │           ├── config_refined.json
+ │           ├── training_history_refined.json
+ │           └── tcn_best_refined.pt
+ └──  evaluation_diagnostics/         # Phase 5 final evaluation + comparison
+
+
+### Reflection
+#### Challenges
+1. **Maintaining separation of logic and outputs:**  
+  - Initially mixed retraining logic into Phase 5. 
+  - Needed to isolate all retraining in **Phase 4.5** to keep evaluation scripts clean and ensure traceable experiment lineage.  
+2. **Folder directory confusion:**  
+  - Frequent path errors due to scripts calling models and datasets from nested folders. 
+  - Required careful setup of `SCRIPT_DIR` and `PROJECT_ROOT` to correctly reference directories like: `data/processed_data/`, `src/ml_models_tcn/`, `src/prediction_diagnostics/`.
+3. **Understanding transformation vs loss weighting logic:**  
+  - Confusion about why both regression transformation (`log1p`) and class weighting (`pos_weight`) existed, when they occur, and how they differ in flow.  
+4. **JSON config structure and timing:**  
+  - Initially unsure why `config_data` was defined at the top and only updated at the end. 
+  - Also unclear why both `"outputs"` and `"outputs_confirmed"` were kept, and why `pos_weight_median_risk` and `final_val_loss` were added later.  
+#### Solutions and Learnings
+1. **Separation of retraining logic (Phase 4.5):**  
+  - All retraining scripts and artefacts (weights, configs, histories) are confined to the `trained_models_refined/` directory.  
+  - Keeps Phase 5 purely for evaluation.  
+  - **Enhances scientific clarity:** Phase 4 (baseline) → Phase 4.5 (diagnostic fixes) → Phase 5 (evaluation).  
+  - **Directory resolution fix:** Ensures cross-directory imports and consistent relative paths.
+2. **Clarified model logic:**
+	-	**Median risk:** Weighted BCE → fixes imbalance; tensors unchanged.
+	-	**Regression:** log1p applied to targets → fixes skew; loss unchanged.
+	-	Each head receives one targeted fix; minimal, controlled, and reproducible.
+3. **Improved JSON reproducibility:**
+	-	Defined static config_data before training (planned parameters).
+	-	**Appended dynamic runtime fields after training:**
+  ```python
+  config_data["pos_weight_median_risk"] = float(pos_weight.cpu().item())
+  config_data["final_val_loss"] = float(best_val_loss)
+  ```
+  - "outputs" = intended paths; "outputs_confirmed" = verified save locations.
+  - **Scientific rationale:**
+    -	Enhances traceability (planned vs actual results).
+    -	Strengthens reproducibility (reruns recreate same experiment).
+    -	Improves clarity in evaluation phase (clean input/output lineage).
+
+### Overall Summary
+- Phase 4.5 became a controlled diagnostic retraining phase; introducing only essential data-level corrections while maintaining full experiment integrity.
+- This structure now guarantees clean versioning, reproducibility, and interpretability moving into Phase 5 (evaluation and benchmarking).
+
+---
+
+## Day 26: Continue Phase 5
+
+didnt understand where in the scripts logic we implement and why we implement inverse trasnform, and why this is important for clinicl interpretability.
+
+Your regression target pct_time_high represents something real and interpretable, like
+“the percentage of time a patient’s NEWS2 score was above threshold.”
+
+So in the original domain, valid values might be:
+0.00, 0.10, 0.25, 0.60, 1.00 — i.e. percentages or fractions of time.
+
+When you applied the log1p transform during training:
+y = np.log1p(y)
+these values became:
+Original y
+log1p(y)
+0.00
+0.000
+0.10
+0.095
+0.25
+0.223
+0.60
+0.470
+1.00
+0.693
+Now the model learned to predict numbers like 0.22 or 0.47, which are not percentages anymore,
+but rather log-transformed quantities.
+
+Why inverse-transform before computing metrics
+
+When evaluating, if you compute RMSE or R² on these log-values, you’re measuring:
+
+“How close are the predictions to the true log-values?”
+
+That’s mathematically consistent but not interpretable — a difference of 0.1 in log-space doesn’t directly mean “10% error” or “10 points off”.
+
+So before computing metrics, you do:
+y_pred_reg = np.expm1(y_pred_reg)
+y_true_reg = np.expm1(y_true_reg)
+
+Now the predictions and true values are back in the original domain (percentages/fractions).
+This means your metrics — e.g. RMSE = 0.07 — now represent:
+
+“On average, the model’s predicted pct_time_high differs from the true value by 7 percentage points.”
+
+That’s a real-world, clinically interpretable error.
+In one line:
+
+“Makes regression metrics reflect true domain errors” means
+the RMSE and R² are computed on the original clinical scale (actual pct_time_high values),
+not on the transformed (logarithmic) scale — so they describe the model’s real-world prediction accuracy.

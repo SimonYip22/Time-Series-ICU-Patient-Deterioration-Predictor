@@ -1,0 +1,54 @@
+{
+    "phase": "4.5 - Refined Retraining",
+    "device": "cpu",
+    "batch_size": 32,
+    "epochs": 50,
+    "learning_rate": 0.001,
+    "early_stopping_patience": 7,
+    "model_architecture": {
+        "num_channels": [
+            64,
+            64,
+            128
+        ],
+        "head_hidden": 64,
+        "kernel_size": 3,
+        "dropout": 0.2
+    },
+    "optimizer": "Adam",
+    "scheduler": {
+        "type": "ReduceLROnPlateau",
+        "mode": "min",
+        "patience": 3,
+        "factor": 0.5
+    },
+    "loss_functions": {
+        "max_risk": "BCEWithLogitsLoss (unweighted)",
+        "median_risk": "BCEWithLogitsLoss(pos_weight)",
+        "pct_time_high": "MSELoss (on log1p-transformed target)"
+    },
+    "data_transformations": {
+        "regression_target": "log1p(y) applied during training; expm1(y_pred) at inference",
+        "class_weighting": "dynamic pos_weight computed from training data (num_neg / num_pos)"
+    },
+    "data_paths": {
+        "prepared_datasets": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml_models_tcn/prepared_datasets",
+        "scaler_dir": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml_models_tcn/deployment_models/preprocessing",
+        "patient_features_path": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/data/processed-data/news2_features_patient.csv",
+        "splits_json": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/ml_models_tcn/deployment_models/preprocessing/patient_splits.json"
+    },
+    "model_save_dir": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined",
+    "outputs": {
+        "weights": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/tcn_best_refined.pt",
+        "history": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/training_history_refined.json",
+        "config": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/config_refined.json"
+    },
+    "notes": "Refined retraining adds class weighting (median_risk) and log-transform (pct_time_high); all else unchanged for controlled comparison.",
+    "pos_weight_median_risk": 2.8888888359069824,
+    "final_val_loss": 1.3700270652770996,
+    "outputs_confirmed": {
+        "best_model": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/tcn_best_refined.pt",
+        "training_history": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/training_history_refined.json",
+        "config": "/Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_diagnostics/trained_models_refined/config_refined.json"
+    }
+}

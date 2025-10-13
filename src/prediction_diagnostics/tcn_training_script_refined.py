@@ -3,40 +3,42 @@
 """
 tcn_training_script_refined.py
 
-Title: Fully Refined Temporal Convolutional Network (TCN) Training Script
+Title: Refined Temporal Convolutional Network (TCN) Retraining Script — Phase 4.5
 
 Summary:
-- Implements the complete training loop for a Temporal Convolutional Network (TCN) on patient-level ICU time-series data.
-- Handles three prediction targets simultaneously:
-    1. max_risk_binary (binary classification)
-    2. median_risk_binary (binary classification)
-    3. pct_time_high (regression)
+- Implements the refined retraining phase for the Temporal Convolutional Network (TCN) on patient-level ICU time-series data.
+- Extends Phase 4 by introducing two controlled, data-level corrections:
+    1. **Class weighting** for `median_risk_binary` to address severe class imbalance.
+    2. **Log-transform** of `pct_time_high` regression targets to stabilise variance and improve generalisation.
+- Retains the same model architecture, hyperparameters, and optimiser setup for scientific comparability.
 - Uses PyTorch with GPU acceleration if available.
-- Employs multi-task loss (BCEWithLogits for classification + MSE for regression).
-- Uses DataLoader for efficient mini-batch training and memory handling.
-- Tracks both training and validation loss across epochs.
-- Implements:
-    - Early stopping (based on validation loss)
-    - Learning rate scheduling (ReduceLROnPlateau)
-    - Full reproducibility via fixed random seeds across Python, NumPy, and PyTorch.
-- Automatically saves:
-    - Best-performing model (lowest validation loss)
-    - Training configuration (hyperparameters, architecture, optimiser, etc.)
-    - Full epoch-wise loss history for plotting and analysis.
-- Ensures reproducibility, traceability, and interpretability through saved configuration and metadata files.
+- Employs multi-task learning:
+    - BCEWithLogitsLoss for classification (weighted for median head)
+    - MSELoss for regression (on log-transformed target)
+- Uses DataLoader for efficient mini-batch training and validation.
+- Tracks and records both training and validation losses across epochs.
 
-Outputs:
-1. **Trained model weights** → `trained_models/tcn_best.pt`
-2. **Training configuration** → `trained_models/config.json`
-3. **Training history** (train/validation losses per epoch) → `trained_models/training_history.json`
+Key Features:
+- Early stopping (based on validation loss)
+- Learning rate scheduling (ReduceLROnPlateau)
+- Full reproducibility via fixed random seeds across Python, NumPy, and PyTorch.
+- Deterministic behaviour (CuDNN disabled benchmarking)
+- Automatic saving of all model artefacts, configuration, and training history; ensures reproducibility, traceability, and interpretability.
+
+Outputs (Phase 4.5):
+1. **Trained model weights** → Best-performing model (lowest validation loss) → `trained_models_refined/tcn_best_refined.pt`
+2. **Training configuration** → hyperparameters, architecture, optimiser, etc. → `trained_models_refined/config_refined.json`
+3. **Training history** → train/validation losses per epoch → `trained_models_refined/training_history_refined.json`
 4. **Console logs**:
-    - Epoch-wise training/validation losses
+    - Epoch-wise training and validation loss tracking
+    - pos_weight computation for class imbalance
     - Early stopping trigger (if activated)
-    - Sanity checks for NaN/Inf in tensors
-    - Target tensor shape verification
+    - Verification of target tensor integrity and shapes
 
 Purpose:
-- Provides a fully controlled, reproducible pipeline for temporal deep learning experiments, ensuring consistent and interpretable results across runs.
+- Provides a fully controlled and scientifically validated retraining pipeline for temporal deep learning in ICU data.
+- Ensures that metric improvements arise solely from targeted data corrections (class weighting and log-transform), not from architectural or hyperparameter changes.
+- Establishes a reproducible, traceable baseline for downstream model comparison and evaluation.
 """
 # -------------------------------------------------------------
 # Imports
@@ -45,13 +47,36 @@ import torch                                                # core PyTorch libra
 import torch.nn as nn                                       # neural network modules                    
 from torch.utils.data import TensorDataset                  # wraps tensors (features + masks + targets) into a dataset that PyTorch can iterate over.
 from torch.utils.data import DataLoader                     # handles batching, shuffling, and parallel loading.
+import sys                                                  
 from pathlib import Path                                    # handles filesystem paths in a clean, cross-platform way.
 import pandas as pd                                         # data manipulation and analysis (loading CSVs, DataFrames).
 import joblib                                               # save and load scalers (StandardScaler) and preprocessing objects.                            
 import json                                                 # Read/write JSON files.
-from tcn_model import TCNModel                              # TCN architecture implementation (class we defined in tcn_model.py)
 import random                                               # Python built-in random module for setting seeds        
 import numpy as np                                          # numerical operations, array manipulations
+
+# -------------------------------------------------------------
+# Updated Directory Structure (Phase 4.5)
+# -------------------------------------------------------------
+SCRIPT_DIR = Path(__file__).resolve().parent                                # → src/prediction_diagnostics
+PROJECT_ROOT = SCRIPT_DIR.parent                                            # → src/
+sys.path.append(str(PROJECT_ROOT / "ml_models_tcn"))                        # ensure TCNModel can be imported
+from tcn_model import TCNModel                                              # TCN architecture implementation (class we defined in tcn_model.py)
+
+# === Input paths ===
+DATA_DIR = PROJECT_ROOT / "ml_models_tcn" / "prepared_datasets"             # → src/ml_models_tcn/prepared_datasets
+SCALER_DIR = PROJECT_ROOT / "ml_models_tcn" / "deployment_models" / "preprocessing"  # → src/ml_models_tcn/deployment_models/preprocessing
+PATIENT_FEATURES_PATH = PROJECT_ROOT.parent / "data" / "processed_data" / "news2_features_patient.csv"  # → data/processed_data/news2_features_patient.csv
+
+# === Output paths Updated (Refined Phase 4.5) ===
+MODEL_SAVE_DIR = SCRIPT_DIR / "trained_models_refined"                      # → src/prediction_diagnostics/trained_models_refined
+MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+best_model_path = MODEL_SAVE_DIR / "tcn_best_refined.pt"
+config_path = MODEL_SAVE_DIR / "config_refined.json"
+history_path = MODEL_SAVE_DIR / "training_history_refined.json"
+
+print(f"[INFO] All refined training outputs will be saved to: {MODEL_SAVE_DIR}")
 
 # -------------------------------------------------------------
 # Configuration
@@ -62,21 +87,6 @@ BATCH_SIZE = 32                                             # Number of patient 
 EPOCHS = 50                                                 # Number of complete passes through the training dataset. Multiple epochs → the model gradually adjusts weights to reduce loss.
 LR = 1e-3                                                   # Learning rate for the Adam optimizer. Controls how much to change the model in response to estimated error each time the model weights are updated.
 EARLY_STOPPING_PATIENCE = 7                                 # Monitors a validation metric (e.g., ROC-AUC or RMSE). If metric does not improve for 7 epochs, training stops early to avoid overfitting.
-
-# Paths
-SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR / "prepared_datasets"
-SCALER_DIR = SCRIPT_DIR / "deployment_models/preprocessing"
-
-# Create new directory to save trained models if it doesn't exist
-MODEL_SAVE_DIR = SCRIPT_DIR / "trained_models"
-MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-
-# Path to save training history
-history_path = MODEL_SAVE_DIR / "training_history.json"
-
-# Path to save training configuration
-config_path = MODEL_SAVE_DIR / "config.json"
 
 # -------------------------------------------------------------
 # Reproducibility / Random Seed
@@ -97,9 +107,10 @@ torch.backends.cudnn.deterministic = True  # forces deterministic convolution al
 torch.backends.cudnn.benchmark = False     # disables autotuner for benchmarking → ensures reproducibility
 
 # -------------------------------------------------------------
-# Save Configuration for Reproducibility
+# Define configuration dictionary before training (Refined Phase 4.5)
 # -------------------------------------------------------------
 config_data = {
+    "phase": "4.5 - Refined Retraining",
     "device": DEVICE,
     "batch_size": BATCH_SIZE,
     "epochs": EPOCHS,
@@ -119,19 +130,30 @@ config_data = {
         "factor": 0.5
     },
     "loss_functions": {
-        "classification": "BCEWithLogitsLoss",
-        "regression": "MSELoss"
+        "max_risk": "BCEWithLogitsLoss (unweighted)",
+        "median_risk": "BCEWithLogitsLoss(pos_weight)",
+        "pct_time_high": "MSELoss (on log1p-transformed target)"
+    },
+    "data_transformations": {
+        "regression_target": "log1p(y) applied during training; expm1(y_pred) at inference",
+        "class_weighting": "dynamic pos_weight computed from training data (num_neg / num_pos)"
     },
     "data_paths": {
         "prepared_datasets": str(DATA_DIR),
         "scaler_dir": str(SCALER_DIR),
-        "patient_features_path": str(SCRIPT_DIR.parent.parent / 'data/processed-data/news2_features_patient.csv')
-    }
+        "patient_features_path": str(SCRIPT_DIR.parent.parent / 'data/processed-data/news2_features_patient.csv'),
+        "splits_json": str(SCALER_DIR / "patient_splits.json")
+    },
+    "model_save_dir": str(MODEL_SAVE_DIR),
+    "outputs": {
+        "weights": str(MODEL_SAVE_DIR / "tcn_best_refined.pt"),
+        "history": str(MODEL_SAVE_DIR / "training_history_refined.json"),
+        "config": str(MODEL_SAVE_DIR / "config_refined.json")
+    },
+    "notes": "Refined retraining adds class weighting (median_risk) and log-transform (pct_time_high); all else unchanged for controlled comparison."
 }
 
-with open(config_path, "w") as f:
-    json.dump(config_data, f, indent=4) 
-print(f"[INFO] Training configuration saved to {config_path}") # saves all key hyperparameters and settings to config.json
+print("[INFO] Base configuration initialised.")
 
 # -------------------------------------------------------------
 # Load datasets
@@ -157,11 +179,14 @@ with open(SCALER_DIR / "padding_config.json") as f:
 target_cols = ["max_risk_binary", "median_risk_binary", "pct_time_high"] # target columns in patient-level dataframe (used the binary versions for classification tasks)
 
 # -------------------------------------------------------------
-# Load true patient-level targets
+# Load true patient-level targets (Refined Phase 4.5)
 # -------------------------------------------------------------
-# Already have the features (x_train, x_val, x_test) from prepare_tcn_dataset.py
-# Only need the patient-level CSV here to build the target tensors (y_train_max, y_train_median, y_train_reg).
-# Paths
+"""
+This step rebuilds the outcome tensors with:
+- Class weighting computed from training split (for median_risk)
+- Log1p transformation applied to regression target (pct_time_high)
+"""
+
 PATIENT_FEATURES_PATH = SCRIPT_DIR.parent.parent / "data/processed_data/news2_features_patient.csv"
 SPLITS_PATH = SCALER_DIR / "patient_splits.json"
 
@@ -169,40 +194,51 @@ SPLITS_PATH = SCALER_DIR / "patient_splits.json"
 patient_df = pd.read_csv(PATIENT_FEATURES_PATH).set_index("subject_id")
 
 
-# Recreate binary targets (same logic as in prepare_tcn_dataset.py)
+# --- Binary target reconstruction (same logic as Phase 4) ---
 patient_df["max_risk_binary"] = patient_df["max_risk"].apply(lambda x: 1 if x > 2 else 0) # collapse [0,1,2]=0; [3]=1 (0=not-high, 1=high).
 patient_df["median_risk_binary"] = patient_df["median_risk"].apply(lambda x: 1 if x == 2 else 0) # collapse [0,1]=0; [2]=1 (0=low, 1=medium).
 
-# Load saved patient ID splits
+# --- Load consistent patient splits ---
 with open(SPLITS_PATH) as f:
     patient_splits = json.load(f)
 
-# Helper function to extract rows for given patient IDs in the split, and the 3 target columns
-def get_targets(split_ids):
-    df_split = patient_df.loc[split_ids, target_cols]   # selects just the split patient rows from patient-level dataframe (patient_df), keeping only the target columns
-    # convert each target column into a PyTorch tensor (contains values for each pateint in the split)
+# ---- Build target tensors for each split ----
+train_ids = patient_splits["train"]
+val_ids = patient_splits["val"]
+test_ids = patient_splits["test"]
+
+# --- Helper: Build target tensors (with regression log-transform) ---
+def get_targets(split_ids, apply_log=False):
+    df_split = patient_df.loc[split_ids, target_cols].copy()
+    if apply_log:
+        df_split["pct_time_high"] = np.log1p(df_split["pct_time_high"])  # log-transform regression target
+        
+        # Debug/info print to confirm that regression target has been successfully log-transformed.
+        print(f"[INFO] Log-transform applied to regression target: min={df_split['pct_time_high'].min():.3f}, max={df_split['pct_time_high'].max():.3f}")
     return (
         torch.tensor(df_split["max_risk_binary"].values, dtype=torch.float32),
         torch.tensor(df_split["median_risk_binary"].values, dtype=torch.float32),
         torch.tensor(df_split["pct_time_high"].values, dtype=torch.float32),
     )
 
-# ---- Build target tensors for each split ----
-# Need tensors for target outcomes to compare with model predictions during training (x_train[i], mask_train[i]) → (y_train_max[i], y_train_median[i], y_train_reg[i])
-# use patient_splits.json to get patient IDs for each split
-train_ids = patient_splits["train"]
-val_ids = patient_splits["val"]
-test_ids = patient_splits["test"]
+# --- Create tensors for each split ---
+# get_targets() returns 3 tensors per split (max, median, regression targets), this gets repeated for train, val, test splits, now we have tensors for all 3 targets in all 3 splits
+# apply_log=True applies log1p transform to regression target 
+y_train_max, y_train_median, y_train_reg = get_targets(train_ids, apply_log=True)
+y_val_max, y_val_median, y_val_reg = get_targets(val_ids, apply_log=True)
+y_test_max, y_test_median, y_test_reg = get_targets(test_ids, apply_log=True)
 
-# get_targets() returns 3 tensors per split (max, median, regression targets)
-# this gets repeated for train, val, test splits
-# now we have tensors for all 3 targets in all 3 splits
-y_train_max, y_train_median, y_train_reg = get_targets(train_ids)
-y_val_max, y_val_median, y_val_reg = get_targets(val_ids)
-y_test_max, y_test_median, y_test_reg = get_targets(test_ids)
+# --- Compute class weights (for median risk) ---
+# Directly fixes BCE loss imbalance by scaling the minority class contribution.
+# pos_weight = num_neg / num_pos
+# This makes the model pay more attention to the minority class (medium risk) during training.
+pos_weight = (y_train_median == 0).sum() / (y_train_median == 1).sum()
+pos_weight = pos_weight.to(DEVICE)  # move to GPU if available
+print(f"[INFO] Computed pos_weight for median_risk = {pos_weight:.3f}")
 
-# Print shapes to verify, each tensor shape should match number of patients in each split
-print("[INFO] Targets loaded:")
+# --- Verify tensor shapes ---
+# Each tensor shape should match number of patients in each split
+print("[INFO] Targets loaded (Refined Phase 4.5):")
 print(" - train:", y_train_max.shape, y_train_median.shape, y_train_reg.shape) # 70
 print(" - val:", y_val_max.shape, y_val_median.shape, y_val_reg.shape) # 15
 print(" - test:", y_test_max.shape, y_test_median.shape, y_test_reg.shape) # 15
@@ -242,12 +278,12 @@ model = TCNModel(num_features=feature_dim,      # the size of the input feature 
                  ).to(DEVICE)                   # moves model to GPU if available, else CPU
 
 # -------------------------------------------------------------
-# Training Logic Setup: Losses & Optimiser
+# Training Logic Setup: Updated Losses & Optimiser (Phase 4.5)
 # -------------------------------------------------------------
 # Each task needs its own loss function:
-criterion_max = nn.BCEWithLogitsLoss()          # Binary Cross-Entropy with Logits Loss (raw model output) for binary classification tasks (max and median risk).
-criterion_median = nn.BCEWithLogitsLoss()
-criterion_reg = nn.MSELoss()                    # Mean Squared Error, standard choice for continuous outputs. Penalizes larger errors more strongly.
+criterion_max = nn.BCEWithLogitsLoss()
+criterion_median = nn.BCEWithLogitsLoss(pos_weight=pos_weight)  # weighted BCE
+criterion_reg = nn.MSELoss()  # still MSE, but regression targets now log-transformed
 
 # Optimiser
 # Adam = Adaptive Moment Estimation, updates all trainable weights of model based on computed gradients from backpropagation.
@@ -351,7 +387,8 @@ for epoch in range(1, EPOCHS + 1):
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         patience_counter = 0
-        torch.save(model.state_dict(), MODEL_SAVE_DIR / "tcn_best.pt") # If validation loss improves → save model, final model state will be best one.
+        # --- Save model to new Phase 4.5 folder ---
+        torch.save(model.state_dict(), best_model_path) # If validation loss improves → save model, final model state will be best one.
     else:
         patience_counter += 1                               # No improvement → increment counter.
         if patience_counter >= EARLY_STOPPING_PATIENCE:     # If no improvement for 7 epochs → stop training (saves time, avoids overfitting).
@@ -359,17 +396,30 @@ for epoch in range(1, EPOCHS + 1):
             break
 
 # -------------------------------------------------------------
-# Save training history for visualisation
+# Update configuration dictionary after training completes (Refined Phase 4.5)
 # -------------------------------------------------------------
+config_data["pos_weight_median_risk"] = float(pos_weight.cpu().item()) # records the actual numeric value of pos_weight that was computed dynamically from training set.
+config_data["final_val_loss"] = float(best_val_loss) # records the best validation loss achieved during training, how well the model fit the validation data
 
+# Confirms where the files actually went 
+config_data["outputs_confirmed"] = { 
+    "best_model": str(best_model_path),
+    "training_history": str(history_path),
+    "config": str(config_path)
+}
+
+# Save final config
+with open(config_path, "w") as f:
+    json.dump(config_data, f, indent=4)
+print(f"[INFO] Final refined training configuration saved to {config_path}")
+
+# -------------------------------------------------------------
+# Save updated training history for visualisation (Phase 4.5)
+# -------------------------------------------------------------
+# Save training loss curves
 with open(history_path, "w") as f:
-    json.dump({"train_loss": train_losses, "val_loss": val_losses}, f, indent=4) 
-print(f"[INFO] Training history saved to {history_path}")
+    json.dump({"train_loss": train_losses, "val_loss": val_losses}, f, indent=4)
+print(f"[INFO] Refined training history saved to {history_path}")
 
-print("Training complete. Best model saved to tcn_best.pt")
-
-print(y_train_max.unique())
-print(y_train_median.unique())
-print(y_train_reg.min(), y_train_reg.max())
-
-print(torch.isnan(x_train).any(), torch.isinf(x_train).any())
+# Model weights already saved in training loop at best epoch
+print(f"[INFO] Best refined model saved to {best_model_path}")
