@@ -13,8 +13,8 @@ Summary:
 - Saves patient-level predictions (CSV) and aggregated metrics (JSON).
 - Provides final, reproducible test-time performance for comparison vs. NEWS2 and LightGBM.
 Output:
-- results/tcn_metrics.json → summary of computed numeric performance metrics
-- results/tcn_predictions.csv → row-wise per-patient outputs (predictions + ground truth) 
+- tcn_results/tcn_metrics.json → summary of computed numeric performance metrics
+- tcn_results/tcn_predictions.csv → row-wise per-patient outputs (predictions + ground truth) 
 """
 
 # -------------------------------------------------------------
@@ -60,7 +60,7 @@ FEATURES_PATIENT_PATH = PROJECT_ROOT / "data" / "processed_data" / "news2_featur
 SPLITS_PATH = SRC_DIR / "ml_models_tcn" / "deployment_models" / "preprocessing" / "patient_splits.json"
 
 # Directory to save evaluation outputs (metrics + predictions)
-RESULTS_DIR = SRC_DIR / "prediction_evaluations" / "results"
+RESULTS_DIR = SRC_DIR / "prediction_evaluations" / "tcn_results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------
@@ -222,7 +222,7 @@ all_metrics = {
 # Write computed metrics to disk for documentation/reproducibility
 with open(RESULTS_DIR / "tcn_metrics.json", "w") as f:
     json.dump(all_metrics, f, indent=4)
-print("[INFO] Saved metrics → results/tcn_metrics.json")
+print("[INFO] Saved metrics → tcn_results/tcn_metrics.json")
 
 # -------------------------------------------------------------
 # Save Predictions and Ground-Truth Arrays (CSV)
@@ -241,7 +241,7 @@ df_preds = pd.DataFrame({
 
 # Save predictions for further analysis and reproducibility
 df_preds.to_csv(RESULTS_DIR / "tcn_predictions.csv", index=False)
-print("[INFO] Saved predictions → results/tcn_predictions.csv")
+print("[INFO] Saved predictions → tcn_results/tcn_predictions.csv")
 
 # -------------------------------------------------------------
 # Display Summary

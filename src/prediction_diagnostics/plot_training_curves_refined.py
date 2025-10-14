@@ -1,5 +1,3 @@
-# src/prediction_diagnostics/plot_training_curves_refined.py 
-
 """
 plot_training_curves_refined.py
 
@@ -81,14 +79,17 @@ plt.figure(figsize=(8, 6))  # Set figure size for readability
 plt.plot(train_loss_refined, label="Train Loss", linewidth=2)           # Plot training curve
 plt.plot(val_loss_refined, label="Validation Loss", linewidth=2)        # Plot validation curve
 plt.xlabel("Epoch")                                                     # X-axis label
-plt.ylabel("Loss")                                                      # Y-axis label
-plt.title("Training vs Validation Loss per Epoch (Refined TCN Model Run)")  # Title for clarity
+plt.ylabel("Loss (MSE log-space)")                                      # Y-axis label
+plt.title("Training vs Validation Loss per Epoch (Refined TCN Model Run)", pad=40)  # Title for clarity
+plt.text(0.5, 1.02,
+         "Note: Regression component uses log-transformed targets; loss values not numerically comparable to baseline (Phase 4).",
+         ha="center", va="bottom", fontsize=9, color="gray", transform=plt.gca().transAxes)
 plt.legend()                                                            # Show legend
 plt.grid(True, linestyle="--", alpha=0.5)                               # Add grid for easier interpretation
 plt.tight_layout()                                                      # Adjust layout to prevent cutoff labels
 
 # -------------------------------------------------------------
-# Add Key Annotations for interpretability (Phase 4.5)
+# Plot 1 –Add Key Annotations for interpretability (Phase 4.5)
 # -------------------------------------------------------------
 # Draw a vertical red dashed line at the best validation epoch
 plt.axvline(best_epoch_refined, color="red", linestyle="--", alpha=0.7, label="Best (Early Stop)")
@@ -108,7 +109,7 @@ if len(val_loss_refined) > best_epoch_refined + 2:
              color="gray", fontsize=10, alpha=0.8)
     
 # -------------------------------------------------------------
-# Save Refined Plot (Phase 4.5)
+# Plot 1 – Save Refined Plot (Phase 4.5)
 # -------------------------------------------------------------
 # Save refined figure in high resolution
 plt.savefig(PLOT_DIR / "loss_curve_refined.png", dpi=300)
@@ -128,22 +129,24 @@ print("[INFO] Saved refined loss plot → loss_plots/loss_curve_refined.png")
 plt.figure(figsize=(8, 6))
 
 # Phase 4 curves (dashed, lighter)
-plt.plot(train_loss_original, label="Baseline — Train", linestyle="--", color="blue", alpha=0.6)
-plt.plot(val_loss_original, label="Baseline — Val", linestyle="--", color="orange", alpha=0.6)
+plt.plot(train_loss_original, label="Baseline — Train (raw)", linestyle="--", color="blue", alpha=0.6)
+plt.plot(val_loss_original, label="Baseline — Val (raw)", linestyle="--", color="orange", alpha=0.6)
 
 # Phase 4.5 curves (solid, darker)
-plt.plot(train_loss_refined, label="Refined — Train", linewidth=2, color="blue")
-plt.plot(val_loss_refined, label="Refined — Val", linewidth=2, color="orange")
+plt.plot(train_loss_refined, label="Refined — Train (log)", linewidth=2, color="blue")
+plt.plot(val_loss_refined, label="Refined — Val (log)", linewidth=2, color="orange")
 
 plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("TCN Training vs Validation Loss — Baseline vs Refined")
+plt.ylabel("Composite Loss (raw vs log-space — compare trends only)")
+plt.title("TCN Training vs Validation Loss — Baseline vs Refined (Trend Comparison Only)", pad=40)
+plt.text(0.5, 1.02,
+         "Note: Regression losses differ by scale (Phase 4 raw vs Phase 4.5 log-space).",
+         ha="center", va="bottom", fontsize=9, color="gray", transform=plt.gca().transAxes)
 plt.legend()
 plt.grid(True, linestyle="--", alpha=0.4)
-plt.tight_layout()
 
 # -------------------------------------------------------------
-# Add Key Annotations for interpretability (Comparison)
+# Plot 2 - Add Key Annotations for interpretability (Comparison)
 # -------------------------------------------------------------
 # Annotate minima
 plt.scatter(best_epoch_original, best_val_original, color="orange", s=50, zorder=5)
@@ -155,9 +158,22 @@ plt.text(best_epoch_refined + 0.3, best_val_refined + 0.02,
          f"Refined best\n(Epoch {best_epoch_refined})",
          color="red", fontsize=9, verticalalignment="bottom")
 
+# Reserve just enough space below the plot (minimal padding)
+plt.subplots_adjust(bottom=0.5)
+
+# Add the disclaimer just below the x-axis, centred and compact
+plt.figtext(
+    0.5, 0.05,  # slightly lower and tighter
+    "Disclaimer: Phase 4.5 regression losses are log-transformed; visual overlay is for trend comparison only.",
+    ha="center", va="bottom", fontsize=9, color="gray"
+)
+
 # -------------------------------------------------------------
-# Save Comparison Plot (Phase 4 vs Phase 4.5)
+# Plot 2 – Save Comparison Plot (Phase 4 vs Phase 4.5)
 # -------------------------------------------------------------
+# Adjust layout to leave space for disclaimer
+plt.tight_layout(rect=[0.02, 0.14, 0.98, 0.92])  
+
 # Save combined plot
 plt.savefig(PLOT_DIR / "loss_curve_comparison.png", dpi=300)
 plt.show()

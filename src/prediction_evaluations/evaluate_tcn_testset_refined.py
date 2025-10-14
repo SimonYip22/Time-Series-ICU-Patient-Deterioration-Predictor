@@ -3,18 +3,19 @@
 """
 evaluate_tcn_testset_refined.py
 
-Title: Final Evaluation of Refined TCN on Held-Out Test Set
+Title: Final Evaluation of Refined TCN Model on Held-Out Test Set
 
 Summary:
-- Loads the best-performing TCN checkpoint (tcn_best.pt) from Phase 4.
-- Dynamically rebuilds the test targets (y_test) from patient-level CSV + split JSON.
-- Runs inference on the unseen test set (x_test, mask_test).
-- Computes classification + regression metrics via evaluation_metrics.py.
-- Saves patient-level predictions (CSV) and aggregated metrics (JSON).
-- Provides final, reproducible test-time performance for comparison vs. NEWS2 and LightGBM.
-Output:
-- results/tcn_metrics.json → summary of computed numeric performance metrics
-- results/tcn_predictions.csv → row-wise per-patient outputs (predictions + ground truth) 
+- Loads the retrained TCN checkpoint (tcn_best_refined.pt) from Phase 4.5.
+- Dynamically rebuilds test targets from patient-level CSV + JSON split.
+- Runs inference on unseen test data using refined architecture.
+- Applies inverse log-transform to regression predictions (log-transformed from phase 4.5).
+- Computes classification and regression metrics for reproducibility.
+- Saves refined predictions and metrics to dedicated results folder.
+
+Outputs:
+- prediction_evaluations/tcn_results_refined/tcn_metrics_refined.json
+- prediction_evaluations/tcn_results_refined/tcn_predictions_refined.csv
 """
 
 # -------------------------------------------------------------
@@ -26,16 +27,23 @@ from pathlib import Path              # Safe filesystem handling across OS
 import torch                          # Core deep learning library
 import json                           # For reading/writing JSON files (splits + metrics), saving metrics to JSON
 import pandas as pd                   # For tabular prediction outputs
+import numpy as np                    # For inverse log transform
 from time import time                 # Used to measure inference duration
 
 
-# --- Add src/ to sys.path so we can import packages directly ---
-SCRIPT_DIR = Path(__file__).resolve().parent               # src/prediction_evaluations
+# -------------------------------------------------------------
+# Path setup
+# -------------------------------------------------------------
+# Add src/ to sys.path so we can import packages directly
+SCRIPT_DIR = Path(__file__).resolve().parent                # src/prediction_evaluations
 SRC_DIR = SCRIPT_DIR.parent                                 # src/
 PROJECT_ROOT = SRC_DIR.parent                               # project root
 sys.path.append(str(SRC_DIR))                               # now Python can find ml_models_tcn, prediction_evaluations
 
-# --- Import reusable metric utilities (Phase 5 Step 0) ---
+# -------------------------------------------------------------
+# Imports from other project modules
+# -------------------------------------------------------------
+# --- Import reusable metric utilities (Phase 5)---
 # evaluation_metrics.py defines functions to compute metrics for classification and regression tasks.
 from prediction_evaluations.evaluation_metrics import (
     compute_classification_metrics,
@@ -49,10 +57,11 @@ from ml_models_tcn.tcn_model import TCNModel
 # -------------------------------------------------------------
 # Paths
 # -------------------------------------------------------------
-# Path to best TCN model checkpoint (saved during early stopping in Phase 4)
-TRAINED_MODEL_PATH = SRC_DIR / "ml_models_tcn" / "trained_models" / "tcn_best.pt"
+# Path to best TCN model weights (saved during early stopping in Phase 4.5) + Model config
+TRAINED_MODEL_PATH = SRC_DIR / "prediction_diagnostics" / "trained_models_refined" / "tcn_best_refined.pt"
+CONFIG_PATH = SRC_DIR / "prediction_diagnostics" / "trained_models_refined" / "config_refined.json"
 
-# Path to saved test tensors (input sequences + masks)
+# Path to saved test + mask tensors (input sequences + masks)
 TEST_DATA_DIR = SRC_DIR / "ml_models_tcn" / "prepared_datasets"
 
 # Path to rebuild y_test (patient-level labels for test set)
@@ -60,11 +69,24 @@ FEATURES_PATIENT_PATH = PROJECT_ROOT / "data" / "processed_data" / "news2_featur
 SPLITS_PATH = SRC_DIR / "ml_models_tcn" / "deployment_models" / "preprocessing" / "patient_splits.json"
 
 # Directory to save evaluation outputs (metrics + predictions)
-RESULTS_DIR = SRC_DIR / "prediction_evaluations" / "results"
+RESULTS_DIR = SRC_DIR / "prediction_evaluations" / "tcn_results_refined"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------
-# Dynamically rebuild y_test from patient-level data (same logic as phase 4 training)
+# Sanity Checks — ensure all expected files and configs exist
+# -------------------------------------------------------------
+assert TRAINED_MODEL_PATH.exists(), f"[ERROR] Missing model weights: {TRAINED_MODEL_PATH}"
+assert CONFIG_PATH.exists(), f"[ERROR] Missing config file: {CONFIG_PATH}"
+assert TEST_DATA_DIR.exists(), f"[ERROR] Missing test data directory: {TEST_DATA_DIR}"
+assert (TEST_DATA_DIR / "test.pt").exists(), "[ERROR] Missing test.pt file"
+assert (TEST_DATA_DIR / "test_mask.pt").exists(), "[ERROR] Missing test_mask.pt file"
+assert FEATURES_PATIENT_PATH.exists(), "[ERROR] Missing patient-level features CSV"
+assert SPLITS_PATH.exists(), "[ERROR] Missing patient_splits.json"
+
+print("[INFO] All required files found. Proceeding with refined model evaluation...")
+
+# -------------------------------------------------------------
+# Rebuild test labels dynamically
 # -------------------------------------------------------------
 # Dynamically rebuild y_test from CSV + JSON split (handles any class distribution)
 # Load patient-level feature dataframe and test split identifiers
@@ -103,17 +125,23 @@ print(f"[INFO] Using device: {device}")
 x_test = torch.load(TEST_DATA_DIR / "test.pt", map_location=device)
 mask_test = torch.load(TEST_DATA_DIR / "test_mask.pt", map_location=device)
 
+# Quick shape validation — ensure alignment between test IDs and tensor batch size
+assert x_test.shape[0] == len(test_ids), (
+    f"[ERROR] x_test has {x_test.shape[0]} patients, "
+    f"but test split defines {len(test_ids)}. Check patient_splits.json alignment."
+)
+
 # --- 2. Load the hyperparameters into the model architecture / structure ---
 # Model architecture defined in TCNModel imported from tcn_model.py, which needs hyperparameters to instantiate
-# Load architecture hyperparameters from config.json created during training (tcn_training_script.py)
-with open(SRC_DIR / "ml_models_tcn" / "trained_models" / "config.json") as f:
+# Load architecture hyperparameters from config_refined.json created during training (tcn_training_script_refined.py)
+with open(CONFIG_PATH) as f:
     config = json.load(f)
 arch = config["model_architecture"]
 
 # Automatically get feature dimension (171 features = input channels in first convolutional layer)
 NUM_FEATURES = x_test.shape[2] 
 
-# Instantiate the TCN model architecture (defined in tcn_model.py) with same hyperparameters as training (tcn_training_script.py)
+# Instantiate the TCN model architecture (defined in tcn_model.py) with same hyperparameters as training (tcn_training_script_refined.py)
 # Must match exactly what was used during training, otherwise the weight shapes won't align
 model = TCNModel(
     num_features=NUM_FEATURES,          # Input feature dimension (171 per-timestep features)
@@ -125,7 +153,7 @@ model = TCNModel(
 
 # --- 3. Load the trained model weights (tcn_best.pt) ---
 # Weights are the learned parameters (filters, biases) that the model adjusted during training to minimise loss
-# tcn_best.pt = serialized 'state_dict' containing all trained layer weights + biases (tensors)
+# tcn_best_refined.pt = serialized 'state_dict' containing all trained layer weights + biases (tensors)
 state_dict = torch.load(TRAINED_MODEL_PATH, map_location=device)
 # Copies the saved weights (state_dict) into the model architecture we just instantiated (model)
 model.load_state_dict(state_dict)
@@ -139,7 +167,7 @@ model.to(device)
 # Ensures consistent, deterministic, stable predictions during inference → no random dropout, no unstable normalisation (batchnorm updates)
 model.eval()
 
-print("[INFO] Loaded TCN model and weights successfully")
+print("[INFO] Loaded refined TCN model and weights successfully")
 
 # -------------------------------------------------------------
 # Inference (Testing)
@@ -196,6 +224,14 @@ y_true_median = y_test["median"].cpu().numpy()
 y_true_reg = y_test["reg"].cpu().numpy()
 
 # -------------------------------------------------------------
+# Inverse transform regression predictions (Phase 4.5 only)
+# -------------------------------------------------------------
+# Undo log1p() applied during phase 4.5 training → restore pct_time_high scale (only predictions were log-scaled)
+y_pred_reg = np.expm1(y_pred_reg)
+
+print("[INFO] Applied inverse log-transform (expm1) to regression *predictions* only.")
+
+# -------------------------------------------------------------
 # Compute Metrics
 # -------------------------------------------------------------
 """
@@ -220,9 +256,9 @@ all_metrics = {
 # Save Computed Metrics (JSON)
 # -------------------------------------------------------------
 # Write computed metrics to disk for documentation/reproducibility
-with open(RESULTS_DIR / "tcn_metrics.json", "w") as f:
+with open(RESULTS_DIR / "tcn_metrics_refined.json", "w") as f:
     json.dump(all_metrics, f, indent=4)
-print("[INFO] Saved metrics → results/tcn_metrics.json")
+print("[INFO] Saved metrics → tcn_results_refined/tcn_metrics_refined.json")
 
 # -------------------------------------------------------------
 # Save Predictions and Ground-Truth Arrays (CSV)
@@ -236,18 +272,19 @@ df_preds = pd.DataFrame({
     "y_true_median": y_true_median,
     "prob_median": prob_median,
     "y_true_reg": y_true_reg,
-    "y_pred_reg": y_pred_reg
+    "y_pred_reg_raw": preds_reg.numpy(),    # raw log-space prediction
+    "y_pred_reg": y_pred_reg                # inverse-transformed back to pct_time_high scale
 })
 
 # Save predictions for further analysis and reproducibility
-df_preds.to_csv(RESULTS_DIR / "tcn_predictions.csv", index=False)
-print("[INFO] Saved predictions → results/tcn_predictions.csv")
+df_preds.to_csv(RESULTS_DIR / "tcn_predictions_refined.csv", index=False)
+print("[INFO] Saved predictions → tcn_results_refined/tcn_predictions_refined.csv")
 
 # -------------------------------------------------------------
 # Display Summary
 # -------------------------------------------------------------
 # Print a quick on-screen summary of key results for easy inspection
-print("\n=== Final Test Metrics ===")
+print("\n=== Final Refined Test Metrics ===")
 print(f"Max Risk — AUC: {metrics_max['roc_auc']:.3f}, F1: {metrics_max['f1']:.3f}, Acc: {metrics_max['accuracy']:.3f}")
 print(f"Median Risk — AUC: {metrics_median['roc_auc']:.3f}, F1: {metrics_median['f1']:.3f}, Acc: {metrics_median['accuracy']:.3f}")
 print(f"Regression — RMSE: {metrics_reg['rmse']:.3f}, R²: {metrics_reg['r2']:.3f}")
