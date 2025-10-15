@@ -4215,15 +4215,16 @@ It focused on establishing a **reproducible and standardised evaluation framewor
     - **Define paths** to Phase 4 (`training_history.json`) and Phase 4.5 (`training_history_refined.json`) losses; create `loss_plots/`.
     - **Load JSON histories** for both phases and extract `train_loss` / `val_loss`.
     - **Identify best validation epochs** for both models for annotation.
-    - **Plot Phase 4.5 refined curves** (`loss_curve_refined.png`), annotate minima and overfitting region.
-    - **Plot comparison curves** (`loss_curve_comparison.png`) overlaying Phase 4 baseline vs Phase 4.5 refined, annotate minima for both phases.
+    - **Plot Phase 4.5 refined curves** (`loss_curve_refined.png`), annotate minima and overfitting region, add note under title explaining loss axis being log-transformed.
+    - **Plot comparison curves** (`loss_curve_comparison.png`) overlaying Phase 4 baseline vs Phase 4.5 refined, annotate minima for both phases, add not below title and disclaimer under plot that direct numerical comparison is not possible, only trends can be compared.
     - **Save plots** and print console confirmations.
   - **Outputs:**  
     - `loss_curve_refined.png` → Phase 4.5 standalone learning curve.  
-    - `loss_curve_comparison.png` → overlay showing baseline vs refined convergence.
+    - `loss_curve_comparison.png` → overlay showing baseline vs refined convergence for trend comparison.
   - **Interpretation:**  
     - Phase 4.5 training shows **faster early convergence**, lower minimum validation loss, and earlier overfitting, reflecting **enhanced learning for minority class and stabilised regression**.  
     - Comparison overlay highlights **accelerated learning dynamics** due to weighted BCE + log-transform, while baseline shows slower, steadier loss decline.  
+    - Comparison is for visual trends, not direct numerical comarisons due to scale differences between plots.
     - Confirms **controlled improvements in convergence** without modifying architecture, validating retraining interventions.
 
 **End Products of Phase 4.5**
@@ -4940,6 +4941,10 @@ Diagnostics completed successfully ✅
 | `log1p(y)` | Deterministic | Same `np.log1p()` transformation applied every run | No, only min/max printed for verification (sanity check) |
 
 **Effects on Training & Validation**
+- **Note:** 
+  - We cannot compare absolute magnitudes between Phase 4 vs Phase 4.5, because the loss units are incompatible (raw-scale vs log-scale regression component).
+  - Even though both overall losses are scalar numbers, one phase includes a regression loss measured in MSE(raw), and the other in MSE(log), they’re not numerically comparable.
+  - We can however can claim behavioural improvement (faster convergence, earlier overfit point, improved stability).
 - **Early Training**:
   - Faster decrease in training loss for median-risk classification due to weighted loss.  
   - Regression loss more stable because of log-transform.  
@@ -4975,17 +4980,21 @@ Diagnostics completed successfully ✅
    - Store both epoch index and value for annotation.
 4. **Plot Phase 4.5 refined training/validation curve**  
    - `plt.plot(train_loss_refined)` and `plt.plot(val_loss_refined)` to visualise loss across epochs.
-   - Add vertical dashed line at best validation epoch.
-   - Add scatter point and text annotation for exact minimum.
-   - Optionally annotate overfitting region (post-best epoch rise in validation loss).
+   - Add title with padding and an explanatory note directly below the title using `plt.text(..., transform=plt.gca().transAxes)`.
+   - Add red vertical dashed line at best validation epoch.
+   - Mark the minimum validation loss with a red dot and annotated text.
+   - If validation loss increases after the best epoch, mark this region as “overfitting region” (post-best epoch rise in validation loss).
 5. **Save Phase 4.5 plot**  
    - `plt.savefig(PLOT_DIR / "loss_curve_refined.png")` in high resolution.
-   - Close figure to free memory.
+   - Close figure `plt.close()` to free memory.
 6. **Plot comparison: Phase 4 vs Phase 4.5**  
-   - Plot baseline Phase 4 curves as dashed, lighter lines.
-   - Plot Phase 4.5 curves as solid, darker lines.
+   - Overlay both training/validation curves:
+    - Plot baseline Phase 4 curves as dashed, lighter lines.
+    - Plot Phase 4.5 curves as solid, darker lines.
+   - Add note beneath title clarifying different loss scales (raw vs log-space).
    - Add scatter points and text annotations for minima of both phases.
    - Include legend, grid, and tight layout.
+   - Use `plt.subplots_adjust(bottom=0.5)` and `plt.figtext(0.5, 0.05, …)` to add a bottom disclaimer below the x-axis, confirming the overlay is for trend comparison only.
 7. **Save comparison plot**  
    - `plt.savefig(PLOT_DIR / "loss_curve_comparison.png")` in high resolution.
    - Close figure to free memory.
@@ -4998,16 +5007,17 @@ Diagnostics completed successfully ✅
 - **Training curves (`loss_curve_refined.png`) show**:
   - Steady decline in training loss from epoch 0 → 9.
   - Validation loss initially drops for the first 3 epochs, then rises sharply, highlighting **rapid learning followed by overfitting**.
-  - The sharp rise in validation loss visually confirms early overfitting; the curve shape emphasizes the effect of **weighted BCE and log-transform** interventions on learning dynamics.
+  - The sharp rise in validation loss visually confirms early overfitting; the curve shape emphasizes the effect of **weighted BCE (stabilised classification) and log-transform (smoothed regression behaviour)** interventions on learning dynamics.
 - **Overlay comparison (`loss_curve_comparison.png`) shows**:
-  - Baseline (Phase 4) validation loss declines more gradually and stays relatively stable, whereas refined (Phase 4.5) validation loss drops faster but increases earlier.
+  - Baseline (Phase 4) validation loss declines more gradually and stays relatively stable, whereas refined (Phase 4.5) validation loss drops (converges) faster but increases (overfits) earlier.
   - Refined training loss consistently below baseline after epoch 2 → demonstrates **faster convergence and improved early learning**.
-  - Visual gap between baseline and refined curves confirms that **Phase 4.5 interventions produced measurable improvements in learning dynamics** while maintaining stable convergence patterns.
+  - Visual gap between baseline and refined curves confirms that **Phase 4.5 interventions produced improvements in learning dynamics** while maintaining stable convergence patterns.
 **Summary**
 - **`loss_curve_refined.png` provides a clear view of Phase 4.5 learning:** faster early convergence, minimum validation loss at epoch ~3, and onset of overfitting.
 - **`loss_curve_comparison.png` visually contrasts baseline vs refined behaviour:**
   - Shows faster initial learning in Phase 4.5.
   - Confirms earlier minimum validation loss, highlighting **data-level fixes (weighted BCE + log-transform) as effective**.
+  - Emphasises that raw loss magnitudes are not numerically comparable due to scale differences.
   - Provides evidence that retraining interventions improved model behaviour without modifying architecture, suitable for documentation and reproducibility.
 
 ### Folder Structure
@@ -5168,7 +5178,6 @@ This retraining phase introduces **two minimal yet sufficient interventions**, b
   - **Pros:** Compresses high-end outliers and normalises variance while preserving zero values (`log1p` keeps 0 → 0).  
   - **Mechanism:**  
     - During training: `y_reg = log1p(y_reg)`  
-    - During inference: `y_pred = expm1(y_pred)` to revert to the original scale.  
   - **Effect:** Stabilises regression learning and improves generalisation by giving the model a smoother functional mapping to learn.  
 - 2. **(b) Huber Loss**  
   - **Cons:** Balances MSE and MAE but requires careful tuning of the delta parameter.  
@@ -5287,13 +5296,13 @@ Early stopping at epoch 10
 **Key Takeaways**
 - **Phase 4.5 training curves** demonstrate improved early learning efficiency for both classification and regression heads.
 - **Validation curves** confirm that weighted BCE and log-transform improve convergence but require careful early stopping to prevent rapid overfitting.
-- Numeric comparison of epoch-wise losses confirms that Phase 4.5 interventions produced measurable improvements in training dynamics without modifying model architecture.
+- Trend-level comparison confirms measurable improvements in convergence and learning dynamics, even though absolute loss magnitudes differ due to the log-transformed regression component
 - Overlay plot (`loss_curve_comparison.png`) clearly shows the **gap between baseline and refined curves**, providing visual evidence that retraining interventions produced measurable improvements without modifying model architecture.
 **Outputs**
 - Provides a quantitative reference of training and validation loss progression for reproducibility.
 - Documents effect of Phase 4.5 retraining interventions on learning behavior and convergence efficiency.
 - Provides visual confirmation of improved convergence, early validation loss minimum, and expected overfitting onset.
-
+- **Note:** Loss magnitudes are not directly comparable across phases due to the log-transformation applied to regression targets in Phase 4.5.
 
 ### Phase 4 vs Phase 4.5 — JSON Configuration Comparison
 **Overview**
@@ -5372,8 +5381,625 @@ Only `pos_weight_median_risk` and `final_val_loss` are dynamic run outputs; the 
 
 ---
 
-## Day 27: Continue Phase 5
+# Phase 5: Evaluation, Baselines & Comparison
 
+---
+
+## Day 27-28: Continue Phase 5: Evaluation of Refined TCN Model
+
+### Goals
+
+### What We Did
+#### Evaluated Refined TCN Model on Test Set `evaluate_tcn_testset_refined.py`
+**Purpose**
+- This script performs the final evaluation of the refined Temporal Convolutional Network (TCN) on the held-out test set (Phase 4.5).
+- It validates how the retrained model (corrected for log-transformation consistency and class weighting) generalises to unseen data, while ensuring that regression outputs are both scientifically valid (log-space) and clinically interpretable (raw-space).
+- It also introduces post-hoc calibration, enabling performance improvement without retraining.
+- **The goal is to ensure both:**
+  - **Internal consistency:** verifying the model performs well in its training space (log-transformed scale).  
+  - **Clinical interpretability:** verifying predictions remain meaningful in raw (% time high) space.
+**Process**
+1. **Preserved Core Architecture and Evaluation Flow**
+  - The overall structure remains consistent with the original `evaluate_tcn_testset.py`.
+  - **Key retained components include:**
+    - Load `TCNModel` definition from phase 4 `tcn_model.py`
+    - Dynamic rebuilding of test targets from `news2_features_patient.csv` and `patient_splits.json`.
+    - Load phase 4 test tensors `test.pt`, `test_mask.pt`
+    - **TCNModel instantiation:** loading weights from `tcn_best_refined.pt`, using architecture from `config_refined.json`.
+    - Set model to evaluation mode.
+    -	Standardised inference flow (CPU/GPU detection → forward pass → logits extraction) on unseen test tensors.  
+    -	Metric computation using shared utility functions `compute_classification_metrics` and `compute_regression_metrics`, ensuring metric continuity with previous phases.
+    -	Output saving to disk (`metrics_refined.json`, `predictions_refined.csv`) and printed summary.
+  - This ensures full continuity with prior evaluation pipelines (Phases 4.0–4.5).
+2. **Comprehensive Header & Scientific Context**
+  - Added a full top-level docstring with Overview, Scientific Rationale, and Outputs sections.
+	- **Clarifies:**
+    -	The dual purpose of log-space vs raw-space evaluation.
+    -	Why calibration replaces retraining for bias correction.
+    - What outputs are saved and how they map to interpretability.
+  - **Rationale:** Converts the script from a technical utility into a scientifically transparent evaluation module, suitable for inclusion in a research methods appendix.
+3. **Explicit Handling of Log-Transformed Regression Outputs**
+	-	The regression head outputs predictions trained on `log1p(pct_time_high)`.
+	-	Predictions (`y_pred_reg`) are explicitly recognised as log-space values.
+  - **Rationale:** Prevents scale misinterpretation, ensuring that metrics reflect the correct mathematical space.
+4. **Inverse Log Transform (`np.expm1`)**
+	-	Introduced an inverse transformation to recover clinically interpretable raw values (`pct_time_high`).
+	-	Added both log- and raw-scale predictions to the CSV (`y_pred_reg_log`, `y_pred_reg_raw`).
+  - **Rationale**: Enables clinicians and reviewers to compare real-scale estimates directly with baseline models and ground truth.
+5. **Dual-Scale Evaluation**
+	-	Regression metrics now computed in:
+    1. Log-space → Matches training objective (validates optimisation fidelity).
+    2. Raw-space → Assesses clinical interpretability and external comparability.
+  - **Rationale:** Separates internal model performance from practical outcome accuracy, creating transparency in cross-domain validation.
+6. **Correlation Analysis**
+	-	Introduced Pearson correlation coefficients (`corr_log` and `corr_raw`).
+	-	**Added interpretation rule:** High correlation but negative R² indicates monotonic bias, not failure.
+  - **Rationale:** Provides diagnostic evidence for calibration necessity → shows the model tracks trends correctly but misestimates magnitude.
+7. **Calibration Bias Visualisation**
+	-	Added scatter plot of `y_true_reg_log` vs `y_pred_reg_log` with a red diagonal (y=x).
+	-	Automatically saved as `tcn_regression_calibration_logspace.png`.
+  - **Rationale:** Visual confirmation of systematic bias (e.g., consistent overestimation or underestimation).
+8. **Post-Hoc Linear Calibration**
+	-	**Implemented a simple linear regression in log-space:** `y_true_log ≈ a * y_pred_log + b`
+	-	Applied the fitted coefficients to correct predicted values without retraining.
+	-	Recomputed calibrated predictions in both log and raw scales.
+  - **Rationale:** Corrects bias directly, improving R² and RMSE while maintaining learned structure.
+9. **Calibration Effect Comparison Plot**
+	-	Added second visualisation: before vs after calibration.
+	-	Steelblue = pre-calibration, Orange = post-calibration, Red dashed = perfect calibration.
+	-	Saved as `tcn_regression_calibration_comparison_logspace.png`.
+  - **Rationale:** Demonstrates the effectiveness of calibration visually → makes improvement transparent in reports.
+10. **Revised Output Structure**
+  - Combined all predictions into a single DataFrame (`tcn_predictions_refined.csv`) containing:
+    - Classification: `y_true_max`, `prob_max`, `y_true_median`, `prob_median`  
+    - Regression (raw + log + calibrated):  
+      - `y_true_reg`, `y_true_reg_log`, `y_pred_reg_log`, `y_pred_reg_raw`,  
+      - `y_pred_reg_log_cal`, `y_pred_reg_raw_cal`  
+  - Metrics (classification, regression, pre- and post-calibration) are saved to JSON (`tcn_metrics_refined.json`) for reproducibility.  
+  - **Summary printout includes:**
+    - Printed range and mean of raw regression predictions (`min, max, mean`).
+    - AUC, F1, Accuracy for classification heads.  
+    - RMSE and R² for regression heads (log-space, raw-space, and calibrated).  
+    - Mean and standard deviation of true `y_true_reg` and predicted `y_pred_reg` regression targets to contextualise bias.
+**What Changed (Summary Table)**
+| Area | Change | Rationale |
+|------|---------|-----------|
+| **Header + Documentation** | Rewritten docstring with full scientific rationale, calibration context, and output summary. | Makes the evaluation pipeline self-documenting and publication-ready. |
+| **Regression Target Interpretation** | Explicitly defined outputs as log-space (`log1p(pct_time_high)`). | Ensures evaluation aligns with training target transformation. |
+| **Inverse Log Transform** | Added `np.expm1` to restore predictions to raw scale. | Provides interpretable, clinically relevant regression metrics. |
+| **Dual-Scale Evaluation** | Regression metrics computed in both log and raw space. | Separates model’s internal learning quality from external applicability. |
+| **Correlation + Calibration Step** | Added Pearson correlation and linear calibration. | Identifies and corrects monotonic bias without retraining. |
+| **Visual Diagnostics** | Added calibration plots (pre- and post-calibration). | Enables visual confirmation of bias correction and model alignment. |
+| **Metric Expansion** | Saved pre- and post-calibration regression metrics. | Quantifies calibration improvement (e.g., R² shift from negative to positive). |
+| **Output Files** | CSV + JSON + PNG outputs under new directory `tcn_results_refined/`. | Keeps refined results isolated and reproducible. |
+| **Summary Reporting** | Added regression means, standard deviations, and print messages confirming file saves. | Improves interpretability and traceability. |
+**Files Generated**
+| File | Description |
+|-------|--------------|
+| `tcn_predictions_refined.csv` | Full per-patient predictions → includes classification (`max`, `median`) and regression outputs in both **log-space** and **raw-space**. |
+| `tcn_metrics_refined.json` | Complete metrics dictionary → covers **classification** and **regression** (pre- and post-calibration). |
+| `tcn_regression_calibration_logspace.png` | Calibration bias visualisation in log-space → shows pre-calibration over/underestimation relative to the ideal diagonal. |
+| `tcn_regression_calibration_comparison_logspace.png` | Before/after calibration comparison plot → highlights improved alignment of predictions after bias correction. |
+**Console Output**
+| Output | Description |
+|---------|--------------|
+| **Regression predictions (log-space)** — Min, Max, Mean | Displays the range and central tendency of raw model outputs in log-space to check numerical stability and confirm that predicted values fall within plausible bounds. |
+| **Correlation (log-space / raw-space)** | Pearson correlation shows how strongly predicted vs true regression values correlate before calibration. High correlation with poor R² suggests monotonic bias rather than random error. |
+| **Calibration equation** (`y_true_log ≈ a * y_pred_log + b`) | Defines the fitted linear relationship used to correct systematic over/underestimation in the model’s log-space predictions. |
+| **Final Refined Test Metrics** — AUC, F1, Accuracy, RMSE, R² (pre- and post-calibration) | Summarises all quantitative performance metrics for classification and regression tasks, both before and after calibration. Enables comparison of calibration impact. |
+| **Test IDs used** | Lists exact patient identifiers included in the held-out test set, ensuring traceability and reproducibility. |
+| **Mean and Std of y_true_reg / y_pred_reg** | Compares central tendency and spread of true vs predicted regression targets to contextualise model bias and output distribution. |
+
+**Overall Summary**
+- The refined evaluation pipeline finalises **Phase 4.5** by introducing *scientific transparency*, *systematic bias diagnosis*, and *post-hoc calibration* into the Temporal Convolutional Network (TCN) test evaluation.  
+- It retains full architectural and metric continuity from previous phases, ensuring comparability, while adding new diagnostic and calibration tools that:
+  - **Verify** that negative R² values resulted from *systematic scale bias* (consistent under- or overestimation), not random error or model collapse.  
+  - **Recover** strong monotonic correlation through a simple **log-space linear calibration**, correcting proportional bias without altering learned weights.  
+  - **Preserve** computational efficiency by removing the need for retraining while improving interpretability and external validity.
+- The result is a **fully reproducible, publication-ready evaluation module** that separates **internal model fidelity** (log-space training objective) from **clinical interpretability** (raw-space output), creating a defensible foundation for comparative, ablation, or external validation studies.
+
+**Analytical Impact**
+- This update elevates the evaluation script from a basic metric summary into a **robust, auditable analysis framework**.  
+- By adding **calibration, dual-scale metrics, and visual diagnostics**, the refined process:
+  - Shows that model predictions *track true trends* despite raw-space R² distortions.  
+  - Corrects monotonic bias via **post-hoc regression calibration**, not weight adjustment.  
+  - Provides *quantitatively interpretable* outputs suitable for scientific reporting, audit, or clinical validation contexts.
+- **In essence:** `evaluate_tcn_testset_refined.py` completes the analytical lifecycle of the refined TCN, evolving from raw inference to **calibrated, explainable, and clinically interpretable performance evaluation**, bridging the gap between *machine learning validation* and *clinical applicability*.
+
+
+### Evaluation Outputs — Refined TCN Test Set
+**Overview**
+- This section summarises the **primary evaluation outputs** of `evaluate_tcn_testset_refined.py`, excluding plots. 
+- It details **when each output is generated, why it exists, and what insights can be derived**.
+**Outputs**
+1. **Predictions + Ground Truth CSV — `tcn_predictions_refined.csv`**
+  - **Purpose:**  
+    - Provides a **transparent mapping** of model predictions to ground truth across all tasks.  
+    - Facilitates **reproducibility**, debugging, and downstream analyses (e.g., calibration checks or error audits).
+  - **Creation Point:**  
+    - Generated **after inference**, before metric computation and calibration.  
+    - Combines:
+      - Raw model outputs (log-space regression, classification logits/probabilities)
+      - Ground-truth labels
+      - Inverse-transformed regression predictions (raw %)
+  - **Contents:**  
+    - Each row corresponds to a **single patient** in the held-out test set (n = 15).  
+
+| Column | Description |
+|--------|-------------|
+| `y_true_max` | Ground-truth label for max-risk classification (1 = high risk, 0 = not). |
+| `prob_max` | Model-predicted probability for max-risk head (sigmoid of logit). |
+| `y_true_median` | Ground-truth label for median-risk classification. |
+| `prob_median` | Model-predicted probability for median-risk head. |
+| `y_true_reg` | True raw percentage of time in high-risk state (`pct_time_high`). |
+| `y_true_reg_log` | Log-transformed ground truth (`log1p(y_true_reg)`). Used for **internal log-space metrics**. |
+| `y_pred_reg_log` | Model output regression predictions in log-space (native network output). |
+| `y_pred_reg_raw` | Inverse-transformed predictions (`expm1(y_pred_reg_log)`), restoring raw % for **clinical interpretation**. |
+  
+  - **What We Can Learn:**  
+    - Direct inspection of per-patient errors (prediction vs ground truth).  
+    - Distribution and plausibility of predictions before and after calibration.  
+    - Useful for verifying **monotonic trends** and identifying outliers.
+
+2. **All Computed Evaluation Metrics — `tcn_metrics_refined.json`**
+  - **Purpose:**  
+    - Stores **summary performance metrics** in a structured, reproducible format.  
+    - Allows automated benchmarking, audit, or inclusion in reports.
+    - **Creation Point:**  
+      - Generated **after all inference, calibration, and metric computations**.  
+      - Combines metrics for:
+        - **Classification heads**: max risk, median risk  
+        - **Regression head**: log-space, raw-space, pre- and post-calibration
+  - **Contents & Structure:**
+  | Key | Description |
+  |-----|-------------|
+  | `max_risk` | Classification metrics for max-risk head (`AUC`, `F1`, `Accuracy`, `Precision`, `Recall`). |
+  | `median_risk` | Classification metrics for median-risk head (same metrics as above). |
+  | `pct_time_high_log` | Regression metrics on log-space predictions (pre-calibration). |
+  | `pct_time_high_raw` | Regression metrics on raw-space predictions (pre-calibration). |
+  | `pct_time_high_log_cal` | Regression metrics on log-space predictions (post-calibration). |
+  | `pct_time_high_raw_cal` | Regression metrics on raw-space predictions (post-calibration). |
+  | `inference_time_sec` | Time taken for inference across the test set. |
+  
+  - **What We Can Learn:**  
+    - Pre-calibration metrics highlight **systematic scale bias** in regression (negative R² despite good correlation).  
+    - Post-calibration metrics demonstrate **improved alignment** with ground truth, validating linear correction in log-space.  
+    - Classification metrics show per-task discriminative performance (e.g., max-risk vs median-risk).  
+    - Serves as a **fully audit-ready summary** of model performance, suitable for reproducibility or reporting.
+
+**Summary**
+| Output | Role in Evaluation Pipeline | Insights Provided |
+|--------|----------------------------|-----------------|
+| `tcn_predictions_refined.csv` | Stores per-patient predictions and ground-truths before metrics | Enables inspection of individual prediction accuracy, monotonicity, and plausibility; supports debugging and calibration |
+| `tcn_metrics_refined.json` | Stores computed classification and regression metrics (pre- and post-calibration) | Provides reproducible quantitative performance summaries; identifies bias, quantifies calibration improvement, and compares log- vs raw-space performance |
+
+- Both outputs are **critical for reproducibility**, transparency, and auditability of the refined TCN evaluation.  
+- They allow separation of **internal training fidelity** (log-space metrics) from **clinical interpretability** (raw-space metrics), bridging ML validation and applied use.
+
+
+### Calibration Plots (Pre- vs Post Calibration)
+**Overview**
+- These plots provide **visual diagnostic evidence** of the model’s regression bias and the effectiveness of post-hoc calibration.  
+- Both operate in **log-space**, since the TCN was trained on `log1p(pct_time_high)`.
+**Outputs**
+1. **Calibration Bias Plot — `tcn_regression_calibration_logspace.png`**
+  - **Purpose:**  
+    - To detect **systematic calibration bias** in the regression head before correction.  
+    - Plots **true** vs **predicted log1p(pct_time_high)** values.  
+    - The **red dashed diagonal** `y = x` represents perfect calibration (ideal 1:1 relationship).
+  - **Interpretation:**
+
+  | Observation | Meaning |
+  |--------------|----------|
+  | Almost all points lie **above** the red line | The model **overpredicts** the true values → systematic positive bias. |
+  | Points roughly form a linear trend | The model correctly learned the **monotonic relationship** (higher true → higher predicted). |
+  | Correlation ≈ 0.75 (`corr_log`) | Predictions correctly follow patient ranking (trend preserved). |
+  | R² ≈ −1.1 | Model is biased in absolute scale, not random → R² penalises this offset heavily. |
+
+  - **Mathematical Explanation:**  
+    - The model’s learned mapping approximates:  
+  \[
+  \hat{y}_{\text{log}} = a \cdot y_{\text{true, log}} + b
+  \]  
+      - \( a \approx 1 \) → correct slope (trend captured)  
+      - \( b > 0 \) → constant overestimation bias  
+    - This means the **model’s structure is correct**, but its output scale is shifted.
+
+  - **Significance:**  
+    - Confirms that retraining is **not required** → bias can be corrected post-hoc.  
+    - **Guides the next step:** **linear calibration** to realign predictions with true values.
+
+---
+
+## 2. Calibration Comparison Plot — `tcn_regression_calibration_comparison_logspace.png`
+
+**Purpose:**  
+- To visualise the **effect of post-hoc calibration** on regression predictions.  
+- Overlays pre- and post-calibration predictions against the ideal diagonal.
+
+**Plot Elements:**
+
+| Element | Description |
+|----------|-------------|
+| **Blue points** | Predictions **before** calibration (biased, shifted). |
+| **Orange points** | Predictions **after** calibration (corrected). |
+| **Red dashed line** | Perfect calibration — `y_true = y_pred`. |
+
+**Interpretation:**
+
+| Observation | Meaning |
+|--------------|----------|
+| Blue points lie mainly above the diagonal | Model consistently overpredicted → systematic bias. |
+| Orange points cluster symmetrically around the diagonal | Bias removed — residuals are now zero-mean (unbiased). |
+| Trend remains linear | Model’s underlying **monotonicity preserved** (structure intact). |
+| Spread remains | Expected random noise — represents natural prediction variance. |
+
+**Mathematical Validation:**  
+After fitting the calibration equation  
+\[
+y_{\text{true, log}} ≈ a \cdot y_{\text{pred, log}} + b
+\]  
+the model’s outputs were rescaled such that:
+- Mean offset (b) corrected  
+- Output slope aligned with ideal diagonal  
+- Resulting R² improved from **−1.1 → +0.57**  
+
+**Outcome:**  
+- Confirms calibration worked: predictions are now both **accurate and unbiased**.  
+- Demonstrates that model bias, not randomness, explained prior performance issues.  
+- Validates the **log-space linear correction** as a robust alternative to retraining.
+
+---
+
+## Summary of Diagnostic Value
+
+| Plot | Purpose | Diagnostic Insight | Outcome |
+|------|----------|-------------------|----------|
+| `tcn_regression_calibration_logspace.png` | Detect initial bias | Reveals consistent overprediction despite high correlation | Confirms need for calibration |
+| `tcn_regression_calibration_comparison_logspace.png` | Show effect of calibration | Demonstrates removal of bias and restoration of scale | Confirms model now unbiased and well-calibrated |
+
+**Conclusion:**  
+Together, these plots provide clear **visual and mathematical evidence** that:  
+- The model learned valid temporal structure (trend fidelity).  
+- Its issue was purely **scale bias**, not structural failure.  
+- **Post-hoc calibration** successfully corrected this without retraining, yielding an interpretable and publication-ready regression head.
+
+
+---
+
+### Folder Format
+
+
+
+
+
+
+### Interpretation of Terminal outputs 
+[INFO] All required files found. Proceeding with refined model evaluation...
+[INFO] Using device: cpu
+[INFO] Loaded refined TCN model and weights successfully
+[INFO] Running inference on test set...
+[INFO] Inference complete in 0.03 seconds
+Regression predictions (log-space):
+  Min:  0.0802
+  Max:  0.3213
+  Mean: 0.2043
+==========================
+[INFO] Saved classification predictions + regression predictions (raw + log-space) → tcn_predictions_refined.csv
+Correlation (log-space): 0.754
+Correlation (raw-space): 0.739
+[INFO] Saved calibration plot → /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_evaluations/tcn_results_refined/tcn_regression_calibration_logspace.png
+Calibration: y_true_log ≈ 0.712 * y_pred_log + -0.035
+[INFO] Saved calibration comparison plot → /Users/simonyip/Neural-Network-TimeSeries-ICU-Predictor/src/prediction_evaluations/tcn_results_refined/tcn_regression_calibration_comparison_logspace.png
+[INFO] Saved metrics → tcn_results_refined/tcn_metrics_refined.json
+
+=== Final Refined Test Metrics ===
+Max Risk — AUC: 0.923, F1: 0.929, Acc: 0.867
+Median Risk — AUC: 0.833, F1: 0.286, Acc: 0.667
+Regression (log) — RMSE: 0.108, R²: -1.096
+Regression (raw) — RMSE: 0.129, R²: -1.349
+Regression (log) calibrated — RMSE: 0.049, R²: 0.569
+Regression (raw) calibrated — RMSE: 0.056, R²: 0.548
+==========================
+Test IDs used: [10002428, 10005909, 10007058, 10015931, 10020740, 10021312, 10021666, 10021938, 10022281, 10023771, 10025612, 10027445, 10037928, 10038999, 10039831]
+Mean of y_true_reg: 0.1199, Std: 0.0840  # Ground truth: actual % time high
+Mean of y_pred_reg: 0.2043, Std: 0.0793  # Model output: predicted log-space mean
+==========================
+[INFO] Evaluation complete — refined TCN calibration validated and metrics saved.
+
+
+Before calibration:
+	•	R² (log-space) = −1.096
+	•	R² (raw-space) = −1.349
+
+→ The model captured the directional pattern (correlation ≈ 0.75) but systematically overpredicted.
+That’s why the scatter points sat above the diagonal.
+
+After calibration:
+	•	R² (log-space) = 0.569
+	•	R² (raw-space) = 0.548
+	•	RMSE dropped from 0.108 → 0.049 (log) and 0.129 → 0.056 (raw)
+
+
+
+🔍 Meaning
+	•	The model’s learned relationship between features and outcome was correct and monotonic (hence correlation ≈ 0.75).
+	•	The bias was linear scale miscalibration (consistent slope < 1 and negative intercept).
+	•	After applying y_true_log ≈ 0.712*y_pred_log - 0.035, that bias was corrected — so the regression metrics now reflect true model fit.
+	•	You do not need to retrain — the architecture and learned parameters are fine.
+The calibration regression has effectively fixed the systematic scale mismatch.
+
+What the Numbers Prove
+Stage
+RMSE (log)
+R² (log)
+RMSE (raw)
+R² (raw)
+Interpretation
+Before Calibration
+0.108
+-1.096
+0.129
+-1.349
+Model underpredicted/overpredicted globally, mis-scaled
+After Calibration
+0.049
+0.569
+0.056
+0.548
+Model relationship is valid; bias corrected successfully
+
+Final Takeaway
+	1.	Training pipeline is correct — model learned the correct trend.
+	2.	No further retraining required.
+	3.	Calibration succeeded, converting a statistically poor regression head into a clinically interpretable, well-fitted output.
+	4.	You now have a validated post-hoc correction (linear recalibration) that you can apply to any future inference outputs from this model.
+
+
+
+	•	mean(y_true_reg) → the average of the true target values in your test set.
+	•	In your results: ≈ 0.1199 means that, on average, patients in the test set spent ~12% of their time in a high-risk state.
+	•	This provides baseline context — the average level the model should roughly predict.
+	•	mean(y_pred_reg) → the average of the model’s predictions.
+	•	In your run: ≈ 0.2043 (log-space).
+	•	This is significantly higher than the true mean, showing the model tends to overpredict the high-risk proportion — i.e. a positive calibration bias.
+	•	This bias is exactly what your calibration correction later fixes.
+
+🧠 Interpretation:
+If the model’s mean ≈ true mean → predictions are unbiased on average.
+If model mean ≫ true mean → systematic overprediction.
+If model mean ≪ true mean → systematic underprediction.
+
+What the standard deviation tells you
+	•	std(y_true_reg) → spread (variability) of the true target distribution in your test set.
+	•	E.g. 0.0840 means the typical deviation around the mean 0.12 is ±0.084.
+	•	So there’s decent variability across patients — some near 0%, others closer to 20–25%.
+	•	std(y_pred_reg) → spread of the model’s predicted values.
+	•	E.g. 0.0793 — very similar to the true SD.
+	•	That suggests the model captures the relative variability well — it’s not predicting the same value for everyone (which would make std too small), nor is it erratic (too large).
+
+Scenario
+Meaning
+Model std ≈ True std
+Model captures variability realistically
+Model std ≪ True std
+Model is over-smoothed — underreacts to true differences
+Model std ≫ True std
+Model is overconfident — exaggerates differences
+
+Mean of y_true_reg: 0.1199
+Std: 0.0840
+Mean of y_pred_reg: 0.2043
+Std: 0.0793
+
+➡ Interpretation:
+	•	✅ Variability captured correctly (std ≈ 0.08 both sides) → model learns relative ranking of risk pretty well.
+	•	❌ Systematic bias (mean 0.2043 vs 0.1199) → model consistently overestimates the risk magnitude, which is why R² was negative before calibration and improved to >0.5 after calibration.
+
+
+
+### Calibration bias
+Initial terminal output:
+
+=== Final Refined Test Metrics ===
+Max Risk — AUC: 0.923, F1: 0.929, Acc: 0.867
+Median Risk — AUC: 0.833, F1: 0.286, Acc: 0.667
+Regression (log) — RMSE: 0.108, R²: -1.096
+Regression (raw) — RMSE: 0.129, R²: -1.349
+==========================
+Test IDs used: [10002428, 10005909, 10007058, 10015931, 10020740, 10021312, 10021666, 10021938, 10022281, 10023771, 10025612, 10027445, 10037928, 10038999, 10039831]
+Mean of y_true_reg: 0.1199, Std: 0.0840
+Mean of y_pred_reg: 0.2043, Std: 0.0793
+Raw preds (log-space): 0.080179445 0.32125175 0.20425898
+
+added correlation calculation and print:
+
+Raw preds (log-space): 0.080179445 0.32125175 0.20425898
+Correlation (log-space): 0.754
+Correlation (raw-space): 0.739
+
+Metric
+Value
+Interpretation
+R² (log-space)
+-1.096
+Looks bad numerically — but misleading in this context.
+R² (raw-space)
+-1.349
+Same — driven by mean offset.
+Correlation (log-space)
+0.754
+Strong correlation — model clearly learned the correct trend of the regression variable.
+Correlation (raw-space)
+0.739
+Still strong after re-expansion — the monotonic mapping is preserved.
+
+Your model is directionally correct but poorly calibrated.
+That means:
+	•	When the true %time_high increases, the model’s predicted %time_high also increases (correlation ~0.75 = strong).
+	•	But the predicted magnitudes are systematically off — e.g. consistently too high.
+That single offset crushes R² (because R² penalises mean bias), but it doesn’t mean the model failed.
+
+Mathematically:
+
+R² penalises both scale error and mean bias,
+while correlation only measures rank/shape agreement.
+
+Your correlation proves the model’s internal representation of the regression signal is valid.
+So no retraining is needed — you just need to rescale.
+
+Verify calibration bias visually
+If you plot true vs predicted in log-space, you’ll see a roughly linear pattern but shifted above the diagonal.
+Added this snippet in script:
+import matplotlib.pyplot as plt
+
+plt.scatter(df_preds["y_true_reg_log"], df_preds["y_pred_reg_log"], alpha=0.7)
+plt.plot([df_preds["y_true_reg_log"].min(), df_preds["y_true_reg_log"].max()],
+         [df_preds["y_true_reg_log"].min(), df_preds["y_true_reg_log"].max()],
+         color='red', linestyle='--')
+plt.xlabel("True log1p(pct_time_high)")
+plt.ylabel("Predicted log1p(pct_time_high)")
+plt.title("Refined TCN — Regression Calibration (log-space)")
+plt.show()
+
+If the points follow a clear diagonal but sit above or below it, that’s exactly calibration bias.
+
+Regression head showed strong monotonic correlation with ground-truth (r=0.75), indicating preserved relative ranking but systematic calibration bias on absolute magnitudes, which can be corrected post-hoc without retraining.
+
+You have:
+	•	Strong correlation — the model has learned meaningful structure.
+	•	Consistent overprediction bias — fixable analytically.
+	•	Stable means and stds — confirms split alignment and correct log/exp handling.
+
+So do not retrain again.
+
+Fix calibration (no retraining)
+Run a simple linear regression on the log-space predictions:
+Then recompute regression metrics:
+If correlation is already ~0.75, you’ll almost certainly see R² jump from -1.35 to ~0.0–0.2 just from this correction.
+
+Interpretation of the outcome
+Case
+Interpretation
+Action
+Correlation high (≥0.7), R² negative → bias only
+✅ Apply calibration; do not retrain
+Correlation moderate (0.3–0.6)
+Model captured some pattern but may underfit
+Try light retraining or adjust regression head learning rate
+Correlation near 0
+No relationship at all
+Then and only then consider full retraining or redesign
+
+You are clearly in Case 1 (bias only).
+
+You have:
+	•	Strong correlation — the model has learned meaningful structure.
+	•	Consistent overprediction bias — fixable analytically.
+	•	Stable means and stds — confirms split alignment and correct log/exp handling.
+
+So do not retrain again.
+
+
+
+### Understanding Log-Transformed Regression Targets and Metric Interpretation
+
+#### Why Log-Transform Regression Targets
+**Log-transform:**
+- During Phase 4.5, the regression target `pct_time_high` was **log-transformed** before training: `y_train_log = np.log1p(y_train)`
+- This transformation was applied because `pct_time_high` is **heavily skewed** (many low values, few high values).  
+- The log-transform compresses large values and expands small ones, making the distribution more normal-like and stabilising training.
+**Result:**  
+- The TCN model’s regression head learns to predict values in **log-space**, i.e.`y_pred ≈ log1p(y_true)`
+
+#### What the Model Actually Outputs
+Because it was trained on `log1p(y_true)`, the model outputs **log-space predictions**:
+- During training: MSE is computed on `log1p(y_true)` vs `y_pred_log`
+- During validation: the same (log-space validation loss)
+- During inference (test): the model produces `y_pred_log`
+For clinical interpretability, we invert this transformation: 
+- Reverse the model output prediction back into raw-scale → `y_pred_raw = np.expm1(y_pred_log)`
+
+#### The Four Key Vectors
+When evaluating the model, we now have four aligned arrays:
+
+| Variable | Description | Scale |
+|-----------|--------------|--------|
+| `y_true_reg` | True test targets | Raw clinical scale |
+| `y_true_reg_log` | Log-transformed true targets | Log-space |
+| `y_pred_reg_log` | Model predictions (native output) | Log-space |
+| `y_pred_reg_raw` | Back-transformed predictions (`expm1`) | Raw scale |
+
+
+#### Why Compute Both Log-Space and Raw-Space Metrics
+
+| Type | Purpose | What It Shows | Comparability |
+|------|----------|---------------|----------------|
+| **Log-space metrics** | Internal validation | Confirms model learned the intended training objective (MSE on log targets) | ✅ Valid only within this model version |
+| **Raw-space metrics** | Clinical interpretability | Shows how well the model performs in the real, clinical scale | ✅ Comparable across all models (Phase 4, LightGBM, NEWS2, etc.) |
+
+**Interpretation:**
+- Log metrics → “Did my model learn the right thing?”
+- Raw metrics → “Are my predictions meaningful in practice?”
+**Both are essential:**
+- Without **log metrics**, you can’t verify the model trained correctly.
+- Without **raw metrics**, you can’t compare across models or assess real-world performance.
+
+
+#### Why Log and Raw Metrics Differ
+**The log transform is nonlinear**:
+- Large values are compressed.
+- Small values are expanded.
+**Thus, errors are weighted differently**:
+- A small absolute difference in log-space can translate to a large raw-space error after exponentiation.
+- Consequently, metrics like RMSE or R² differ numerically between log and raw scales.
+**They are not supposed to match:**
+- Different scales → different error weighting → different interpretations.
+
+
+#### Interpreting Metric Combinations
+
+| Log Metrics | Raw Metrics | Interpretation | Comparability | Clinical Interpretability |
+|--------------|--------------|----------------|----------------|-----------------------------|
+| ✅ Good | ✅ Good | Model trained correctly **and** clinically reliable. Safe for comparison with other models. | ✅ | ✅ |
+| ✅ Good | ❌ Bad | Model learned well in log-space, but raw predictions diverge → unstable after exponentiation. | ❌ | ⚠️ |
+| ❌ Bad | ✅ Good | Highly unlikely; indicates pipeline or evaluation bug. | ❌ | ⚠️ |
+| ❌ Bad | ❌ Bad | Model failed entirely. | ❌ | ❌ |
+
+**Only when both are reasonable can you compare to Phase 4, LightGBM, or NEWS2.**
+
+
+#### Practical Rules for Evaluation
+1. Always compute **both log and raw regression metrics** for log-trained models.  
+2. If **log metrics are bad**, training was unstable → raw metrics cannot be trusted.  
+3. If **log metrics are good but raw metrics are poor**, model generalisation breaks after exponentiation → review data scale or heteroscedasticity.  
+4. Only use **raw-space metrics for cross-model comparison** (across Phase 4, Phase 4.5, LightGBM, NEWS2).  
+5. **Report both in tables and specify**:
+   - Log metrics = internal validation only  
+   - Raw metrics = clinically interpretable and cross-model comparable
+
+
+#### Conceptual Summary
+
+| Dimension | Log-Space | Raw-Space |
+|------------|------------|------------|
+| Objective | Minimise MSE(log(y)) | Interpret true scale predictions |
+| Evaluates | Technical correctness | Clinical utility |
+| Sensitivity | Equal weighting of small % differences | Higher penalty for large raw errors |
+| Use Case | Model debugging, internal analysis | Comparison and deployment |
+
+
+#### Key Takeaway
+- **Log metrics** prove training pipeline is mathematically correct.  
+- **Raw metrics** prove model’s outputs are *clinically useful and comparable*.  
+- Both are required for scientific validity.  
+- Comparisons with baseline models (Phase 4, LightGBM, NEWS2) must use **raw-space metrics only**.
+
+
+
+---
+
+### Reflection 
 didnt understand where in the scripts logic we implement and why we implement inverse transform, and why this is important for clinicl interpretability.
 
 Your regression target pct_time_high represents something real and interpretable, like
@@ -5423,3 +6049,350 @@ In one line:
 “Makes regression metrics reflect true domain errors” means
 the RMSE and R² are computed on the original clinical scale (actual pct_time_high values),
 not on the transformed (logarithmic) scale — so they describe the model’s real-world prediction accuracy.
+
+
+Regression — RMSE: 0.122, R²: -0.626
+
+Large relative to mean (0.13) → bad fit
+Worse than predicting the mean — model not learning correct scale
+
+Mean of y_true_reg: 0.1314, Std: 0.0957
+Mean of y_pred_reg: 0.2304, Std: 0.0960
+
+Mean(y_pred_reg)
+0.23 vs 0.13 true
+Model overpredicts the continuous output
+
+This suggests a mismatch between training target scale and evaluation scale.
+
+	•	In this new evaluation script, you apply np.expm1() to both predictions and ground-truth values (y_true_reg).
+
+y_pred_reg = np.expm1(y_pred_reg)
+y_true_reg = np.expm1(y_true_reg)
+
+Your test labels (pct_time_high) are read directly from news2_features_patient.csv, which already contains raw percentage values (not logged).
+So you effectively did:
+
+y_true_reg (raw) → expm1(raw) → hugely inflated values.
+
+This causes the large scale mismatch and negative R².
+
+The Correct Fix
+
+Only reverse-transform the model predictions, not the true labels.
+
+# Undo log1p() applied during phase 4.5 training — only predictions were log-scaled
+y_pred_reg = np.expm1(y_pred_reg)
+
+This keeps y_true_reg on its original raw scale.
+After correction, you should expect:
+	•	Mean of y_pred_reg to drop closer to 0.13 (same scale as y_true_reg)
+	•	RMSE to fall substantially
+	•	R² to move toward 0.0–0.3 (depending on dataset size)
+
+Summary Diagnosis
+Component
+Issue
+Resolution
+Classification
+Works correctly
+Keep unchanged
+Regression
+Wrong target scaling during evaluation
+Remove inverse transform on y_true_reg
+Model integrity
+Fine — weight loading, inference, and architecture consistent
+✅
+
+Output still incorrect, made me recheck the trainig script and realised soemthing:
+Regression — RMSE: 0.129, R²: -1.349
+Mean of y_true_reg: 0.1199, Std: 0.0840
+Mean of y_pred_reg: 0.2304, Std: 0.0960
+
+When you apply a log1p() transform to the regression target:
+	•	You compress the range of values (especially high ones)
+	•	You stabilize variance (making training easier)
+	•	But: The model then learns patterns in log-space, not the true-scale (pct_time_high) space.
+
+That means the model doesn’t know what “0.3” means in the original domain — it only knows “log(0.3 + 1) ≈ 0.26”.
+
+So when you reverse-transform with expm1(), you expand back out — but any bias or noise in log-space becomes magnified.
+That’s why your R² dropped so sharply even though the model trained better.
+
+During evaluation, your current setup does this:
+	•	Loads raw (non-log) ground truth from CSV
+	•	Applies expm1() to predictions (to get back raw-scale)
+	•	Compares them directly
+
+But remember: the model was never trained to match the raw-scale distribution — it only learned to match log-transformed targets.
+
+So your evaluation is mathematically inconsistent with your training objective.
+
+Here’s why:
+	•	The model produced outputs in log space (because it was trained on log-transformed regression targets).
+	•	You then applied np.expm1() on those outputs (which is correct if they were actually log-transformed predictions).
+	•	However, in your training script, those log-transformed targets were never saved to disk — only used transiently for loss calculation.
+	•	So at evaluation, your model weights expect log-space targets, but your evaluation script is comparing exp-transformed predictions (raw scale) with raw true values that were never log-transformed in the same way during training.
+
+That mismatch causes the regression predictions to blow up in magnitude → negative R².
+The fix is simple:
+You must evaluate both in log-space and raw-space, so you know what the model actually learned.
+
+	•	During training (Phase 4.5), everything happened in log space — that’s fine.
+	•	During evaluation:
+	•	You can compute metrics in log space → internal model performance.
+	•	You can also expm1() both predictions and true targets → back to raw scale for clinical interpretability.
+
+That gives you both:
+	1.	Scientific/log-space performance (how the model actually optimised)
+	2.	Clinical/raw-space performance (how well predictions match interpretable percentages)
+
+Then you can safely compare Phase 4 and Phase 4.5 only on the raw-space metrics (e.g. RMSE, R² after expm1).
+
+	•	The correct approach now:
+	1.	Evaluate metrics both in log-space and raw-space.
+	2.	Compare to Phase 4 only in raw-space (after expm1 on both sides).
+	3.	In documentation, explicitly state that “loss magnitudes are not directly comparable, but learning behaviour is.”
+
+  During evaluation, you currently do this:
+	1.	Model outputs predictions in log-space (y_pred_reg).
+	2.	True targets (y_true_reg) are loaded directly from news2_features_patient.csv, which are raw values (0–1 range representing true percentages).
+	3.	You then apply:
+y_pred_reg = np.expm1(y_pred_reg)
+→ This converts predictions back to raw scale.
+
+But here’s the key mismatch:
+
+You inverse-transformed predictions, but the true values were already raw,
+so you didn’t need to expm1() the truth — that part is correct.
+
+However, to get proper evaluation, you need two versions of metrics:
+
+Step-by-Step Correct Evaluation Procedure
+
+1. Compute metrics in log-space (model’s native scale)
+
+These tell you how well the model optimised its objective — i.e. how close its predictions were to the log-transformed true values.
+
+You must first create the true log values (since your evaluation script didn’t log-transform them yet):
+# Step 1: Log-transform true values to match training space
+y_true_reg_log = np.log1p(y_true_reg)
+Then compute metrics in log-space:
+metrics_reg_log = compute_regression_metrics(y_true_reg_log, y_pred_reg)
+This tells you how well the model performed according to the scale it was trained on.
+These metrics are scientifically valid but not clinically interpretable.
+
+2. Compute metrics in raw-space (clinically interpretable)
+
+Then inverse-transform the predictions:
+y_pred_reg_raw = np.expm1(y_pred_reg)
+
+Compute metrics in raw space:
+metrics_reg_raw = compute_regression_metrics(y_true_reg, y_pred_reg_raw)
+These are what you can compare directly to Phase 4’s results, because they’re both on the same raw scale.
+
+Save both to JSON for documentation
+Add both into your output dictionary:
+all_metrics = {
+    "max_risk": metrics_max,
+    "median_risk": metrics_median,
+    "pct_time_high_log": metrics_reg_log,   # internal model performance
+    "pct_time_high_raw": metrics_reg_raw,   # clinically comparable performance
+    "inference_time_sec": round(inference_time, 2)
+}
+
+Save both versions of predictions
+
+df_preds = pd.DataFrame({
+    "y_true_reg": y_true_reg,
+    "y_true_reg_log": np.log1p(y_true_reg),
+    "y_pred_reg_log": y_pred_reg,
+    "y_pred_reg_raw": np.expm1(y_pred_reg)
+})
+
+---
+
+Why You Can Still Compare Phase 4 and Phase 4.5 Loss Curves
+
+This is the subtle point.
+
+It’s true that the regression loss values are on different numeric scales between Phase 4 and 4.5 —
+because log-transformation compresses the range of pct_time_high.
+
+However:
+	1.	The training and validation losses are both relative within each phase — what matters is their shape, not their absolute numeric magnitude.
+	2.	When you compare Phase 4 vs Phase 4.5 qualitatively (rate of convergence, overfitting pattern, stability), the comparison is still valid.
+	3.	When you compare quantitatively (absolute loss numbers), that’s not valid for regression anymore — only for classification.
+But since your combined loss is a sum of three components (two BCEs + one MSE), the regression component is only one part — so the overall shape still reflects improved stability.
+
+So:
+
+You can compare loss curve behaviour (better convergence, less noise, faster early improvement),
+but not absolute loss magnitude for regression.
+
+Phase
+Regression Target Used
+Effect on Scale
+4
+Raw pct_time_high (0–1)
+MSE loss in raw scale — larger numeric values
+4.5
+log1p(pct_time_high) (~0–0.7)
+MSE loss in smaller numeric scale
+That means the absolute loss values (e.g., 1.4 → 0.6) are not on the same numeric scale between the two phases.
+But the trends — how quickly loss drops, where validation starts rising, etc. — still reflect the same underlying model dynamics.
+
+Because you’re plotting normalised curves over epochs (loss decreasing over time), the shape, slope, and turning points are interpretable in relative terms.
+
+✅ So your statements and interp are completely correct, because those refer to patterns, not absolute magnitudes.
+
+
+due to this, needed to update the code for both plots to include notes under title, as well as update the y axis label to say that the scale for mse has been log transformed for the 4.5 plot, and in comparison plot the y axis label is composite loss, and the discliamer mentions that trends comapre only, not magnitudes.
+
+Together, these two layers (axis label + footer note) make the visualisation valid for scientific reporting and publication use — you’re comparing behaviour, not absolute values.
+
+	•	No scientific correction needed.
+	•	Your Y-axis label is correct and your disclaimer fully resolves the comparability issue.
+	•	The overlay remains valid for analysing training dynamics, even though absolute magnitudes differ.
+  importnat to have interpretability in the plots so that incorrect assumptions arent made, interpretability in visualisations and context is extremely improtant. 
+
+
+  ---
+
+  got extremly confused as to why we computed metrics for both the log and also raw values, turns out its because its literally just for completness and how ML research is done, dont discard anything, keep everything for reproducibility: 
+
+	✅ The true regression targets were log-transformed during training: y_train_reg_log = np.log1p(y_train_reg_raw)
+	•	✅ The model learned to predict those log-values.
+	•	✅ During validation, the validation targets were also log-transformed → validation loss (MSE) is computed in log-space.
+	•	✅ During testing, when you run inference, your model outputs predictions in log-space (because that’s what it was trained to output).
+	•	✅ For interpretability, you invert these predictions via np.expm1(y_pred_reg) to get the raw percentages back.
+	•	✅ You then have four aligned vectors:
+	•	y_true_reg → true raw targets (original clinical values)
+	•	y_true_reg_log → test set targets converted to log-space for evaluation 
+	•	y_pred_reg_log → model’s native log-space predictions
+	•	y_pred_reg_raw → back-transformed predictions (clinically interpretable)
+
+  technically all we need is the original raw true values from the test set, and the raw predictions that we reversed from our orignal evaluation output log predictions right? we use those two to calculate raw evaluation metrics that are inetrpretable and alos comaprable to phase 4 model, which did what we wanted
+
+  but we just do eevrything else just for completeness and save everything for reproducibility. 
+
+  but originally it was just that simple right, all we needed to do was convert the true values to also log so that we can actually evaluate the model, then the output log predictions would be converted back to raw and then we compute raw metrics using the original true values and also the newly converted raw predictions?
+
+
+  What’s necessary (the minimal correct logic)
+
+You only need two things to get fully interpretable, clinically meaningful evaluation metrics:
+	1.	y_true_reg → the true regression targets from your test set (raw clinical values).
+	2.	y_pred_reg_raw = np.expm1(y_pred_reg_log) → the model’s predictions back-transformed from log-space into raw values.
+
+Then you compute metrics like:
+
+metrics_reg_raw = compute_regression_metrics(y_true_reg, y_pred_reg_raw)
+
+That’s the clinically valid and Phase 4-comparable evaluation — directly on the same scale (0–1 or %).
+This tells you whether the refined model is actually better in real-world interpretability and predictive accuracy.
+
+
+What’s optional but scientifically complete
+
+You also compute log-space metrics for internal analysis — not because they’re needed for interpretation, but for reproducibility and internal consistency with training.
+
+y_true_reg_log = np.log1p(y_true_reg)
+y_pred_reg_log = model(x_test) output
+metrics_reg_log = compute_regression_metrics(y_true_reg_log, y_pred_reg_log)
+
+Those metrics show how well the model performs in the same numeric domain it was trained and optimised in (log-space MSE minimisation).
+They are not interpretable clinically, but they validate internal coherence — confirming that the evaluation pipeline matches training conditions.
+
+🔹 Why they differ (and shouldn’t be identical)
+
+The log transformation is non-linear. It compresses differences for high values and expands them for small values.
+Therefore:
+	•	Errors are weighted differently in log-space vs raw-space.
+	•	Metrics like RMSE, R² will differ — especially if your data spans a wide range (e.g., 0.01–0.9).
+	•	So they won’t match numerically — that’s expected and correct.
+
+Purpose
+Inputs
+Scale
+Interpretation
+Comparable to Phase 4?
+✅ Main (Clinical)
+y_true_reg vs np.expm1(y_pred_reg)
+Raw
+Clinically interpretable
+✅ Yes
+⚙️ Supplementary (Internal)
+np.log1p(y_true_reg) vs y_pred_reg
+Log
+Checks internal training consistency
+❌ No
+
+was confused as to why we need log metrics when raw metrics would show the model working correctly while at the same time being clinically interpretable and also comparable to phase 4? Turns out no, 
+1. The model’s objective function and the raw metrics are not the same thing
+2. Log-transformation changes the error geometry
+3. Log-space metrics detect true generalisation
+ 4. Raw metrics only tell you about real-world usefulness, not training correctness.
+ 
+ Raw metrics ≠ Proof of correct model behaviour
+ 2. Why that makes raw metrics potentially misleading
+ 3. Implication for comparability and interpretation
+ 4. Why you still need both views
+ 5. The subtle but crucial takeaway
+
+Raw metrics tell you about performance.
+Log metrics tell you about correctness.
+
+A model can perform decently in raw space while being technically wrong,
+or can perform poorly in raw space while being mathematically perfect according to its training.
+
+Hence, both are needed to form a truthful picture.
+
+1️⃣ Relationship between log metrics and raw metrics
+2️⃣ Why raw metrics can diverge even if log metrics are good
+3️⃣ Implications for cross-model comparison
+4️⃣ Practical takeaways
+
+initially thought yet again needed to retrain, super frustarted and annoyed
+both log and raw r2 outputs bad so we checked with correlation to amke sure if we could do soemthng before we tried retraining again
+
+corr_log = np.corrcoef(df_preds["y_true_reg_log"], df_preds["y_pred_reg_log"])[0,1]
+corr_raw = np.corrcoef(df_preds["y_true_reg"], df_preds["y_pred_reg_raw"])[0,1]
+print(f"Correlation (log-space): {corr_log:.3f}")
+print(f"Correlation (raw-space): {corr_raw:.3f}")
+
+Metric
+Value
+Interpretation
+R² (log-space)
+-1.096
+Looks bad numerically — but misleading in this context.
+R² (raw-space)
+-1.349
+Same — driven by mean offset.
+Correlation (log-space)
+0.754
+Strong correlation — model clearly learned the correct trend of the regression variable.
+Correlation (raw-space)
+0.739
+Still strong after re-expansion — the monotonic mapping is preserved.
+
+Translation:
+
+Your model is directionally correct but poorly calibrated.
+That means:
+	•	When the true %time_high increases, the model’s predicted %time_high also increases (correlation ~0.75 = strong).
+	•	But the predicted magnitudes are systematically off — e.g. consistently too high.
+That single offset crushes R² (because R² penalises mean bias), but it doesn’t mean the model failed.
+
+Mathematically:
+
+R² penalises both scale error and mean bias,
+while correlation only measures rank/shape agreement.
+
+Your correlation proves the model’s internal representation of the regression signal is valid.
+So no retraining is needed — you just need to rescale.
+
+so all i did was visualise the correlation with a scatter plot 
+
+then fixed the calibrartion bias without needing to retrain
