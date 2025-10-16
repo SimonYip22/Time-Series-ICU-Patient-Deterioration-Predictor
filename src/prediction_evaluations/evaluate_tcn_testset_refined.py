@@ -41,8 +41,11 @@ import pandas as pd                   # For tabular prediction outputs
 import numpy as np                    # For inverse log transform
 from time import time                 # Used to measure inference duration
 
-import matplotlib.pyplot as plt      # plotting correlation curves
+from sklearn.metrics import f1_score  # For threshold tuning
+
+import matplotlib.pyplot as plt       # plotting correlation curves
 from sklearn.linear_model import LinearRegression # for linear regression on log-space values
+
 
 # -------------------------------------------------------------
 # Path setup
@@ -164,7 +167,7 @@ model = TCNModel(
     head_hidden=arch["head_hidden"]     # Hidden layer size of 64 in the final dense head
 )
 
-# --- 3. Load the trained model weights (tcn_best.pt) ---
+# --- 3. Load the trained model weights (tcn_best_refined.pt) ---
 # Weights are the learned parameters (filters, biases) that the model adjusted during training to minimise loss
 # tcn_best_refined.pt = serialized 'state_dict' containing all trained layer weights + biases (tensors)
 state_dict = torch.load(TRAINED_MODEL_PATH, map_location=device)
@@ -223,6 +226,48 @@ y_pred_reg = preds_reg.numpy()
 # Measure total inference time
 inference_time = time() - start_time
 print(f"[INFO] Inference complete in {inference_time:.2f} seconds")
+
+# -------------------------------------------------------------
+# Threshold Tuning (only for median-risk head)
+# -------------------------------------------------------------
+"""
+- Tuning the decision threshold for the median-risk head improves F1 and recall on imbalanced data. 
+- This is done using the validation set.
+- The optimal threshold is the one that maximizes the F1-score.
+- Max-risk head remains at 0.5 since its performance is already strong.
+"""
+# --- Load validation data for threshold tuning (scientifically clean) ---
+x_val = torch.load(TEST_DATA_DIR / "val.pt", map_location=device)
+mask_val = torch.load(TEST_DATA_DIR / "val_mask.pt", map_location=device)
+
+# Build validation labels from same patient splits (JSON)
+val_ids = splits["val"]
+val_df = features_df.set_index("subject_id").loc[val_ids].reset_index()
+
+# Binary label creation (consistent and reproducible)
+val_df["max_risk_binary"] = val_df["max_risk"].apply(lambda x: 1 if x > 2 else 0)
+val_df["median_risk_binary"] = val_df["median_risk"].apply(lambda x: 1 if x == 2 else 0)
+
+# Final label arrays
+y_val_max = val_df["max_risk_binary"].values
+y_val_median = val_df["median_risk_binary"].values
+
+# Helper function: Finds the threshold that maximises F1-score on validation data.
+def find_best_threshold(y_true, y_prob):
+    thresholds = np.linspace(0.05, 0.95, 91)
+    f1s = [f1_score(y_true, (y_prob >= t).astype(int)) for t in thresholds]
+    best_t = thresholds[np.argmax(f1s)]
+    best_f1 = max(f1s)
+    return best_t, best_f1
+
+# --- Threshold tuning of just median head on validation set ---
+with torch.no_grad():
+    val_outputs = model(x_val, mask_val)
+val_prob_median = torch.sigmoid(val_outputs["logit_median"].squeeze()).cpu().numpy()
+
+best_thresh_median, best_f1_median = find_best_threshold(y_val_median, val_prob_median)
+
+print(f"[INFO] Median Risk Threshold (from validation) = {best_thresh_median:.3f} (F1={best_f1_median:.3f})")
 
 # -------------------------------------------------------------
 # Inspect range and central tendency of regression predictions
@@ -370,6 +415,9 @@ df_preds["y_pred_reg_raw_cal"] = np.expm1(df_preds["y_pred_reg_log_cal"])
 metrics_max = compute_classification_metrics(y_true_max, prob_max)
 metrics_median = compute_classification_metrics(y_true_median, prob_median)
 
+# Compute classification metrics for median head with applied threshold tuning
+metrics_median_tuned = compute_classification_metrics(y_true_median, prob_median, threshold=best_thresh_median)
+
 # Pre-calibration regression metrics
 metrics_reg_log = compute_regression_metrics(df_preds["y_true_reg_log"], df_preds["y_pred_reg_log"])
 metrics_reg_raw = compute_regression_metrics(df_preds["y_true_reg"], df_preds["y_pred_reg_raw"])
@@ -382,6 +430,7 @@ metrics_reg_raw_cal = compute_regression_metrics(df_preds["y_true_reg"], df_pred
 all_metrics = {
     "max_risk": metrics_max,
     "median_risk": metrics_median,
+    "median_risk_tuned": metrics_median_tuned, # classfication metrics for median head using tuning threshold
     "pct_time_high_log": metrics_reg_log, # regression metrics for log-scale (internal)
     "pct_time_high_raw": metrics_reg_raw, # regression metrics for raw (interpretable)
     "pct_time_high_log_cal": metrics_reg_log_cal, # regression metrics for log-scale (internal) calibrated
@@ -444,8 +493,9 @@ print("[INFO] Saved metrics → tcn_results_refined/tcn_metrics_refined.json")
 # -------------------------------------------------------------
 # Print a quick on-screen summary of key results for easy inspection
 print("\n=== Final Refined Test Metrics ===")
-print(f"Max Risk — AUC: {metrics_max['roc_auc']:.3f}, F1: {metrics_max['f1']:.3f}, Acc: {metrics_max['accuracy']:.3f}")
-print(f"Median Risk — AUC: {metrics_median['roc_auc']:.3f}, F1: {metrics_median['f1']:.3f}, Acc: {metrics_median['accuracy']:.3f}")
+print(f"Max Risk (0.5) — AUC: {metrics_max['roc_auc']:.3f}, F1: {metrics_max['f1']:.3f}, Acc: {metrics_max['accuracy']:.3f}")
+print(f"Median Risk (0.5) — AUC: {metrics_median['roc_auc']:.3f}, F1: {metrics_median['f1']:.3f}, Acc: {metrics_median['accuracy']:.3f}")
+print(f"Median Risk ({best_thresh_median:.3f}) — AUC: {metrics_median_tuned['roc_auc']:.3f}, F1: {metrics_median_tuned['f1']:.3f}, Acc: {metrics_median_tuned['accuracy']:.3f}")
 print(f"Regression (log) — RMSE: {metrics_reg_log['rmse']:.3f}, R²: {metrics_reg_log['r2']:.3f}")
 print(f"Regression (raw) — RMSE: {metrics_reg_raw['rmse']:.3f}, R²: {metrics_reg_raw['r2']:.3f}")
 print(f"Regression (log) calibrated — RMSE: {metrics_reg_log_cal['rmse']:.3f}, R²: {metrics_reg_log_cal['r2']:.3f}")
