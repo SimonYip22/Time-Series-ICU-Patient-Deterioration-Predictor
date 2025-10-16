@@ -5578,86 +5578,65 @@ Only `pos_weight_median_risk` and `final_val_loss` are dynamic run outputs; the 
 
 
 ### Calibration Plots (Pre- vs Post Calibration)
-**Overview**
+#### Overview
 - These plots provide **visual diagnostic evidence** of the model’s regression bias and the effectiveness of post-hoc calibration.  
 - Both operate in **log-space**, since the TCN was trained on `log1p(pct_time_high)`.
-**Outputs**
-1. **Calibration Bias Plot — `tcn_regression_calibration_logspace.png`**
-  - **Purpose:**  
-    - To detect **systematic calibration bias** in the regression head before correction.  
-    - Plots **true** vs **predicted log1p(pct_time_high)** values.  
-    - The **red dashed diagonal** `y = x` represents perfect calibration (ideal 1:1 relationship).
-  - **Interpretation:**
+#### 1. **Calibration Bias Plot — `tcn_regression_calibration_logspace.png`**
+**Purpose:**  
+- To detect **systematic calibration bias** in the regression head before correction.  
+- Plots **true** vs **predicted log1p(pct_time_high)** values.  
+- The **red dashed diagonal** `y = x` represents perfect calibration (ideal 1:1 relationship).
+**Interpretation:**
+| Observation | Meaning |
+|--------------|----------|
+| Almost all points lie **above** the red line | The model **overpredicts** the true values → systematic positive bias. |
+| Points roughly form a linear trend | The model correctly learned the **monotonic relationship** (higher true → higher predicted). |
+| Correlation ≈ 0.75 (`corr_log`) | Predictions correctly follow patient ranking (trend preserved). |
+| R² ≈ −1.1 | Model is biased in absolute scale, not random → R² penalises this offset heavily. |
 
-  | Observation | Meaning |
-  |--------------|----------|
-  | Almost all points lie **above** the red line | The model **overpredicts** the true values → systematic positive bias. |
-  | Points roughly form a linear trend | The model correctly learned the **monotonic relationship** (higher true → higher predicted). |
-  | Correlation ≈ 0.75 (`corr_log`) | Predictions correctly follow patient ranking (trend preserved). |
-  | R² ≈ −1.1 | Model is biased in absolute scale, not random → R² penalises this offset heavily. |
+**Mathematical Explanation:**  
+- The model’s learned mapping can be expressed as: `ŷ_log = a * y_true_log + b`
+- Where:
+  - a ≈ 1 → means the slope is close to 1, showing that the model captures the correct trend (monotonic relationship).
+  - b > 0 → indicates a constant positive offset, meaning the model consistently overpredicts across the range.
+- This shows that the model’s structure is correct (it has learned the right directional relationship), but its output scale is shifted, causing systematic bias.
+**Significance:**  
+- Confirms that retraining is **not required** → bias can be corrected post-hoc.  
+- **Guides the next step:** **linear calibration** to realign predictions with true values.
 
-  - **Mathematical Explanation:**  
-    - The model’s learned mapping approximates:  
-  \[
-  \hat{y}_{\text{log}} = a \cdot y_{\text{true, log}} + b
-  \]  
-      - \( a \approx 1 \) → correct slope (trend captured)  
-      - \( b > 0 \) → constant overestimation bias  
-    - This means the **model’s structure is correct**, but its output scale is shifted.
-
-  - **Significance:**  
-    - Confirms that retraining is **not required** → bias can be corrected post-hoc.  
-    - **Guides the next step:** **linear calibration** to realign predictions with true values.
-
----
-
-## 2. Calibration Comparison Plot — `tcn_regression_calibration_comparison_logspace.png`
-
+#### 2. Calibration Comparison Plot — `tcn_regression_calibration_comparison_logspace.png`
 **Purpose:**  
 - To visualise the **effect of post-hoc calibration** on regression predictions.  
 - Overlays pre- and post-calibration predictions against the ideal diagonal.
-
 **Plot Elements:**
-
 | Element | Description |
 |----------|-------------|
 | **Blue points** | Predictions **before** calibration (biased, shifted). |
 | **Orange points** | Predictions **after** calibration (corrected). |
 | **Red dashed line** | Perfect calibration — `y_true = y_pred`. |
-
 **Interpretation:**
-
 | Observation | Meaning |
 |--------------|----------|
 | Blue points lie mainly above the diagonal | Model consistently overpredicted → systematic bias. |
-| Orange points cluster symmetrically around the diagonal | Bias removed — residuals are now zero-mean (unbiased). |
+| Orange points cluster symmetrically around the diagonal | Bias removed → residuals are now zero-mean (unbiased). |
 | Trend remains linear | Model’s underlying **monotonicity preserved** (structure intact). |
-| Spread remains | Expected random noise — represents natural prediction variance. |
-
+| Spread remains | Expected random noise → represents natural prediction variance. |
 **Mathematical Validation:**  
-After fitting the calibration equation  
-\[
-y_{\text{true, log}} ≈ a \cdot y_{\text{pred, log}} + b
-\]  
-the model’s outputs were rescaled such that:
-- Mean offset (b) corrected  
-- Output slope aligned with ideal diagonal  
-- Resulting R² improved from **−1.1 → +0.57**  
-
+- After fitting the calibration equation: `y_true_log ≈ a * y_pred_log + b`
+- the model’s outputs were rescaled such that:
+  - Mean offset (b) corrected  
+  - Output slope aligned closely with ideal diagonal (perfect calibration)
+  - Resulting R² improved significantly from **−1.1 → +0.57**  
 **Outcome:**  
-- Confirms calibration worked: predictions are now both **accurate and unbiased**.  
+- **Confirms calibration worked:** predictions are now both accurate and unbiased.  
 - Demonstrates that model bias, not randomness, explained prior performance issues.  
 - Validates the **log-space linear correction** as a robust alternative to retraining.
 
----
-
-## Summary of Diagnostic Value
-
+#### Summary of Diagnostic Value
 | Plot | Purpose | Diagnostic Insight | Outcome |
 |------|----------|-------------------|----------|
 | `tcn_regression_calibration_logspace.png` | Detect initial bias | Reveals consistent overprediction despite high correlation | Confirms need for calibration |
 | `tcn_regression_calibration_comparison_logspace.png` | Show effect of calibration | Demonstrates removal of bias and restoration of scale | Confirms model now unbiased and well-calibrated |
-
 **Conclusion:**  
 Together, these plots provide clear **visual and mathematical evidence** that:  
 - The model learned valid temporal structure (trend fidelity).  
@@ -5669,12 +5648,44 @@ Together, these plots provide clear **visual and mathematical evidence** that:
 
 ### Folder Format
 
+src/
+└── prediction_evaluations/
+    ├── evaluate_tcn_testset_refined.py           # Final evaluation script (Phase 4.5)
+    │
+    └── tcn_results_refined/                      # All outputs from refined TCN evaluation
+        ├── tcn_predictions_refined.csv           # Per-patient predictions (classification + regression, raw + log)
+        │                                          ├─ Columns:
+        │                                          │   • y_true_max / prob_max           → Max-risk classification
+        │                                          │   • y_true_median / prob_median     → Median-risk classification
+        │                                          │   • y_true_reg / y_true_reg_log     → Ground truth (raw + log)
+        │                                          │   • y_pred_reg_log / y_pred_reg_raw → Predictions (log + raw)
+        │                                          └─ Each row = 1 patient in held-out test set
+        │
+        ├── tcn_metrics_refined.json              # All computed metrics (classification + regression)
+        │                                          ├─ Includes:
+        │                                          │   • max_risk, median_risk           → AUC, F1, Accuracy, etc.
+        │                                          │   • pct_time_high_log/raw           → RMSE, R² (before calibration)
+        │                                          │   • pct_time_high_log_cal/raw_cal   → RMSE, R² (after calibration)
+        │                                          │   • inference_time_sec              → Total inference runtime
+        │                                          └─ Used for model performance tracking and reporting
+        │
+        ├── tcn_regression_calibration_logspace.png        # Plot 1 — Pre-calibration bias
+        │                                                   ├─ Scatter of true vs predicted log-space values
+        │                                                   ├─ Red dashed line = ideal calibration (y = x)
+        │                                                   └─ Shows global bias (points consistently above/below line)
+        │
+        └── tcn_regression_calibration_comparison_logspace.png   # Plot 2 — Before vs after calibration
+                                                                 ├─ Blue = before calibration (biased)
+                                                                 ├─ Orange = after calibration (corrected)
+                                                                 └─ Confirms bias removal and improved alignment
 
 
-
-
-
-### Interpretation of Terminal outputs 
+### Interpretation of Terminal Outputs & Final Evaluation Metrics
+#### Overview
+**Purpose**
+- Documents the **meaning and diagnostic value** of all console outputs produced during the refined TCN evaluation (`evaluate_tcn_testset_refined.py`).
+**Final Terminal Output**
+```bash
 [INFO] All required files found. Proceeding with refined model evaluation...
 [INFO] Using device: cpu
 [INFO] Loaded refined TCN model and weights successfully
@@ -5706,97 +5717,154 @@ Mean of y_true_reg: 0.1199, Std: 0.0840  # Ground truth: actual % time high
 Mean of y_pred_reg: 0.2043, Std: 0.0793  # Model output: predicted log-space mean
 ==========================
 [INFO] Evaluation complete — refined TCN calibration validated and metrics saved.
+```
+### 1. General Information and Process Messages
+**Purpose:**  
+- All non-numeric `[INFO]` lines confirm the logical flow and reproducibility of the pipeline.
+**Key Messages:**
+- Model weights, configuration, and test data were correctly located.
+- The model was loaded onto the correct device (CPU/GPU).
+- Inference completed successfully and efficiently (~0.03 s).
+- All outputs (predictions, plots, metrics) were saved to disk.
+**Interpretation:**  
+- These confirm **pipeline integrity** — ensuring the evaluation reproduced the correct trained model, test split, and inference conditions.
 
+#### 2. Regression Predictions (Log-Space Range)
+**Terminal Output**
+```bash
+Regression predictions (log-space):
+Min:  0.0802
+Max:  0.3213
+Mean: 0.2043
+```
+**Purpose:**  
+- Checks that the model’s continuous regression outputs fall within a **plausible range** and show healthy dispersion.
+**Interpretation:**  
+- **Min/Max** confirm predictions are numerically stable → no outliers or NaN values.  
+- **Mean (0.2043) is a quick indicator of bias direction**.  
+  - If mean > true mean → overprediction bias  
+  - If mean < true mean → underprediction bias  
+- Together, these validate that the regression head is functioning and producing meaningful log-scale values.
 
-Before calibration:
-	•	R² (log-space) = −1.096
-	•	R² (raw-space) = −1.349
+#### 3. Correlation Analysis
+**Terminal Output**
+```bash
+Correlation (log-space): 0.754
+Correlation (raw-space): 0.739
+```
+**Purpose:**  
+- Assesses **monotonic consistency** → whether predictions track true ranking across patients.
+**Interpretation:**
+- Both correlations ≈ 0.75 indicate **strong directional alignment**: patients with higher true high-risk times also receive higher predicted scores.  
+- However, correlation ≠ calibration → the model follows the right trend but not necessarily the right *scale*.  
+- This pattern explains why correlation is strong even though R² was initially negative.
+**Meaning:**  
+- The model is **structurally correct** (it learned the right shape) but **numerically biased**, warranting calibration rather than retraining.
 
-→ The model captured the directional pattern (correlation ≈ 0.75) but systematically overpredicted.
-That’s why the scatter points sat above the diagonal.
+#### 4. Calibration Equation
+**Terminal Output**
+```bash
+Calibration: y_true_log ≈ 0.712 * y_pred_log + -0.035
+```
+**Purpose:**  
+- The calibration is done after the model’s initial predictions and before recomputing metrics.
+- Fits a simple linear regression model, after fitting, the coefficients are extracted: a → slope, b → intercept
+- Quantifies the **systematic bias** found in the uncalibrated regression predictions.
+**Interpretation:**
+- **Slope (a = 0.712)** < 1 → the model **overpredicts** magnitudes slightly.  
+- **Intercept (b = −0.035)** < 0 → small constant downward correction needed.  
+- This linear mapping aligns predicted and true log-values without retraining.
+**Significance:**  
+- Confirms the bias is linear and correctable.  
+- The model’s internal structure (trend learning) is valid → only its scale required adjustment.
 
-After calibration:
-	•	R² (log-space) = 0.569
-	•	R² (raw-space) = 0.548
-	•	RMSE dropped from 0.108 → 0.049 (log) and 0.129 → 0.056 (raw)
+#### 5. Final Refined Test Metrics
+**Terminal Output**
+```bash
+=== Final Refined Test Metrics ===
+Max Risk — AUC: 0.923, F1: 0.929, Acc: 0.867
+Median Risk — AUC: 0.833, F1: 0.286, Acc: 0.667
+Regression (log) — RMSE: 0.108, R²: -1.096
+Regression (raw) — RMSE: 0.129, R²: -1.349
+Regression (log) calibrated — RMSE: 0.049, R²: 0.569
+Regression (raw) calibrated — RMSE: 0.056, R²: 0.548
+```
+**Purpose**
+- Summarises quantitative performance across all model heads (classification + regression) and demonstrates calibration improvement.
+**Interpretation (Classification Focus)**
+- These values are unchanged from Phase 4, confirming that the Phase 4.5 refinement (calibration of regression output) did not affect classification performance.  
+- They remain as reference benchmarks for the model’s discrete risk discrimination ability.
+| **Task**            | **AUC** | **F1**  | **Accuracy** | **Interpretation** |
+|----------------------|---------|---------|---------------|--------------------|
+| **Max Risk**         | 0.923   | 0.929   | 0.867         | Excellent discrimination and near-perfect balance between precision and recall. The model reliably identifies high-risk cases with minimal false negatives. |
+| **Median Risk**      | 0.833   | 0.286   | 0.667         | Moderate separability/discrimimation (AUC 0.833) but weak positive class detection (F1 0.286). High AUC despite low F1 shows the model ranks patients correctly in general but the binary classification performance is poor. Indicates class imbalance or threshold misalignment → acceptable for secondary classification output. |
+**Interpretation (Regression Focus)**
+| Stage | RMSE (log) | R² (log) | RMSE (raw) | R² (raw) | Interpretation |
+|--------|-------------|----------|-------------|----------|----------------|
+| **Before Calibration** | 0.108 | −1.096 | 0.129 | −1.349 | Model learned correct trend but mis-scaled predictions. Negative R² due to global bias. |
+| **After Calibration** | 0.049 |  0.569 | 0.056 |  0.548 | Bias corrected. Predictions now unbiased and aligned with true values. |
+**Specific Statistics**
+| **Metric**     | **Change (Before → After Calibration)** | **Improvement (%) / Δ** | **Interpretation** |
+|-----------------|-----------------------------------------|--------------------------|--------------------|
+| **RMSE (log)**  | 0.108 → 0.049                          | ↓ 55%                    | Calibration halved absolute prediction error in log-space. |
+| **R² (log)**    | −1.096 → +0.569                        | +1.665 gain              | From meaningless to moderate fit → confirms alignment. |
+| **RMSE (raw)**  | 0.129 → 0.056                          | ↓ 57%                    | Corrected scale reduced raw-space error proportionally. |
+| **R² (raw)**    | −1.349 → +0.548                        | +1.897 gain              | Now explains ~55% (R² ~0.55) of real-world variance → clinically credible range. |
+**Meaning**
+- RMSE roughly halved, confirming **improved accuracy**.  
+- R² moved from negative (mis-scaled) to positive (> 0.5), confirming **good model fit** after calibration.  
+- Both log and raw improvements prove that calibration **restored numerical validity** while preserving learned trends.
+**Key Takeaways**
+1. Model generalised correctly; structure was never faulty.  
+2. Negative R² was diagnostic of bias, not failure.  
+3. Post-hoc linear calibration fixed the issue entirely → **no retraining required**.  
+4. Calibrated regression outputs are now suitable for reporting and clinical interpretation.
 
+#### 6. Test Set Composition
+**Terminal Output**
+```bash
+Test IDs used: [10002428, 10005909, … , 10039831]
+```
+**Purpose:**  
+- Confirms **which patients** were included in the held-out test set for reproducibility.
+**Interpretation:**  
+- Exactly 15 unique patient IDs → ensures correspondence between CSV predictions and evaluation metrics.  
+- Verifies dataset integrity (no mismatch between split definition and tensor dimensions).
 
+#### 7. Mean and Standard Deviation of Regression Outputs
+**Terminal Output**
+```bash
+Test IDs used: [10002428, 10005909, … , 10039831]Mean of y_true_reg: 0.1199, Std: 0.0840
+Mean of y_pred_reg: 0.2043, Std: 0.0793
+```
+**Purpose**
+- Provides a quick **distributional sanity check** → confirming that predictions follow the same overall spread and central tendency as the ground truth.
+**Interpretation**
+| Metric | Meaning | Diagnostic Insight |
+|---------|----------|--------------------|
+| **mean(y_true_reg)** ≈ 0.12 | Average patient spent ~12% of time in high-risk state | Baseline context for model scaling |
+| **mean(y_pred_reg)** ≈ 0.20 | Model’s average prediction > true mean | Confirms systematic overprediction bias |
+| **std(y_true_reg)** ≈ 0.084 | True variation across patients | Represents natural variability |
+| **std(y_pred_reg)** ≈ 0.079 | Model predicts similar spread | Model captures variability well |
+**Scenarios**
+| Comparison | Interpretation |
+|-------------|----------------|
+| std(model) ≈ std(true) | Model captures patient-level variability realistically |
+| std(model) ≪ std(true) | Over-smoothed predictions (under-responsive) |
+| std(model) ≫ std(true) | Overconfident predictions (too dispersed) |
+**Conclusion**
+- The model reproduces realistic variability (std ≈ match).  
+- Overestimation of the mean explains the pre-calibration bias.  
+- Calibration corrected this global offset, leading to R² > 0.5.
 
-🔍 Meaning
-	•	The model’s learned relationship between features and outcome was correct and monotonic (hence correlation ≈ 0.75).
-	•	The bias was linear scale miscalibration (consistent slope < 1 and negative intercept).
-	•	After applying y_true_log ≈ 0.712*y_pred_log - 0.035, that bias was corrected — so the regression metrics now reflect true model fit.
-	•	You do not need to retrain — the architecture and learned parameters are fine.
-The calibration regression has effectively fixed the systematic scale mismatch.
-
-What the Numbers Prove
-Stage
-RMSE (log)
-R² (log)
-RMSE (raw)
-R² (raw)
-Interpretation
-Before Calibration
-0.108
--1.096
-0.129
--1.349
-Model underpredicted/overpredicted globally, mis-scaled
-After Calibration
-0.049
-0.569
-0.056
-0.548
-Model relationship is valid; bias corrected successfully
-
-Final Takeaway
-	1.	Training pipeline is correct — model learned the correct trend.
-	2.	No further retraining required.
-	3.	Calibration succeeded, converting a statistically poor regression head into a clinically interpretable, well-fitted output.
-	4.	You now have a validated post-hoc correction (linear recalibration) that you can apply to any future inference outputs from this model.
-
-
-
-	•	mean(y_true_reg) → the average of the true target values in your test set.
-	•	In your results: ≈ 0.1199 means that, on average, patients in the test set spent ~12% of their time in a high-risk state.
-	•	This provides baseline context — the average level the model should roughly predict.
-	•	mean(y_pred_reg) → the average of the model’s predictions.
-	•	In your run: ≈ 0.2043 (log-space).
-	•	This is significantly higher than the true mean, showing the model tends to overpredict the high-risk proportion — i.e. a positive calibration bias.
-	•	This bias is exactly what your calibration correction later fixes.
-
-🧠 Interpretation:
-If the model’s mean ≈ true mean → predictions are unbiased on average.
-If model mean ≫ true mean → systematic overprediction.
-If model mean ≪ true mean → systematic underprediction.
-
-What the standard deviation tells you
-	•	std(y_true_reg) → spread (variability) of the true target distribution in your test set.
-	•	E.g. 0.0840 means the typical deviation around the mean 0.12 is ±0.084.
-	•	So there’s decent variability across patients — some near 0%, others closer to 20–25%.
-	•	std(y_pred_reg) → spread of the model’s predicted values.
-	•	E.g. 0.0793 — very similar to the true SD.
-	•	That suggests the model captures the relative variability well — it’s not predicting the same value for everyone (which would make std too small), nor is it erratic (too large).
-
-Scenario
-Meaning
-Model std ≈ True std
-Model captures variability realistically
-Model std ≪ True std
-Model is over-smoothed — underreacts to true differences
-Model std ≫ True std
-Model is overconfident — exaggerates differences
-
-Mean of y_true_reg: 0.1199
-Std: 0.0840
-Mean of y_pred_reg: 0.2043
-Std: 0.0793
-
-➡ Interpretation:
-	•	✅ Variability captured correctly (std ≈ 0.08 both sides) → model learns relative ranking of risk pretty well.
-	•	❌ Systematic bias (mean 0.2043 vs 0.1199) → model consistently overestimates the risk magnitude, which is why R² was negative before calibration and improved to >0.5 after calibration.
-
-
+#### Overall Summary
+**The terminal outputs collectively demonstrate that:**
+- The model’s structure and learning are valid.  
+- Its initial regression bias was **systematic and correctable**.  
+- Post-hoc calibration improved both **accuracy (RMSE)** and **explanatory power (R²)**.  
+- The evaluation pipeline is now complete, reproducible, and quantitatively validated.
+**Final Status:**  
+- Evaluation complete → refined TCN calibration validated and metrics saved.
 
 ### Calibration bias
 Initial terminal output:
@@ -5812,11 +5880,14 @@ Mean of y_true_reg: 0.1199, Std: 0.0840
 Mean of y_pred_reg: 0.2043, Std: 0.0793
 Raw preds (log-space): 0.080179445 0.32125175 0.20425898
 
+
 added correlation calculation and print:
+
 
 Raw preds (log-space): 0.080179445 0.32125175 0.20425898
 Correlation (log-space): 0.754
 Correlation (raw-space): 0.739
+
 
 Metric
 Value
@@ -5899,6 +5970,12 @@ You have:
 	•	Stable means and stds — confirms split alignment and correct log/exp handling.
 
 So do not retrain again.
+
+---
+
+### Understanding threshold tuning 
+
+
 
 
 
@@ -6396,3 +6473,68 @@ So no retraining is needed — you just need to rescale.
 so all i did was visualise the correlation with a scatter plot 
 
 then fixed the calibrartion bias without needing to retrain
+
+
+
+
+	•	AUC = 0.833 → still reasonably good, indicating the model correctly ranks patients by risk in most cases.
+	•	F1 = 0.286, Precision = 0.25, Recall = 0.333 → despite the weighting, when using a hard 0.5 threshold, the model still misclassifies many positives.
+since after evaluating, median risk improved but f1 was still low, descided since we did the pos_weighting and it was 3:1, then the threshold of 0.5 isnt optimal, tehrefore we need to tune the threshold for median risk to get the best possible f1, but at the same time still note down metrics for it at 0.5 for comparability, 
+
+
+Why It Matters:
+	•	Metrics like F1, accuracy, precision, recall depend on the threshold. Changing it can improve or worsen them without changing the underlying probability ranking.
+	•	AUC is threshold-independent, so it’s safe to compare across models and tasks.
+	3.	Recommended Approach:
+	•	Use AUC for cross-model comparisons — it captures ranking performance regardless of threshold.
+	•	Report threshold-dependent metrics separately for clarity:
+	•	State the threshold used explicitly (0.5 or optimised).
+	•	Show metrics at 0.5 for direct comparability.
+	•	Optionally, show metrics at the optimised threshold to highlight the best achievable performance.
+
+✅ Takeaway:
+For a fair comparison with LightGBM (or other models evaluated at 0.5), median-risk metrics should be reported at 0.5 threshold, even if you know a better threshold exists. Then you can separately highlight the improvement with threshold tuning.
+
+Why you might need it
+	•	Training applied pos_weight to correct class imbalance, so the network outputs logits that are biased toward the minority class.
+	•	Using the default 0.5 threshold ignores this adjustment. As a result:
+	•	F1, recall, and accuracy may underestimate the true performance on the minority class.
+	•	Metrics may appear worse than they actually are.
+	•	Max-risk is likely fine at 0.5 because it’s not weighted, but median-risk metrics are affected.
+
+  4. Key point
+	•	Class weighting and threshold adjustment are complementary:
+	•	Weighting affects training of the logits.
+	•	Threshold affects final classification decision.
+	•	Without threshold tuning, your median-risk metrics are suboptimal.
+
+
+Benefit
+Explanation
+More accurate F1/recall/precision
+Especially important for minority class (medium risk).
+Fair comparison
+Makes metrics comparable to max-risk head and LightGBM (if you also apply threshold tuning).
+Avoid misleading results
+Prevents underestimating median-risk performance due to default 0.5 threshold.
+
+
+
+Why median-risk needed tuning, but max-risk does not
+	•	Median-risk is heavily imbalanced (~3:1 negative:positive).
+	•	Class weighting helped, but the probabilities are not naturally calibrated to 0.5, so threshold tuning can meaningfully improve F1.
+	•	Max-risk has a more balanced or naturally well-calibrated distribution of positives.
+	•	No evidence of systematic misalignment.
+	•	Correlation and performance are already very high.
+
+Practical guidance
+	•	Leave max-risk threshold at 0.5.
+	•	Tune median-risk threshold using validation set to maximize F1 (or another chosen metric).
+	•	Document clearly in your methods which thresholds were tuned for which outputs.
+
+Summary:
+	•	Max-risk: no threshold tuning needed → metrics already excellent.
+	•	Median-risk: threshold tuning recommended → metrics can improve after adjustment.
+	•	Regression: calibrated outputs already applied → no further thresholding, but ensure reporting is post-calibration.
+
+very tedious and long part of the proect because the tuning and updating enver seemed to stop and problems kept arrising, it made it seem like no matter what i did to optimise there was always an issue or always another problem i needed to fix and it seemed neevr ending, but this is the process of evaluating pipelines you keep tuning until its correct and metrics are good, will need t really reflect on this phase and how long it took and just whats actually needed, i thought it would be simple but all this fien tuning and metric updating was very very mentally chalenging 
