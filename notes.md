@@ -3833,19 +3833,7 @@ tensor(False) tensor(False)
       - Completes the **analytical lifecycle of the refined TCN**, preparing it for comparative analysis with LightGBM and NEWS2 in the final benchmarking phase.
     - Establishes a **scientifically interpretable and reproducible evaluation pipeline** ready for direct comparison with baseline models.
 
-4. **NEWS2 Clinical Baseline**
-  - **Goal:** Evaluate the standard clinical tool (NEWS2) as a baseline.  
-  - **Steps:**
-    - Use `news2_features_patient.csv` to extract or recompute NEWS2 scores.  
-    - Apply clinically relevant thresholds or use the continuous score as a ranking metric.  
-    - Compute same metrics as above (ROC-AUC, F1, accuracy).  
-  - **Outputs:**
-    - `results/news2_predictions.csv`  
-    - `results/news2_metrics.json`  
-  - **Reasoning:**  
-    - Quantifies how the clinical gold-standard performs versus ML models.  
-    - Adds clinical realism and interpretability.
-5. **LightGBM Baseline**:
+4. **LightGBM Baseline**:
   - **Goal:** Reuse trained LightGBM models from Phase 3.  
   - **Steps:**
     - Load saved LightGBM models (`deployment_models/`).  
@@ -3856,14 +3844,14 @@ tensor(False) tensor(False)
     - `results/lgbm_metrics.json`
   - **Reasoning:**  
     - Enables fair, controlled comparison across all model families (clinical, ML, DL).
-6. **Generate Visualisations (NEWS2 vs LightGBM vs TCN)**
+5. **Generate Visualisations (NEWS2 vs LightGBM vs TCN)**
 	-	ROC curves (overlay NEWS2, LightGBM, TCN) for both binary tasks → shows model ability to rank patients by risk across all possible decision thresholds → `plots/roc_max.png`, `plots/roc_median.png`
 	-	Calibration plots (predicted prob vs observed) for classification → shows whether predicted probabilities correspond to actual observed risks → `plots/calibration_max.png`
 	-	Regression scatter (predicted vs true) and residual histogram → shows for `pct_time_high`, how close continuous predictions are to true values (scatter around the y=x line) and distribution of errors → `plots/regression_scatter.png`
   - **Reasoning**: 
     - Transforms raw metrics into visual, interpretable insights.  
     - Highlights convergence, reliability, and performance differences.
-7. **Comparisons**
+6. **Comparisons**
   -	Produce a single comparison table and plots showing NEWS2 vs LightGBM vs TCN for each target (max, median, pct_time_high).
 	-	Determine whether sequential modelling (TCN) outperforms simpler tabular methods.
   - **Compare head-to-head**: 
@@ -3878,7 +3866,7 @@ tensor(False) tensor(False)
   - **Reasoning**: 
     - Demonstrates true scientific discipline, improvement is measured, not assumed.
     - We train and validate rigorously against a baseline, and see whether they actually beat the clinical tool doctors already use.
-8. **Interpretability**
+7. **Interpretability**
   - **LightGBM**: 
     - Interpretable feature importance drivers → identify dominant physiological drivers (e.g., HR, RR, SpO₂).  
     - Simpler model = easily interpretable feature-level insights.
@@ -3894,7 +3882,7 @@ tensor(False) tensor(False)
     - Clinical credibility and trust in AI predictions.  
     - Turns black-box temporal models into explainable decision aids.
   - **Reasoning**: clinician-technologist wow factor, not just a black box, but clinically interpretable.
-9. **Inference Demonstration (Deployment-Lite)**
+8. **Inference Demonstration (Deployment-Lite)**
 	-	Add a small inference script (`run_inference.py`) or a notebook demo (`notebooks/inference_demo.ipynb`):
     -	**Load**: `trained_models/tcn_best.pt` + `deployment_models/preprocessing/standard_scaler.pkl` + `padding_config.json`.
     -	**Input**: patient time series (or --patient_id) and runs preprocessing identically to training (scaling, padding, mask).
@@ -3905,7 +3893,7 @@ tensor(False) tensor(False)
     -	Shows ability to package ML into runnable inference.
     -	Low effort and lightweight compared to full FastAPI/CI/CD, but high payoff in terms of “completeness.”
 	  - This is enough to demonstrate end-to-end usage → shows pipeline usability without full FastAPI/CI/CD.
-10. **Documentation & Notes**
+9. **Documentation & Notes**
   - **README additions**:
     -	**Clear separation**: Phase 3 (LightGBM baseline) vs Phase 4 (TCN) vs Phase 5 (Evaluation).
     - **Pipeline**: messy clinical data → NEWS2 baseline → tabular ML → deep learning → fair comparison.
@@ -6392,20 +6380,8 @@ y_pred_reg_raw_cal = np.expm1(y_pred_reg_log_cal)
 ---
 
 ### Next Steps
-**Continue Phase 5 pipeline (steps 4-5):**
-4. **NEWS2 Clinical Baseline**
-  - **Goal:** Evaluate the standard clinical tool (NEWS2) as a baseline.  
-  - **Steps:**
-    - Use `news2_features_patient.csv` to extract or recompute NEWS2 scores.  
-    - Apply clinically relevant thresholds or use the continuous score as a ranking metric.  
-    - Compute same metrics as above (ROC-AUC, F1, accuracy).  
-  - **Outputs:**
-    - `results/news2_predictions.csv`  
-    - `results/news2_metrics.json`  
-  - **Reasoning:**  
-    - Quantifies how the clinical gold-standard performs versus ML models.  
-    - Adds clinical realism and interpretability.
-5. **LightGBM Baseline**:
+**Continue Phase 5 pipeline (Step 4):**
+4. **LightGBM Baseline**:
   - **Goal:** Reuse trained LightGBM models from Phase 3.  
   - **Steps:**
     - Load saved LightGBM models (`deployment_models/`).  
@@ -6419,5 +6395,7 @@ y_pred_reg_raw_cal = np.expm1(y_pred_reg_log_cal)
 
 ---
 
-## Day 30 Notes - Continue Phase 5: Evaluation of NEWS2 Baseline (Step 4)
+## Day 30 Notes - Continue Phase 5: Evaluation of LightGBM Baseline (Step 4)
+
+
 
