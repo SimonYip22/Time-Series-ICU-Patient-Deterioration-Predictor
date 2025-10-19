@@ -1,0 +1,43 @@
+=== LightGBM Evaluation Summary ===
+Data source: news2_features_patient.csv
+Splits: 70 train, 15 test patients
+
+--- Target: max_risk ---
+Test set metrics:
+roc_auc     : 0.8462
+f1          : 0.9286
+accuracy    : 0.8667
+precision   : 0.8667
+recall      : 1.0000
+
+Best hyperparameters:
+  learning_rate: 0.1
+  max_depth: 5
+  n_estimators: 50
+  min_data_in_leaf: 20
+
+--- Target: median_risk ---
+Test set metrics:
+roc_auc     : 0.9722
+f1          : 0.8571
+accuracy    : 0.9333
+precision   : 0.7500
+recall      : 1.0000
+
+Best hyperparameters:
+  learning_rate: 0.05
+  max_depth: 5
+  n_estimators: 100
+  min_data_in_leaf: 5
+
+--- Target: pct_time_high ---
+Test set metrics:
+rmse        : 0.0382
+r2          : 0.7933
+
+Best hyperparameters:
+  learning_rate: 0.1
+  max_depth: 3
+  n_estimators: 200
+  min_data_in_leaf: 5
+
