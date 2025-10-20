@@ -2502,7 +2502,7 @@ df[binary_cols] = df[binary_cols].astype(np.float32)
      - MSELoss (regression).
 7. **Smoke Test**
    - Built-in quick run (`if __name__ == "__main__":`).  
-   - Created dummy data (B=4, L=96, F=173) with masks of different sequence lengths.  
+   - Created dummy data (B=4, L=96, F=171) with masks of different sequence lengths.  
    - Ran forward pass through full model.  
    - Verified output shapes:
      - `logit_max`: (4,)  
@@ -2538,11 +2538,11 @@ output[t] = sum(inputs[t-window_size+1:t] * weights)
 #### Kernel / Filter
 - A **kernel** is a set of learnable weights applied to a local temporal window.
 - **Shape**: `(in_channels, kernel_size)`  
-- `in_channels` = number of input features (vitals/labs, e.g., 173).  
+- `in_channels` = number of input features (vitals/labs, e.g., 171).  
 - `kernel_size` = number of consecutive timesteps considered.
 - Each kernel produces **1 output time-series**, combining information across all input features in that window.
 - Example:
-  - Input: 173 features × 96 timesteps
+  - Input: 171 features × 96 timesteps
   - Kernel size 3 → looks at t, t-1, t-2 across all features
   - Output: 1 new feature per kernel (length 96)
 
@@ -2694,7 +2694,7 @@ Together, this lets the TCN learn both **short-term spikes** and **long-term tre
 
 #### After both layers computed
 5. **Downsample / Projection (1×1 Convolution) - if needed**
-- Used when **input channels ≠ output channels** (e.g., first layer has 173 features, block outputs 64 channels).
+- Used when **input channels ≠ output channels** (e.g., first layer has 171 features, block outputs 64 channels).
 - 1×1 convolution adjusts dimensions to match, so residual addition is valid.
 - **Why 1×1**:
   - Doesn’t combine temporal info; only maps input feature space → output feature space.
@@ -2858,7 +2858,7 @@ timestep 3: [x1, x2, x3] → output3
 #### Challenges
 - Struggled with **abstract mathematical concepts** behind convolutions, residuals, and backpropagation.  
 - Went too deep into low-level implementation details (gradients, matrix multiplications), which slowed progress and risked burning out.  
-- Difficulty understanding why **out_channels ≠ input features** (173 → 64) and how multiple kernels combine.  
+- Difficulty understanding why **out_channels ≠ input features** (171 → 64) and how multiple kernels combine.  
 - Confusion about **causal convolution padding**:
   - Why we add left padding.
   - Why PyTorch pads both sides.
@@ -2874,7 +2874,7 @@ timestep 3: [x1, x2, x3] → output3
   - Conv1d expects `(B, C, L)` because channels = features (like RGB in images).  
   - After first conv: in_channels = features; after that: in_channels = out_channels of previous layer (learned patterns).  
 - **Kernel structure**:
-  - Conv1d(in_ch=173, out_ch=64, kernel=3) → 64 kernels, each shaped `(173, 3)`.  
+  - Conv1d(in_ch=171, out_ch=64, kernel=3) → 64 kernels, each shaped `(171, 3)`.  
   - Each kernel spans **all features** across a window of 3 timesteps.  
   - Output = 64 new learned channels = temporal feature maps.  
 - **Key insight**: out_channels do not need to equal input features — they are **learned representations**, not the raw vitals anymore.  
@@ -3690,12 +3690,12 @@ tensor(False) tensor(False)
   
 ---
 
-# Phase 5: Evaluation, Baselines & Comparison
+# Phase 5: Evaluation & Baselines
 
 ---
 
-## Phase 5: Evaluation, Baselines & Comparison (Steps 1-10)
-**Goal: Directly compare Phase 4 TCN's (baseline vs refined) against Phase 3 LightGBM under identical data splits and metric definitions. Demonstrate mastery of both classical ML and modern deep learning. Produce final plots, metrics, interpretability, and inference demo to complete the end-to-end pipeline.**
+## Phase 5: Evaluation & Baselines (Steps 1-4)
+**Goal: complete all model evaluation scripts and establish scientifically valid baselines for comparison. Phase 5 marks the end of model retraining, validation, and metrics generation; setting the stage for direct comparison between LightGBM (non-temporal) and TCN (temporal) models under identical conditions.**
 
 1. **Centralised Metrics Utility (`evaluation_metrics.py`)**
   - **Purpose:**  
@@ -3705,9 +3705,11 @@ tensor(False) tensor(False)
     - `compute_classification_metrics(y_true, y_prob, threshold=0.5)`
     - `compute_regression_metrics(y_true, y_pred)`
   - **Reasoning:**
-    - Guarantees consistency across model evaluations.  
+    - Provides a single trusted source of truth for performance metrics, guarantees consistency across model evaluations.  
     - Prevents metric drift or implementation bias.  
-    - Simplifies later scripts → metrics are imported, not duplicated.  
+    - Simplifies later scripts by standardising output format across scripts → metrics are imported, not duplicated.  
+    - Ensures LightGBM, TCN, and any future models are evaluated on identical statistical definitions.  
+
 
 2. **Final TCN Evaluation on Test Set (`evaluate_tcn_testset.py` + `evaluate_tcn_testset_refined.py`)**
   - **Purpose:** 
@@ -3751,7 +3753,8 @@ tensor(False) tensor(False)
       - **Baseline TCN (Phase 4)**  
       - **Refined TCN (Phase 4.5)**  
       - **LightGBM and NEWS2** baselines (later in Phase 5).  
-    - Forms the analytical bridge between model training behaviour* and *real-world predictive reliability.
+    - Creates reproducible, publication-ready evaluation outputs with transparent calibration evidence.
+    - Forms the analytical bridge between model training behaviour and real-world predictive reliability.
 
 3. **Compute Metrics (`evaluate_tcn_testset.py` + `evaluate_tcn_testset_refined.py`)**
   - **Purpose:** 
@@ -3863,88 +3866,38 @@ tensor(False) tensor(False)
       - **Consistent feature inputs** for each patient.  
       - **Direct comparability** of classification and regression metrics.  
     - Using the **best hyperparameters from Phase 3** ensures that the LightGBM models are in their **strongest validated configuration**, analogous to how the TCN was optimised (class weighting, log-transform, threshold tuning, calibration).  
-    - This approach produces a **controlled, reproducible experimental baseline**, enabling fair head-to-head comparison with TCN and NEWS2 across all targets, while maintaining transparency and methodological rigor.
+    - Produces clean, aligned prediction outputs ready for direct cross-model analysis.
+    - This approach produces a **controlled, reproducible experimental baseline**, enabling fair head-to-head comparison with TCN across all targets, while maintaining transparency and methodological rigor.
 
-5. **Generate Visualisations (NEWS2 vs LightGBM vs TCN)**
-	-	ROC curves (overlay NEWS2, LightGBM, TCN) for both binary tasks → shows model ability to rank patients by risk across all possible decision thresholds → `plots/roc_max.png`, `plots/roc_median.png`
-	-	Calibration plots (predicted prob vs observed) for classification → shows whether predicted probabilities correspond to actual observed risks → `plots/calibration_max.png`
-	-	Regression scatter (predicted vs true) and residual histogram → shows for `pct_time_high`, how close continuous predictions are to true values (scatter around the y=x line) and distribution of errors → `plots/regression_scatter.png`
-  - **Reasoning**: 
-    - Transforms raw metrics into visual, interpretable insights.  
-    - Highlights convergence, reliability, and performance differences.
-
-6. **Comparisons**
-  -	Produce a single comparison table and plots showing NEWS2 vs LightGBM vs TCN for each target (max, median, pct_time_high).
-	-	Determine whether sequential modelling (TCN) outperforms simpler tabular methods.
-  - **Compare head-to-head**: 
-    - NEWS2 baseline (clinical score, thresholded) 
-    - LightGBM baseline (phase 3)
-    - TCN (phase 4).
-  - **Highlight trade-offs**: 
-    -	NEWS2 → simple, interpretable, clinically trusted.
-    -	LightGBM → classical ML, fast, interpretable-ish.
-    -	TCN → modern DL, higher accuracy, less interpretable.
-  - Save combined results to `results/comparison_table.csv`.
-  - **Reasoning**: 
-    - Demonstrates true scientific discipline, improvement is measured, not assumed.
-    - We train and validate rigorously against a baseline, and see whether they actually beat the clinical tool doctors already use.
-7. **Interpretability**
-  - **LightGBM**: 
-    - Interpretable feature importance drivers → identify dominant physiological drivers (e.g., HR, RR, SpO₂).  
-    - Simpler model = easily interpretable feature-level insights.
-	- **TCN**: 
-    - Temporal saliency (integrated gradients or Grad-CAM-style saliency over timesteps).
-    - Deep temporal model = harder, but richer temporal insights.
-    - Enables “when and why” interpretation rather than just “what.” 
-  - **Contrast LightGBM (static feature drivers) vs TCN (temporal saliency risk patterns)**: 
-    - LightGBM → static feature-level interpretability (e.g. “respiratory rate, SpO₂ dominate risk prediction”) → what features matter 
-    -	TCN → temporal interpretability (e.g. “deterioration spikes in respiratory rate at hour 12 drove the prediction”) → when features matter 
-	-	**Purpose**: 
-    - Show which vitals/labs/time periods drive prediction.   
-    - Clinical credibility and trust in AI predictions.  
-    - Turns black-box temporal models into explainable decision aids.
-  - **Reasoning**: clinician-technologist wow factor, not just a black box, but clinically interpretable.
-8. **Inference Demonstration (Deployment-Lite)**
-	-	Add a small inference script (`run_inference.py`) or a notebook demo (`notebooks/inference_demo.ipynb`):
-    -	**Load**: `trained_models/tcn_best.pt` + `deployment_models/preprocessing/standard_scaler.pkl` + `padding_config.json`.
-    -	**Input**: patient time series (or --patient_id) and runs preprocessing identically to training (scaling, padding, mask).
-    -	**Returns**: predicted probabilities and regression output `max_risk_prob, median_risk_prob, pct_time_high_pred`.
-    -	**Example CLI interface**: `python3 run_inference.py --patient_id 123` → returns risk prediction for patient 123 → `--save results/pred_123.json`.
-  - **Reasoning**:
-    -	**Polishes the project**: not just training, but usable and demonstrable.
-    -	Shows ability to package ML into runnable inference.
-    -	Low effort and lightweight compared to full FastAPI/CI/CD, but high payoff in terms of “completeness.”
-	  - This is enough to demonstrate end-to-end usage → shows pipeline usability without full FastAPI/CI/CD.
-9. **Documentation & Notes**
-  - **README additions**:
-    -	**Clear separation**: Phase 3 (LightGBM baseline) vs Phase 4 (TCN) vs Phase 5 (Evaluation).
-    - **Pipeline**: messy clinical data → NEWS2 baseline → tabular ML → deep learning → fair comparison.
-        - Reflections on interpretability + clinical relevance.
-  - **Notes.md**:
-    -	Record metrics, plots, and comparisons.
-    - **Include comparisons**:
-      -	Where TCN outperforms LightGBM/NEWS2 (e.g., better AUC in max_risk).
-      -	Where simpler models are still competitive (e.g., NEWS2 calibration or LightGBM interpretability).
-    - **Contrast interpretability styles**:
-      -	LightGBM → feature importance (static drivers like HR, RR, SpO₂).
-      - TCN → temporal saliency (patterns of deterioration over time).
-  - **Reasoning:**  
-    - Ensures the project is academically traceable, interpretable, and audit-ready.
 **End Products of Phase 5**
--	A single TCN trained + validated in a multi-task setup (2 classification heads + 1 regression head) fully evaluated.
-- Metrics JSON/CSVs for all baselines + TCN.
-- Plots of ROC, calibration, regression results.
--	Final comparison table across all models and NEWS2 baseline.
--	**Deployment-style assets**: Saved models (.pt), preprocessing pipeline (scalers, masks), inference demo script.
--	**Documentation that proves**: raw messy clinical data → interpretable deep temporal model → fair baseline comparison with classical ML → usable inference.
-**Why not further**:
-- Skip deploying as a cloud service (FastAPI/CI/CD).
-- FastAPI, CI/CD and live deployment shows you understand production ML workflows (packaging, reproducibility, continuous deployment) but this full-stack deployment is unncessary and time consuming.
-- Inference demo script (deployment-lite) is enough to prove end-to-end usability, full stack ML engineering isn’t necessary here.
-- **Must-have**: training + validation pipeline, test evaluation, metrics, plots, comparison to baselines, inference demo (CLI) + end-to-end reproducibility.
+- **Fully evaluated multi-task TCN models (baseline + refined):** Both models trained and validated with two classification heads (`max_risk`, `median_risk`) and one regression head (`pct_time_high`), evaluated on an unseen test set to confirm generalisation and calibration.
+- **Retrained LightGBM baselines:** Finalised LightGBM models retrained on the *same train/test split* as the TCN to ensure **direct, fair comparison** across all targets using identical data conditions.
+- **Structured metrics and outputs:** Comprehensive JSON and CSV outputs for **baseline TCN**, **refined TCN**, and **LightGBM**, enabling transparent comparison across all tasks and ensuring reproducibility of results.
+- **Pre- vs Post-calibration visual diagnostics:** Visual evidence demonstrating calibration effectiveness for regression tasks in the refined TCN; proving numerical bias correction without retraining.
+- **Unified evaluation utilities and summaries:** Standardised metric computation (`evaluation_metrics.py`) and consistent reporting pipelines across models, ensuring reproducibility and methodological integrity.
+
+**Why Not Further**
+- **Phase Completion:** Phase 5 marks the **end of all evaluation scripts** → all models have been trained, evaluated, and benchmarked under controlled and reproducible conditions.
+- **Purpose Fulfilled:** This phase ensures **scientific rigour**, **consistency**, and **fair comparability** of outputs across different model types (classical ML vs deep temporal).
+- **No Need for Further Tuning:** 
+  - Additional parameter tuning, feature importance, or interpretability steps are unnecessary at this stage.
+  - The **LightGBM models** were retrained purely for **comparability**, not deployment, since their deployment-ready versions (trained on all 100 patients) already exist from **Phase 3**.  
+  - The **TCN models** were already **fully optimised** → weighted classes, log-transform for regression, post-hoc calibration, and threshold tuning (only for median-risk) were applied in a **pragmatic and disciplined** way.  
+  - Max-risk threshold was deliberately left unchanged to preserve integrity and avoid overfitting.  
+  - These adjustments balanced performance optimisation with scientific caution → avoiding unnecessary complexity or bias introduction.
+- **Scientific Justification:**
+  - Both models now represent their **best validated configurations**:
+    - LightGBM: best hyperparameters reused from Phase 3 → efficient, interpretable, strong baseline.  
+    - TCN: refined through controlled calibration, not arbitrary tuning → accurate yet stable.  
+  - Both evaluated under identical conditions → **methodologically fair and statistically valid** comparison.
+- **Readiness for Next Phase:** The pipeline is now ready for **Phase 6: Visualisation, Comparison, and Finalisation**, which will generate comparative plots, interpretability analyses, and deployment-lite demonstration.
+
 **Unique Technical Story**
-- **Clinical baseline (NEWS2) → Tabular ML (LightGBM) → Deep temporal model (TCN)**  
-- A coherent, reproducible progression from simple to advanced models, demonstrating scientific discipline, reproducibility, and applied clinical ML expertise.
+- A coherent, evidence-driven progression **(Clinical Baseline → Tabular ML → Deep Temporal Model):** 
+  1. **NEWS2:** The established clinical ground truth baseline.  
+  2. **LightGBM:** Classical, interpretable ML capturing patient-level risk patterns.  
+  3. **TCN:** Advanced temporal deep learning model capturing sequential deterioration dynamics.  
+- **Narrative Significance:** This evolution demonstrates **scientific discipline**, **methodological transparency**, and **applied clinical ML expertise** → moving from traditional scoring systems to modern AI, while maintaining interpretability, reproducibility, and fairness in every comparison.
 
 ---
 
@@ -6401,7 +6354,7 @@ y_pred_reg_raw_cal = np.expm1(y_pred_reg_log_cal)
 
 ---
 
-## Day 30-31 Notes - Continue Phase 5: Re-train and Evaluate LightGBM Baseline (Step 4)
+## Day 30-31 Notes - Finish Phase 5: Re-train and Evaluate LightGBM Baseline (Step 4)
 
 ---
 
@@ -6687,14 +6640,13 @@ src/
 ---
 
 ### Overall Summary
-- The LightGBM models were **r### Overall Summary
 - This step **completes the retraining and evaluation of the LightGBM baseline** using the same 70/15/15 train/validation/test split as the TCN, finalising the evaluation scripts for the classical ML models.  
 - All three targets (`max_risk`, `median_risk`, `pct_time_high`) now have **aligned predictions and metrics** with the TCN pipeline, producing fully comparable outputs on unseen test patients.  
 - **By completing this step, the pipeline now has:**
   - Validated, reproducible LightGBM models ready for benchmark comparison.  
   - Structured outputs (`predictions CSV`, `metrics JSON`, `training summary`) that align with the TCN evaluation outputs.  
 - This marks a **critical milestone in the ML pipeline**, as all preprocessing, model training, evaluation, and metric computation steps for both non-temporal (LightGBM) and temporal (TCN) models are now complete.  
-- The pipeline is now ready to move onto the next phase: **direct comparison of TCN vs LightGBM**.  
+- The pipeline is now ready to move onto Phase 6 with **direct comparison of TCN vs LightGBM**.  
 - Enables analysis of **approximation fidelity to NEWS2 ground truth**, differences in classification and regression performance, and insights into model strengths/weaknesses.  
 - Completing this step ensures that the **ML evaluation pipeline is fully aligned, reproducible, and scientifically rigorous**, allowing for high-quality comparative analysis between non-temporal vs temporal model.
 
@@ -6715,7 +6667,122 @@ src/
 
 ---
 
-## Day 32 Notes - Continue Phase 5: Visualisation and Comparative Analysis (Steps 5-6)
+# Phase 6: Visualisation, Comparison & Finalisation
+
+---
+
+## Phase 6: Visualisation, Comparison & Finalisation (Steps 1-5)
+**Goal: To synthesise all evaluation outputs from Phase 5 into comparative analyses, visualisations, and interpretability artefacts. This phase transforms raw metrics into human-readable scientific insights, completing the machine-learning pipeline and preparing it for reporting or publication.**
+
+1. **Generate Visualisations (NEWS2 vs LightGBM vs TCN)**
+  - **Purpose**: Visualise model performance across targets to reveal differences in discrimination, calibration, and regression fidelity.
+	-	ROC curves (overlay LightGBM + TCN) for both binary tasks → shows model ability to rank patients by risk across all possible decision thresholds → `plots/roc_max.png`, `plots/roc_median.png`
+	-	Calibration plots (predicted prob vs observed) for classification → shows whether predicted probabilities correspond to actual observed risks → `plots/calibration_max.png`
+	-	Regression scatter (predicted vs true) and residual histogram → shows for `pct_time_high`, how close continuous predictions are to true values (scatter around the y=x line) and distribution of errors → `plots/regression_scatter.png`
+  - **Planned Plots**
+| Type | Target(s) | Description | Output |
+|------|------------|-------------|---------|
+| **ROC Curves** | max_risk & median_risk | Compare discriminative ability across thresholds | `plots/roc_max.png`, `plots/roc_median.png` |
+| **Calibration Curves** | max_risk & median_risk | Assess probability reliability | `plots/calibration_max.png`, `plots/calibration_median.png` |
+| **Regression Scatter + Residuals** | pct_time_high | Visualise continuous prediction accuracy and bias | `plots/regression_scatter.png`, `plots/regression_residuals.png` |
+
+  - **Reasoning**
+    - Converts numerical metrics into intuitive, interpretable visuals.  
+    - Enables verification of reliability, not just accuracy.  
+    - Supports scientific transparency in performance reporting.
+
+2. **Comparative Analysis (LightGBM vs TCN)**
+  - **Purpose**
+    - Perform direct, quantitative comparison between both models on identical test data.  
+    - Evaluate how closely each approximates the NEWS2-derived ground truth.
+  - **Planned Actions**
+    - Compile unified comparison table (`comparison_table.csv`) with metrics per target:
+      - Classification → ROC AUC, F1, Accuracy, Precision, Recall  
+      - Regression → RMSE, R²  
+    - Create grouped bar plots or radar charts for visual metric comparison.
+    - Discuss strengths and trade-offs:
+      - LightGBM → fast, interpretable, data-efficient.  
+      - TCN → temporal context, potentially higher discrimination but less interpretability.
+  - **Reasoning**: 
+    - Establishes the **final empirical benchmark** between temporal and non-temporal methods.  
+    - Quantifies the gain (if any) from temporal dynamics.  
+    - Forms the evidence base for final conclusions.
+    - Demonstrates true scientific discipline, improvement is measured, not assumed → we train and validate rigorously against a baseline, and see whether they come close to the clinical tool doctors already use.
+
+3. **Interpretability**
+  - **Purpose**: Derive clinically meaningful insights into model behaviour and feature importance.
+  - **Planned Outputs**:
+    - **LightGBM**: 
+      - Interpretable feature importance drivers → identify dominant physiological drivers (e.g., HR, RR, SpO₂).  
+      - Simpler model = easily interpretable feature-level insights.
+    - **TCN**: 
+      - Temporal saliency (integrated gradients or Grad-CAM-style saliency over timesteps).
+      - Deep temporal model = harder, but richer temporal insights.
+      - Enables “when and why” interpretation rather than just “what.” 
+  - **Contrast LightGBM (static feature drivers) vs TCN (temporal saliency risk patterns)**: 
+    - LightGBM → static feature-level interpretability (e.g. “respiratory rate, SpO₂ dominate risk prediction”) → what features matter 
+    -	TCN → temporal interpretability (e.g. “deterioration spikes in respiratory rate at hour 12 drove the prediction”) → when features matter 
+	-	**Reasoning**: 
+    - Show which vitals/labs/time periods drive prediction.   
+    - Moves beyond accuracy into **explainability**.  
+    - Provides clinical interpretability and trust in AI predictions.
+    - Turns black-box temporal models into explainable decision aids.
+
+4. **Inference Demonstration (Deployment-Lite)**
+  - **Purpose**: Create a lightweight demonstration of end-to-end inference for usability validation.
+	- **Plan**:	Add a small inference script (`run_inference.py`) or a notebook demo (`notebooks/inference_demo.ipynb`):
+    -	**Load**: `trained_models/tcn_best.pt` + `deployment_models/preprocessing/standard_scaler.pkl` + `padding_config.json`.
+    -	**Input**: patient time series (or --patient_id) and runs preprocessing identically to training (scaling, padding, mask).
+    -	**Returns**: predicted probabilities and regression output `max_risk_prob, median_risk_prob, pct_time_high_pred`.
+    -	**Example CLI interface**: `python3 run_inference.py --patient_id 123` → returns risk prediction for patient 123 → `--save results/pred_123.json`.
+  - **Reasoning**:
+    - Demonstrates full-pipeline usability without requiring full production deployment.  
+    - Verifies model reproducibility from raw input to final predictions.
+    -	**Polishes the project**: not just training, but usable and demonstrable.
+    -	Shows ability to package ML into runnable inference.
+    -	Low effort and lightweight compared to full FastAPI/CI/CD, but high payoff in terms of “completeness.”
+	  - This is enough to demonstrate end-to-end usage → shows pipeline usability without full FastAPI/CI/CD.
+    
+5. **Documentation & Notes**
+  - **Purpose**: Compile final documentation and reflections into an audit-ready form.
+  - **Tasks**:
+    - Update `README.md` with clear pipeline overview and phase separation.  
+    - Maintain `notes.md` with final metrics, plots, reflections, and comparison summaries.  
+    - Highlight key insights:
+      - Where TCN shows clear gains.  
+      - Where LightGBM or simpler methods remain competitive.  
+      - Interpretability contrast (feature vs temporal saliency).
+  - **Reasoning**:
+    - Ensures academic transparency and reproducibility.  
+    - Provides a complete record from raw data → evaluated models → comparative results.  
+    - This is primarily a polishing and integration step, not an analytical one.
+**End Products of Phase 6:**
+- Final plots of ROC, calibration, regression results.
+-	Final comparison table across all models.
+- Interpretability artefacts (SHAP + temporal saliency).
+-	**Deployment-style assets**: Saved models (.pt, .pkl), preprocessing pipeline (scalers, masks)
+- Inference demo script.
+-	**Complete README and project documentation that proves**: raw messy clinical data → tabular classical ML model → interpretable deep temporal model → visulisatiosn → fair baseline comparison with classical ML → usable inference.
+**Why not further**:
+- **Deployment:**
+  - Skip deploying as a cloud service (FastAPI/CI/CD).
+  - FastAPI, CI/CD and live deployment shows you understand production ML workflows (packaging, reproducibility, continuous deployment) but this full-stack deployment is unncessary and time consuming.
+  - Inference demo script (deployment-lite) is enough to prove end-to-end usability, full stack ML engineering isn’t necessary here.
+- **Testing:**
+  - **Formal unit testing is not required** for this project.  
+  - Scripts have deterministic inputs/outputs and are validated via execution correctness (successful run, matching metrics).  
+  - The focus is **scientific validity**, not software QA.  
+  - For this research-style ML project, you’re not expected to perform unit testing of every script. Verification = successful script execution + logically consistent outputs.
+  - Basic checks (verifying outputs exist, metrics are consistent, CSVs merge correctly) are sufficient.
+- **Must-have**: training + validation pipeline, test evaluation, metrics, plots, comparison to baselines, inference demo (CLI) + end-to-end reproducibility.
+**By The End of Project:**
+- The entire pipelinewill be complete: raw NEWS2 features → tabular ML → temporal DL → evaluation → visualisation.  
+- All results will be **comparable, interpretable, and publication-ready**.  
+- The project will demonstrate full mastery of clinical ML development: **data engineering → model training → evaluation → interpretability → deployment-lite usability.**
+
+---
+
+## Day 32 Notes - Start Phase 6: Visualisation (Step 1)
 
 ---
 
@@ -6723,4 +6790,189 @@ src/
 
 
 
+Which Models Are Being Compared
+
+Only two models should be compared directly in Phase 6 visualisations and tables:
+
+Model
+Description
+Purpose in Comparison
+Refined TCN
+Final, tuned, calibrated model from Phase 4.5
+Represents best temporal deep model — the final product.
+Retrained LightGBM
+Phase 5 model retrained on same 70/15 split using best hyperparameters from Phase 3
+Represents best non-temporal classical model under same data and conditions.
+
+Why exclude baseline TCN:
+	•	The baseline TCN (Phase 4) was useful only for internal validation and diagnostic comparison during model development.
+	•	Including it now would clutter the final comparison and confuse interpretation — since the refined model supersedes it completely.
+	•	So yes, we only visualise and compare “best vs best”: refined TCN vs retrained LightGBM.
+
+Why NEWS2 Isn’t Plotted
+NEWS2 is the ground truth generator, not an independent predictive model.
+Conceptually:
+	•	The “NEWS2 baseline” defines the targets that both LightGBM and TCN learn to reproduce (e.g., max risk, median risk, pct_time_high derived from NEWS2 values).
+	•	Therefore, plotting “NEWS2 performance” against itself would be tautological — it would always sit on the perfect diagonal (AUC = 1, RMSE = 0).
+
+🔸 Practically:
+	•	NEWS2 can’t be plotted on ROC or calibration curves because it’s the label, not a probabilistic prediction.
+	•	It can appear as a reference or threshold line (e.g., dotted diagonal or label like “clinical threshold reference”), but not as a model curve.
+
+Both LightGBM and TCN are evaluated against NEWS2-derived ground truth labels.
+Since NEWS2 defines the outcome itself, it is not visualised as a separate curve, but conceptually represents the clinical reference that both models approximate
+
+
+ About Testing
+
+You asked whether you need to “test” anything in this project.
+For this kind of ML evaluation pipeline, no formal unit tests are necessary. The “testing” here means scientific validation, which you’ve already implemented:
+	•	Controlled patient splits ensure data integrity.
+	•	Consistent metric computation ensures reproducibility.
+	•	Deterministic model loading and inference are sufficient.
+
+Formal software tests (like pytest) are overkill here unless this is a production API or package.
+You’ve achieved the scientific equivalent of testing by:
+	•	Cross-checking splits,
+	•	Verifying metrics,
+	•	Saving deterministic outputs.
+
+
+Planned Plots
+Category
+Plot
+Targets
+Description
+Output file
+Discrimination
+ROC Curves
+max_risk, median_risk
+Overlay LightGBM vs TCN ROC curves (plus chance line). Shows ability to rank patients by risk.
+plots/roc_max.png, plots/roc_median.png
+Precision–Recall Curves
+max_risk, median_risk
+Essential when data are imbalanced; complements ROC.
+plots/prc_max.png, plots/prc_median.png
+Reliability
+Calibration Curves
+max_risk, median_risk
+Compare predicted probabilities to actual outcomes (ideal = y = x).
+plots/calibration_max.png, plots/calibration_median.png
+Brier Score Bar Plot
+max_risk, median_risk
+Quantitative measure of calibration quality; simple bar chart comparing models.
+plots/brier_bar.png
+Regression Accuracy
+Predicted vs True Scatter Plot
+pct_time_high
+Plots continuous predictions vs true values (y = x line). Visualises fit and bias.
+plots/regression_scatter.png
+Residual Histogram + KDE
+pct_time_high
+Shows distribution of residuals (prediction – truth); detects bias or skew.
+plots/regression_residuals.png
+Error vs Truth Plot
+pct_time_high
+Plots residuals against true values to reveal heteroscedasticity or scale bias.
+plots/regression_error_vs_truth.png
+Calibration Histogram
+max_risk, median_risk
+Overlay predicted probability distribution vs actual positives per bin (visual reliability).
+plots/calibration_hist_max.png, plots/calibration_hist_median.png
+Comparative Overview
+Metric Bar Chart / Radar Plot
+all
+Summarises AUROC, F1, RMSE, R² for both models across tasks for quick visual comparison.
+plots/metrics_summary.png
+
+
+Rationale for Each
+	1.	ROC + PR Curves → essential pair for discrimination; ROC shows ranking, PR shows performance under imbalance.
+	2.	Calibration Curve + Brier Bar → confirm probabilistic reliability, critical for clinical risk prediction.
+	3.	Regression Scatter + Residuals + Error-vs-Truth → together prove numeric accuracy, bias absence, and variance stability.
+	4.	Calibration Histogram → complements calibration curves by revealing probability distribution shape.
+	5.	Metric Summary Plot → compresses quantitative results into a single, interpretable visual; useful for reports.
+
+Together, these plots cover every dimension of model evaluation:
+	•	Discrimination: who is ranked correctly
+	•	Calibration: how reliable are probabilities
+	•	Error behaviour: where and how the regression deviates
+	•	Comparability: how both models perform across all tasks
+
+File
+Description
+lightgbm_results/lightgbm_predictions.csv
+True & predicted values for LightGBM
+tcn_results/tcn_predictions_refined.csv
+True & predicted values for refined TCN
+lightgbm_results/lightgbm_metrics.json
+Precomputed metrics for LightGBM
+tcn_results/tcn_metrics_refined.json
+Precomputed metrics for TCN
+
+Outputs
+A complete visual diagnostics set supporting publication-quality reporting and direct model comparison:
+	•	2 ROC + 2 PR + 2 Calibration + 2 Calibration Histograms
+	•	3 Regression plots (scatter + residual + error-vs-truth)
+	•	1 Brier Score bar
+	•	1 Metric summary plot
+→ Total: 13 plots, each focused, non-redundant, and collectively comprehensive.
+
+This step will:
+	•	Produce the entire suite of diagnostic plots needed to visually validate both models.
+	•	Lay the graphical foundation for Step 2: Cross-Model Comparison.
+	•	Ensure no remaining diagnostic gap — every relevant performance dimension (discrimination, calibration, regression fidelity) is empirically visualised.
+
+src/
+├── prediction_evaluations/
+│   ├── lightgbm_results/
+│   │   ├── lightgbm_predictions.csv
+│   │   └── lightgbm_metrics.json
+│   └── tcn_results_refined/
+│       ├── tcn_predictions_refined.csv
+│       └── tcn_metrics_refined.json
+└── results_finalisation/
+    ├── performance_visualisations.py   ← we’ll create this
+    └── comparison_plots/               ← all plots will be saved here
+
+---
+
+the script imports sklearn.metrics for two essential reasons:
+
+⸻
+
+🧩 1. To recompute visualisation-related curves
+
+The ROC and Precision–Recall plots require per-patient probabilities, not just scalar metrics.
+We use these functions:
+	•	roc_curve → to compute the FPR/TPR arrays for plotting the ROC curve.
+	•	precision_recall_curve → to compute Precision vs Recall arrays for the PR curve.
+	•	average_precision_score → for the PR curve’s area (AP) to label the plots.
+
+These were never stored in your JSON — only the final AUC values were.
+We therefore recompute the arrays directly from your prediction CSVs.
+
+⸻
+
+🧩 2. To compute new reliability metrics
+
+Your JSON didn’t include:
+	•	Brier score → measures how well probabilities are calibrated.
+	•	ECE (Expected Calibration Error) → custom function using binning, not in sklearn by default.
+
+So, brier_score_loss from sklearn is used to calculate the Brier score.
+(We also define a custom expected_calibration_error() function.)
+
+These are essential for your calibration curve and histogram analysis — they quantify probability reliability, not just discrimination.
+
+⸻
+
+🧩 3. To recompute regression diagnostic curves
+
+Your JSON includes regression RMSE and R², but we also:
+	•	Use mean_squared_error and r2_score again inside the script to cross-check or compute these directly from the predictions, ensuring internal consistency with the plotted data.
+
+This avoids a mismatch in case the JSON came from slightly different preprocessing (e.g., log vs raw).
+
+⸻
 
