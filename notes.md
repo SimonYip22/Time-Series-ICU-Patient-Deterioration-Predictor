@@ -3686,10 +3686,7 @@ tensor(False) tensor(False)
   - ROC Curves  
   - Calibration Curves  
   - Regression Scatterplots and Residual Histograms.
-- **Compare the TCN’s performance against**:
-  - **LightGBM baseline**  
-  - **NEWS2 baseline**  
-  For both technical and clinical interpretability.
+- Compare the TCN’s performance against **LightGBM baseline** for both technical and clinical interpretability.
   
 ---
 
@@ -3698,7 +3695,7 @@ tensor(False) tensor(False)
 ---
 
 ## Phase 5: Evaluation, Baselines & Comparison (Steps 1-10)
-**Goal: Directly compare Phase 4 TCN's (baseline vs refined) against the clinical baseline (NEWS2) and Phase 3 LightGBM under identical data splits and metric definitions. Demonstrate mastery of both classical ML and modern deep learning. Produce final plots, metrics, interpretability, and inference demo to complete the end-to-end pipeline.**
+**Goal: Directly compare Phase 4 TCN's (baseline vs refined) against Phase 3 LightGBM under identical data splits and metric definitions. Demonstrate mastery of both classical ML and modern deep learning. Produce final plots, metrics, interpretability, and inference demo to complete the end-to-end pipeline.**
 
 1. **Centralised Metrics Utility (`evaluation_metrics.py`)**
   - **Purpose:**  
@@ -3833,17 +3830,40 @@ tensor(False) tensor(False)
       - Completes the **analytical lifecycle of the refined TCN**, preparing it for comparative analysis with LightGBM and NEWS2 in the final benchmarking phase.
     - Establishes a **scientifically interpretable and reproducible evaluation pipeline** ready for direct comparison with baseline models.
 
-4. **LightGBM Baseline**:
-  - **Goal:** Reuse trained LightGBM models from Phase 3.  
+4. **LightGBM Baseline**
+  - **Purpose:**  
+    - Retrain and evaluate the final LightGBM models using patient-level NEWS2 features on the **same 70/15 train/test split** used for the TCN model.  
+    - Establish a **controlled, production-grade baseline** for non-temporal models (classical ML) that is **directly comparable** to TCN predictions.  
+    - Ensures reproducibility, transparency, and consistent evaluation by using the **best validated hyperparameters from Phase 3**, while aligning patient inclusion and feature inputs with the TCN evaluation.  
+    - Converts the original full-dataset deployment models into a **scientifically controlled experimental baseline** for fair cross-model comparison.
   - **Steps:**
-    - Load saved LightGBM models (`deployment_models/`).  
-    - Evaluate them on the same frozen test set (`patient_splits.json`).  
-    - Compute classification and regression metrics using `metrics_utils.py`.  
-  - **Outputs:**  
-    - `results/lgbm_predictions.csv`  
-    - `results/lgbm_metrics.json`
+    - Load patient-level NEWS2 features (`news2_features_patient.csv`) and fixed train/test splits (`patient_splits.json`).  
+    - Load best hyperparameters from Phase 3 (`best_params.json`) for each target (`max_risk`, `median_risk`, `pct_time_high`).  
+    - Recreate binary targets (`max_risk_binary`, `median_risk_binary`) for classification tasks.  
+    - Retrain LightGBM models on the 70-patient training set using the tuned hyperparameters:
+      - Classification: `lgb.LGBMClassifier(**params, class_weight="balanced")`
+      - Regression: `lgb.LGBMRegressor(**params)`
+      - Save each model as `.pkl` in `lightgbm_results/`.  
+    - Evaluate retrained models on the 15-patient test set:
+      - Classification → `model.predict_proba(X_test)[:, 1]`
+      - Regression → `model.predict(X_test)`
+      - Store true vs predicted values in `preds_dict`.  
+    - Save predictions as `lightgbm_predictions.csv`.  
+    - Compute performance metrics using `compute_classification_metrics()` and `compute_regression_metrics()`.  
+    - Save metrics as `lightgbm_metrics.json` and write concise evaluation summary to `training_summary.txt`.
+  - **Outputs and Explanation:**  
+    - `*_retrained_model.pkl` → Contains the trained LightGBM model objects for each target; can be loaded later for inference or evaluation.  
+    - `lightgbm_predictions.csv` → A combined table of true labels and predicted outputs for all test patients; ensures alignment between predictions and patient IDs.  
+    - `lightgbm_metrics.json` → Stores detailed performance metrics for classification (AUROC, F1, Accuracy, Precision, Recall) and regression (RMSE, R²) in a machine-readable format for reproducibility.  
+    - `training_summary.txt` → Provides a human-readable summary of dataset characteristics, feature count, per-target metrics, and hyperparameters; serves as a full record for audit and reporting.
   - **Reasoning:**  
-    - Enables fair, controlled comparison across all model families (clinical, ML, DL).
+    - Original Phase 3 LightGBM models were trained on all 100 patients (deployment models) and are **not directly comparable** to the TCN evaluation, which uses a 70/15/15 split.  
+    - Retraining on the same split ensures:
+      - **Identical patient inclusion/exclusion** across models.  
+      - **Consistent feature inputs** for each patient.  
+      - **Direct comparability** of classification and regression metrics.  
+    - Using the **best hyperparameters from Phase 3** ensures that the LightGBM models are in their **strongest validated configuration**, analogous to how the TCN was optimised (class weighting, log-transform, threshold tuning, calibration).  
+    - This approach produces a **controlled, reproducible experimental baseline**, enabling fair head-to-head comparison with TCN and NEWS2 across all targets, while maintaining transparency and methodological rigor.
 
 5. **Generate Visualisations (NEWS2 vs LightGBM vs TCN)**
 	-	ROC curves (overlay NEWS2, LightGBM, TCN) for both binary tasks → shows model ability to rank patients by risk across all possible decision thresholds → `plots/roc_max.png`, `plots/roc_median.png`
@@ -3852,6 +3872,7 @@ tensor(False) tensor(False)
   - **Reasoning**: 
     - Transforms raw metrics into visual, interpretable insights.  
     - Highlights convergence, reliability, and performance differences.
+
 6. **Comparisons**
   -	Produce a single comparison table and plots showing NEWS2 vs LightGBM vs TCN for each target (max, median, pct_time_high).
 	-	Determine whether sequential modelling (TCN) outperforms simpler tabular methods.
@@ -3930,7 +3951,7 @@ tensor(False) tensor(False)
 ## Day 21-22 Notes - Start Phase 5: Evaluation Metrics & Final TCN Test Evaluation (Steps 1-3)
 
 ### Goals
-- Establish a centralised metrics utility (`evaluation_metrics.py`) for consistent evaluation across TCN, LightGBM, and NEWS2.  
+- Establish a centralised metrics utility (`evaluation_metrics.py`) for consistent evaluation across TCN and LightGBM.  
 - Run final evaluation of the Phase 4 TCN on the held-out test set using `evaluate_tcn_testset.py`.  
 - Generate reproducible predictions for classification (`logit_max`, `logit_median`) and regression (`regression`).
 - Compute metrics (ROC-AUC, F1, Accuracy, Precision, Recall, RMSE, R²) and save outputs (`tcn_metrics.json`, `tcn_predictions.csv`).
@@ -5449,7 +5470,7 @@ Only `pos_weight_median_risk` and `final_val_loss` are dynamic run outputs; the 
 - Finalise `evaluate_tcn_testset_refined.py`, including updated tuning and calibration sections.  
 - Verify that `tcn_metrics_refined.json` and `tcn_predictions_refined.csv` contain all expected keys and values.  
 - Ensure all console outputs (including threshold tuning, log + raw outputs, calibration) are clearly reflected in the markdown summary.  
-- Begin preparing **comparative evaluation setup** (TCN vs LightGBM vs NEWS2) for Phase 5.
+- Begin preparing **comparative evaluation setup** (TCN vs LightGBM) for Phase 5.
 
 ### What We Did
 #### Evaluated Refined TCN Model on Test Set `evaluate_tcn_testset_refined.py`
@@ -6380,25 +6401,15 @@ y_pred_reg_raw_cal = np.expm1(y_pred_reg_log_cal)
 
 ---
 
-### Next Steps
-**Continue Phase 5 pipeline (Step 4):**
-4. **LightGBM Baseline**:
-  - **Goal:** Reuse trained LightGBM models from Phase 3.  
-  - **Steps:**
-    - Load saved LightGBM models (`deployment_models/`).  
-    - Evaluate them on the same frozen test set (`patient_splits.json`).  
-    - Compute classification and regression metrics using `metrics_utils.py`.  
-  - **Outputs:**  
-    - `results/lgbm_predictions.csv`  
-    - `results/lgbm_metrics.json`
-  - **Reasoning:**  
-    - Enables fair, controlled comparison across all model families (clinical, ML, DL).
+## Day 30-31 Notes - Continue Phase 5: Re-train and Evaluate LightGBM Baseline (Step 4)
 
 ---
 
-## Day 30 Notes - Continue Phase 5: Re-train and Evaluate LightGBM Baseline (Step 4)
-
 ### Goals
+- Retrain LightGBM models using the **same 70/15/15 patient split** as the TCN model to ensure a **fair, out-of-sample comparison**.  
+- Produce **predictions and performance metrics** compatible with TCN evaluation while preserving Phase 3 tuned hyperparameters.  
+- Clarify the distinction between **deployment-ready models** (trained on all 100 patients) and **benchmarking models** (retrained for controlled evaluation).  
+
 
 ### What We Did
 #### Step 4: Re-train and Evaluate Final LightGBM Models (`evaluate_lightgbm_testset.py`)
@@ -6539,299 +6550,174 @@ src/
 
 ---
 
----
+### LightGBM Predictions and Metrics Interpretation
+#### Overview 
+- Provides a detailed interpretation of the LightGBM test set predictions, computed metrics, and their implications. 
+- The predictions were generated for three targets:
+  1. `max_risk` → binary classification for high-risk patients
+  2. `median_risk` → binary classification for medium-risk patients
+  3. `pct_time_high` → regression for percentage of time patient spent in high-risk state  
 
-LightGBM was retrained on the full dataset (N=100), therefore its performance represents in-sample fit rather than true generalisation. Comparison with TCN (which used a held-out test set) is not directly valid.
+#### 1. Predictions Overview
+**The test set contains 15 patients. Predictions include:**
+| Column | Description |
+|--------|-------------|
+| `y_true_max` | True label for high-risk (1 = high risk, 0 = not high risk) |
+| `prob_max` | LightGBM predicted probability of `max_risk = 1` |
+| `y_true_median` | True label for medium-risk (1 = medium risk, 0 = low risk) |
+| `prob_median` | LightGBM predicted probability of `median_risk = 1` |
+| `y_true_reg` | True value for `pct_time_high` (continuous) |
+| `y_pred_reg` | LightGBM predicted value for `pct_time_high` (continuous) |
 
-Fair scientific comparison (recommended)
+**Sample of predictions**
+| Patient | y_true_max | prob_max | y_true_median | prob_median | y_true_reg | y_pred_reg |
+|---------|------------|---------|---------------|------------|------------|------------|
+| 0       | 0          | 0.680   | 0             | 0.003      | 0.000      | -0.013     |
+| 1       | 1          | 0.937   | 0             | 0.006      | 0.054      | 0.115      |
+| 2       | 1          | 0.996   | 1             | 0.630      | 0.249      | 0.198      |
+| 3       | 1          | 0.969   | 0             | 0.912      | 0.122      | 0.156      |
+| 4       | 1          | 0.923   | 1             | 0.995      | 0.276      | 0.211      |
+| 5       | 1          | 0.509   | 0             | 0.018      | 0.023      | 0.046      |
+| …       | …          | …       | …             | …          | …          | …          |
 
-Retrain LightGBM exactly like TCN:
-	1.	Split your news2_features_patient.csv into:
-	•	70% train
-	•	15% validation
-	•	15% test
-(using the same patient IDs as the TCN pipeline)
-	2.	Recreate targets (target_max_risk, target_median_risk, target_pct_time_high).
-	3.	Train 3 LightGBM models as before.
-	4.	Evaluate on the same 15 test patients as the TCN.
+**Note: The full CSV contains all 15 patients. Probabilities (`prob_max`/`prob_median`) represent model confidence for classification tasks, while `y_pred_reg` is the continuous predicted percentage of time at high risk.**
 
-→ This gives a proper like-for-like comparison between LightGBM and TCN.
-Both models then have identical input structure, targets, and unseen test data.
+#### 2. Metrics Interpretation
 
-Why Keep the Final LightGBM Models
-	1.	Portfolio value — shows end-to-end maturity
-	•	Demonstrates that after validation and tuning, you trained a full model using all available data (as real practitioners do).
-	•	Shows you understand how research-grade pipelines transition to deployable ones.
-	2.	Deployment + interpretability demo
-	•	You can show feature importance visualisations and demo predictions from the final model in your portfolio app or notebook.
-	•	It’s the model that’s meant for clinical demo, not for benchmarking.
-	3.	Scientific integrity
-	•	The retrained (Phase 5) model is for fair benchmarking, while the Phase 3 one represents what would be deployed in a real-world scenario.
-	•	Both serve distinct, non-overlapping roles — one for publication/validation, one for implementation.
+**Classification Metrics**
+| Target       | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
+|--------------|---------|----------|----------|-----------|--------|----------------|
+| `max_risk`   | 0.846   | 0.929    | 0.867    | 0.867     | 1.000  | High recall indicates the model captures all high-risk patients; some false positives reduce precision slightly. |
+| `median_risk`| 0.972   | 0.857    | 0.933    | 0.750     | 1.000  | Excellent discrimination (ROC AUC). Lower precision shows some misclassification of medium-risk patients. |
 
-⸻
+**Regression Metrics**
+| Target         | RMSE     | R²      | Interpretation |
+|----------------|----------|---------|----------------|
+| `pct_time_high`| 0.0382   | 0.793   | Predictions are close to true values with ~79% variance explained. RMSE indicates average prediction error ~3.8% in percentage time high. |
 
-🧱 How You Should Present It
+**Insights**
+- **Max Risk Classification:** 
+  - The model prioritises high recall (100%) to ensure all high-risk patients are identified, which is critical for ICU early warning. 
+  - Slightly lower precision (86.7%) reflects some over-prediction in borderline cases.  
+- **Median Risk Classification:** 
+  - High ROC AUC (0.972) shows strong separation between medium-risk and non-medium-risk patients. 
+  - Perfect recall indicates no medium-risk patient is missed, though precision is reduced due to some false positives.
+- **Pct Time High Regression:** 
+  - R² = 0.793 demonstrates strong predictive ability on continuous risk exposure. 
+  - RMSE = 0.038 indicates tight clustering of predictions around true values. 
+  - Minor deviations are expected due to natural variability in patient data.
 
-In your documentation:
+#### 3. Overall Interpretation
+1. The LightGBM models **perform well across classification and regression targets**, producing metrics indicative of strong discriminative power and accuracy.  
+2. Predictions (`prob_max`, `prob_median`) provide **probabilistic risk estimates**, enabling threshold adjustment for clinical decision-making.  
+3. Regression output (`y_pred_reg`) aligns closely with true percentage time high, suitable for continuous risk monitoring.  
+4. These predictions and metrics form a **robust baseline for comparison** against TCN model, ensuring fair evaluation of temporal vs non-temporal approaches.  
 
-The LightGBM models were initially trained and validated via 5-fold CV (Phase 3), then fully retrained on the complete dataset to produce deployment-ready models (Phase 3).
-
-For fair comparison with the TCN and NEWS2 baselines, a separate LightGBM model was retrained in Phase 5 using the same 70/15/15 split as the TCN.
-This ensures identical test patients for all baselines, while retaining the full-data LightGBM model for demonstration and deployment use.
-
-Goal:
-Retrain LightGBM models on the same 70/15/15 split as the TCN and NEWS2 baselines to enable fair, out-of-sample comparison.
-
-Rationale:
-	•	The Phase 3 and 4 models were trained or validated on the entire 100-patient dataset, so they cannot be used for test comparison.
-	•	Retraining ensures identical test patients for all models, preventing data leakage.
-	•	Keeps the scientific pipeline reproducible and logically separated (development → deployment → evaluation).
-
-Note: For Phase 5, the LightGBM models will be retrained on the same 70/15/15 split used by the TCN to ensure fair comparison on an unseen test set. These retrained models are not part of Phase 3 but are referenced during final evaluation.
-
----
-
-The Phase 5 retraining is not about redeveloping the LightGBM model.
-It’s about using the same tuned, finalised design from Phase 3 – 4 to produce predictions on the frozen test set under identical conditions to the TCN.
-
-In other words:
-	•	You reuse all learned knowledge from Phase 3 – 4 (hyperparameters, preprocessing, target encodings).
-	•	You only retrain weights on the training portion (70 patients) of the new split, so the model hasn’t seen the test set.
-
-⸻
-
-You don’t need to re-run hyperparameter tuning or feature importance analyses.
-You do need:
-	•	A proper 70/15/15 split.
-	•	A validation set for early stopping (standard training hygiene).
-	•	A test evaluation for comparison with TCN.
-
----
-
-Since your Phase 3 (LightGBM CV + final models) is already complete, and now you’re retraining LightGBM on the 70/15/15 split only to compare with TCN, the goals are different:
-	•	You do not need to re-run CV, tuning, or feature importance aggregation.
-Those belong to the baseline model-building phase.
-	•	You only need to retrain and evaluate LightGBM on the new split, producing:
-	•	Predictions and metrics identical in format to TCN’s evaluation.
-	•	A concise training summary (optional, 3–5 lines: dataset size, hyperparameters used, metrics).
-So yes — you can skip the old training summary unless you want one small summary text file for neatness.
+#### 4. Recommendations for Next Steps
+- **Visualisation:**  
+  - ROC curves for `max_risk` and `median_risk` to illustrate discrimination.  
+  - Calibration plots for classification tasks to assess probability reliability.  
+  - Regression scatter plots (`y_true_reg` vs `y_pred_reg`) and residual histograms for continuous target.
+- **Comparison Table:**  
+  - Combine LightGBM, TCN, and NEWS2 metrics into a single table for direct comparison.
+- **Interpretability:**  
+  - Feature importance analysis (LightGBM) and temporal saliency (TCN) for interpretability and clinical insight.
 
 ---
 
-Why training + evaluation should be in the same script for this retraining
 
-This new LightGBM model’s purpose is not to produce deployment-ready models — it’s to generate a fair, like-for-like comparison with the TCN (both trained and tested under identical splits).
+### Reflection
+#### Challenges
+**In-sample vs out-of-sample evaluation**  
+- The Phase 3 final LightGBM models were trained on **all 100 patients**, which means their evaluation metrics represent **in-sample fit**, not true generalisation. 
+- Comparing this directly with the TCN, which was evaluated on a **held-out 15-patient test set**, would have been scientifically invalid.  
+**Ensuring consistent splits for fair comparison**  
+- TCN models were trained using a **70/15/15 train/validation/test split**, along with optimisations such as log-transformation, class weighting, threshold tuning, and post-hoc calibration. 
+- To enable a valid head-to-head comparison, LightGBM needed to be retrained on the **exact same 70/15/15 split**, with identical test patients, feature sets, and target definitions.
+**Misconception about NEWS2 baseline**  
+- Initially, the project plan assumed News2 could serve as a separate benchmark for comparison. 
+- Realisation: **NEWS2 is the ground truth itself**.
+- Any LightGBM or TCN prediction is inherently benchmarked against these true target values, meaning models **cannot outperform the baseline** → they can only approximate it. 
+- This impacts how we interpret comparative performance.
+**Maintaining alignment across multiple targets**  
+- LightGBM trains three separate models (`max_risk`, `median_risk`, `pct_time_high`) independently. 
+- Combining predictions into a single CSV requires careful alignment using `subject_id`, to prevent mismatches across patients. 
+- TCN produces all outputs simultaneously, so a single merge step isn’t necessary there.
+**Avoiding unnecessary computation and variability**  
+- Retraining might have tempted us to recompute feature importances or hyperparameter tuning. 
+- However, doing so would introduce unnecessary compute and possible variability, compromising reproducibility.
 
-That means:
-	•	You train on the 70% train patients.
-	•	You immediately evaluate on the 15% validation and 15% test patients.
-	•	Then save results (metrics, plots, predictions) in the same format as the TCN evaluation.
+#### Solutions and Learnings
+**Retraining LightGBM on the TCN split**  
+- Used the **same 70 training / 15 validation / 15 test patients** as TCN.  
+- Recreated targets: `max_risk_binary`, `median_risk_binary`, `pct_time_high`.  
+- Applied **Phase 3 best hyperparameters** without additional tuning, preserving the “best LightGBM” configuration.  
+- Trained models on the training set and evaluated on the test set, producing **predictions and metrics compatible with TCN evaluation**.  
+- **Outcome:** controlled, fair, and reproducible comparison between LightGBM and TCN.
+**Maintaining scientific integrity**  
+- **Phase 3 final models** remain for **deployment and interpretability purposes**, including feature importance visualisation and portfolio demonstration.  
+- **Phase 5 retraining models** serve exclusively for **benchmarking**, separating experimental evaluation from deployment-ready models.
+**Ensuring best vs best comparison**  
+- TCN underwent optimisations like threshold tuning, log-transforms, class weighting, and calibration to maximise predictive performance.  
+- Retraining LightGBM with proven Phase 3 hyperparameters ensures **both models are evaluated in their strongest validated configurations** on unseen data.
+**Feature importance is not needed**  
+- Retraining focuses on **evaluation and comparison**, not exploration.  
+- Computing feature importance during retraining would be redundant and could introduce minor random variation.
+**Targets training loop logic**  
+- Iterating through targets programmatically ensures consistency and reduces errors.  
+- Using `subject_id` in `train_df` and `test_df` ordering guarantees correct alignment of predictions across multiple outputs for each patient and correct alignment when merging into `df_preds`.
+**NEWS2 baseline understanding**  
+  - NEWS2 is now clearly treated as **ground truth**, not a separate model.  
+  - Models approximate the ground truth; they cannot “beat” it.  
+  - The project’s goal shifts to evaluating **how well LightGBM and TCN reproduce true risk values** and compare their relative predictive quality.
 
-There’s no reason to split this across multiple scripts — that modularity was useful for the baseline phase (CV, tuning, feature importance, etc.), but not for this controlled comparison.
-
----
-
-Your new script will look something like:
-
-# retrain_lightgbm_testsplit.py
-
-# 1. Load the preprocessed patient-level data
-# 2. Load or define the same 70/15/15 split used by the TCN
-# 3. Recreate targets (binary and regression)
-# 4. Initialise LightGBM models using tuned hyperparameters
-# 5. Fit models on training set
-# 6. Evaluate on validation and test sets
-# 7. Compute same metrics + plots as TCN (ROC, PR, confusion matrix, etc.)
-# 8. Save outputs (metrics, CSVs, plots)
-
----
-
-You are 100% safe to reuse your best_params.json for the Phase 5 LightGBM retraining (on the 70/15/15 split).
-It’s the correct and scientifically consistent choice — you’re not invalidating comparability or methodology.
-
-🧩 Step 1 — What exactly hyperparameter tuning optimises
-
-When you tuned LightGBM in Phase 3, you:
-	•	Used 5-fold cross-validation across all 100 patients,
-	•	To find hyperparameters (learning rate, max depth, etc.) that generalised on average across different splits of those 100 patients.
-
-This process does not memorise the data; it identifies hyperparameters that minimise overfitting and work robustly across varying subsets of the dataset.
-
-So the output (best_params.json) is not tied to any one split —
-it represents parameter settings that generalised well across multiple folds.
-
-That’s exactly what you want when transferring to a new split.
-
-⸻
-
-🧩 Step 2 — What happens when you retrain on 70/15/15
-
-Now, in Phase 5, you’re:
-	•	Using the same dataset,
-	•	But dividing it differently (70 train, 15 val, 15 test).
-
-You are not retuning — only retraining.
-So, you’re simply reapplying the generalised hyperparameters on a new split.
-
-This is completely valid and standard practice.
-
-It’s like this:
-	•	Tuning → finds good hyperparameters for the data distribution.
-	•	Retraining → applies them to a new partition to test generalisation.
-
-As long as your dataset’s underlying distribution hasn’t changed (which it hasn’t),
-reusing tuned hyperparameters is valid and correct.
+#### Overall Reflection
+- Retraining LightGBM on the **same 70/15/15 split as TCN** was essential to establish a **scientifically rigorous and reproducible baseline**.  
+- This step clarified the distinction between:
+  1. **Deployment-ready models** (Phase 3 final LightGBM) for clinical demonstration and feature importance interpretation.  
+  2. **Benchmarking models** (Phase 5 retrained LightGBM) for fair evaluation against TCN on unseen test patients.  
+- Realising that **NEWS2 is the ground truth** shifted the project’s perspective: the objective is no longer to improve over a baseline but to measure **approximation fidelity** of LightGBM and TCN.  
+- **Lessons learned:**
+  - Data splits, unseen test sets, and alignment across targets are critical for valid ML benchmarking.  
+  - Hyperparameter reuse and controlled retraining ensure both scientific rigour and fair comparison.  
+  - Clear separation of **experimental evaluation** and **deployment-ready models** enhances reproducibility, interpretability, and portfolio demonstration.  
+- The retraining pipeline now produces **clean predictions, structured metrics, and evaluation outputs**, ready for downstream visualisation (ROC curves, calibration plots, regression scatter) and head-to-head comparison tables between LightGBM and TCN.  
+- Overall, this reinforces **good ML practice**: fair, reproducible, and transparent evaluation of multiple model families against a shared, true ground truth.
 
 ---
 
-Also, in order for us to get the best tcn, we needed to tune with tuning threshold, calibration, log-transformation, class weighting, to get the best metrics possible, so we need to do the same with lightgbm so we are comparing best vs best, does this mean what we are doing with lightgbm right now the retraining with the best params thats fine right? Or does it now become okay to use that final model that was trained on all 100 patients to get the best model? Or is it still invalid comparison even if tcn was tuned and refined etc
-
-1️⃣ What we did with TCN
-	•	You didn’t just train the TCN once.
-	•	You tuned thresholds, applied calibration, log-transform, class weighting, etc.
-	•	Then you evaluated on a held-out test set (15 patients) that the model never saw.
-	•	That gave you your “best TCN” in a rigorous, fair way.
-
-The key point: TCN’s performance is measured on unseen patients, after all refinements.
-
-2️⃣ What happens with LightGBM if you just use the Phase 3 final model
-	•	Phase 3 final model was trained on all 100 patients.
-	•	If you now evaluate it on the same 15-patient “test set” that TCN used, the LightGBM already saw those patients.
-	•	This invalidates the comparison, because TCN was never exposed to them — LightGBM has a huge advantage.
-
-✅ This is exactly the issue you spotted earlier.
-
-
-
-3️⃣ Retraining LightGBM on a 70/15/15 split
-	•	You take the best hyperparameters from Phase 3 (tuned via 5-fold CV).
-	•	Train on the first 70 patients, validate on 15 (for early stopping or metrics monitoring), and test on the held-out 15 (same as TCN).
-	•	Now both models are evaluated on truly unseen test patients.
-	•	This gives a fair, apples-to-apples comparison.
-
-Key points:
-	•	You’re not retuning — you’re reusing proven best hyperparameters, just like TCN used the best refined setup.
-	•	You’re not using the “final model trained on all 100 patients” because that would leak test data.
-
-
-
-4️⃣ ✅ Conclusion
-	•	Retraining with 70/15/15 split using Phase 3 best hyperparameters is correct.
-	•	Using the Phase 3 final model trained on all 100 patients for comparison with TCN is invalid.
-	•	The retraining ensures the comparison is fair while still using the “best LightGBM” setup.
-	•	You don’t need to do extra tuning — the Phase 3 hyperparameters are already optimal.
-
-
-
-So in short: Retraining with best parameters = fair comparison. Final 100-patient model = invalid comparison.
-
+### Overall Summary
+- The LightGBM models were **r### Overall Summary
+- This step **completes the retraining and evaluation of the LightGBM baseline** using the same 70/15/15 train/validation/test split as the TCN, finalising the evaluation scripts for the classical ML models.  
+- All three targets (`max_risk`, `median_risk`, `pct_time_high`) now have **aligned predictions and metrics** with the TCN pipeline, producing fully comparable outputs on unseen test patients.  
+- **By completing this step, the pipeline now has:**
+  - Validated, reproducible LightGBM models ready for benchmark comparison.  
+  - Structured outputs (`predictions CSV`, `metrics JSON`, `training summary`) that align with the TCN evaluation outputs.  
+- This marks a **critical milestone in the ML pipeline**, as all preprocessing, model training, evaluation, and metric computation steps for both non-temporal (LightGBM) and temporal (TCN) models are now complete.  
+- The pipeline is now ready to move onto the next phase: **direct comparison of TCN vs LightGBM**.  
+- Enables analysis of **approximation fidelity to NEWS2 ground truth**, differences in classification and regression performance, and insights into model strengths/weaknesses.  
+- Completing this step ensures that the **ML evaluation pipeline is fully aligned, reproducible, and scientifically rigorous**, allowing for high-quality comparative analysis between non-temporal vs temporal model.
 
 ---
 
-But if we tuned threshold so that tcn median risk was the best, then shouldn't we train first and then evaluate, see what the metrics are and then if we need to tune max risk and median risk we go from there? Becaus what if max risk is also needing tuning? What if we also need to update the regression?
-
-1.	Train or retrain the model (LightGBM or TCN) on your training split.
-	•	For LightGBM, this could be 70% training (of your 70/15/15 split).
-	2.	Evaluate on the validation split (15%)
-	•	Compute all relevant metrics for max_risk, median_risk, and regression.
-	•	Look at thresholds, calibration, or any systematic bias.
-	3.	Decide if threshold tuning is needed
-	•	For median_risk (or any classification head) with imbalanced classes, tune threshold to maximize F1 (or your chosen metric).
-	•	If max_risk also shows poor balance or low F1, it could also be tuned.
-	4.	Decide if regression post-processing is needed
-	•	Check regression metrics (log-space vs raw-space).
-	•	If predictions are systematically biased, apply linear calibration, as you did with TCN.
-	5.	Evaluate final metrics
-	•	After any threshold tuning or calibration, generate final predictions and metrics.
-	•	This ensures you are comparing “best vs best” for LightGBM vs TCN.
-
-Key point: You don’t tune thresholds or apply calibration before seeing the validation metrics, because you only do that if the initial evaluation shows it is necessary. This is exactly how the TCN workflow was structured, and to make a fair comparison, LightGBM should follow the same logic.
+### Next Steps
+1. **Visualisations:**  
+  - Generate ROC curves and calibration plots for `max_risk` and `median_risk`.  
+  - Create regression scatter plots and residual histograms for `pct_time_high`.  
+2. **Comparative Analysis:**  
+  - Construct tables combining LightGBM and TCN predictions and metrics for side-by-side comparison.  
+  - Highlight relative performance on unseen test patients, focusing on approximation fidelity to NEWS2 ground truth.  
+3. **Interpretability:**  
+  - Use Phase 3 final LightGBM feature importances for clinical insight; 
+  - Use Phase 4.5 TCN temporal saliency to be visualised for sequence-level interpretability.  
+4. **Documentation:**  
+  - Consolidate Phase 5 notes, outputs, and interpretations for reproducibility and portfolio inclusion.  
 
 ---
 
-
-So because I have feature importance for the best model, I dont need it for this retraining evaluation model?
-
-you don’t need to compute feature importance again in your retraining/evaluation script.
-
-Here’s why, logically:
-	•	Feature importance is a model interpretability artifact — it’s only needed once for the final trained model (after hyperparameter tuning).
-	•	Your evaluation/retraining script is not about model exploration, but about replicating the final training pipeline using fixed hyperparameters and data splits, then producing test predictions and metrics.
-	•	Recomputing importance adds unnecessary compute, and worse, if slight random variation exists, it could slightly differ and cause confusion.
-
-So the correct setup is:
-	•	train_final_models.py → includes feature importance (for reporting).
-	•	evaluate_final_models.py → excludes it (just loads hyperparams, trains with fixed seed, evaluates, saves metrics).
-
-✅ Conclusion:
-Keep the feature importance only in the original final training script — not in the evaluation replication.
+## Day 32 Notes - Continue Phase 5: Visualisation and Comparative Analysis (Steps 5-6)
 
 ---
-
-The task_map logic is a structured, programmatic way to handle the three targets (max risk, median risk, pct_time_high regression) without repeating nearly identical code three times. Let me explain step by step.
-
-Pros of task_map + loop:
-	1.	Less repetition → easier to maintain & update.
-	2.	Automatic scaling → adding a 4th target is just another tuple in the list.
-	3.	Single structure for predictions and metrics → reduces chance of bugs.
-	4.	Consistency → all targets processed exactly the same way, ensures alignment in preds_list.
-
-Cons if separate blocks:
-	•	Code bloat
-	•	Higher chance of inconsistencies
-	•	Harder to save predictions in a unified DataFrame
-
-
-The task_map loop is just a clean, maintainable way to handle multiple targets (classification + regression) in one go, with consistent training, prediction, metrics, and saving logic.
-
----
-
-1️⃣ Why LightGBM includes subject_id
-	•	LightGBM predictions are patient-level, but the merging step uses preds_list from multiple targets (max, median, regression).
-	•	To combine multiple DataFrames correctly, you need a key to align rows, and subject_id is that key.
-	•	Without subject_id, merging could mismatch patients if the order isn’t guaranteed (even if your test split order is preserved, keeping the ID is safer).
-
-
-2️⃣ Why TCN didn’t need subject_id
-	•	In the TCN pipeline, all predictions are already in the same order as the test set, and you only save one DataFrame per patient.
-	•	No merging is done — you just concatenate ground-truth and predictions directly.
-	•	Therefore, a subject_id column is redundant.
-
-Why you can’t do a single unified CSV save like TCN
-	1.	TCN produces all outputs at once per patient
-	•	One forward pass through the network produces three outputs (logit_max, logit_median, regression) for the same patient array.
-	•	Since everything is in the same order, you can immediately combine y_true and predictions into one DataFrame in a single step.
-	2.	LightGBM currently trains/evaluates each target separately
-	•	You train three separate models (max_risk, median_risk, pct_time_high) using train_df and X_train.
-	•	Predictions are produced independently.
-	•	The preds_list contains three independent DataFrames, one per target.
-	•	To combine them into a single CSV, you have to merge them — which is why the script currently uses subject_id as a merge key.
-	3.	Order isn’t strictly guaranteed without a merge
-	•	Even though you extract test_df with set_index("subject_id").loc[test_ids], subtle changes (like future filtering or shuffling in LightGBM) could break the assumed order.
-	•	Using subject_id ensures you always align the correct patient’s predictions across all targets.
-
-  ---
-
-
-
-[RESULTS] max_risk:
-  roc_auc     : 0.8462
-  f1          : 0.9286
-  accuracy    : 0.8667
-  precision   : 0.8667
-  recall      : 1.0000
-
-[RESULTS] median_risk:
-  roc_auc     : 0.9722
-  f1          : 0.8571
-  accuracy    : 0.9333
-  precision   : 0.7500
-  recall      : 1.0000
-
-[RESULTS] pct_time_high:
-  rmse        : 0.0382
-  r2          : 0.7933
 
 
 
