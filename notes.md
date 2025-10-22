@@ -6782,13 +6782,291 @@ src/
 
 ---
 
-## Day 32 Notes - Start Phase 6: Visualisation (Step 1)
+## Day 32-33 Notes - Start Phase 6: Visualisation (Step 1)
+
+---
+
+### Comparison Metrics Definitions
+#### Overview
+- This section defines all key metrics used for model comparison between **LightGBM** and **TCN_refined**, explaining what each measures, why it was chosen, and how it was computed within the project workflow.  
+- Metrics are grouped by task type: **Classification** (binary risk prediction) and **Regression** (continuous deterioration percentage prediction).
+
+#### Threshold-dependent vs Threshold-independent Metrics
+- Some performance metrics depend on the choice of a decision threshold (typically 0.5 in binary classification), while others evaluate performance across all possible thresholds.
+- **Threshold-independent metrics (e.g. ROC AUC, Brier Score, Expected Calibration Error):** 
+  - Assess a model’s overall discrimination and calibration and are generally more robust, especially on small test sets.
+  - ROC AUC measures the model’s ability to correctly rank positive vs negative cases irrespective of any specific cut-off, Brier Score quantifies overall probabilistic accuracy, ECE captures calibration quality by evaluating how well predicted probabilities correspond to observed event frequencies.
+  - These metrics are more stable on small datasets and provide the most reliable signal of generalisable model performance.
+- **Threshold-dependent metrics (e.g. F1, accuracy, precision, recall):** 
+  - Depend on a fixed decision boundary (commonly 0.5).
+  - They reflect classification behaviour after binarisation of probabilities.
+  - Are sensitive to class balance and individual prediction shifts; with only 15 patients, a single misclassified case can shift these values substantially.
+  - Moreover, if two models cross the threshold in similar patterns — even with different raw probabilities — they can yield identical scores.
+- **Given these constraints:**
+  -	Threshold-independent metrics (AUC, Brier, ECE) form the primary evidence base for model comparison.
+  -	Threshold-dependent metrics (F1, Accuracy, Precision, Recall) are included only as supportive indicators of discrete decision behaviour.
+  -	The TCN (median_risk) case is an exception, as its threshold was explicitly tuned → hence differences in F1 and Accuracy are meaningful and reflect genuine model optimisation, not noise.
+  - Therefore, in this analysis, threshold-independent metrics form the primary basis for quantitative comparison, while threshold-dependent metrics provide supportive, descriptive context.
+
+#### Classification Metrics
+**Purpose**
+-	These metrics evaluate model performance for binary outcomes derived from two per-patient summaries of predicted deterioration risk:
+	-	`max_risk` → the maximum predicted probability across all timestamps for a patient (reflects their peak deterioration risk).
+	-	`median_risk` → the median predicted probability across all timestamps for a patient (reflects their typical or baseline level of risk).
+-	Each summary is then binarised using a clinically meaningful threshold derived from the NEWS2 framework:
+	-	`max_risk` → 0 = did not reach high risk, 1 = reached high risk at any point.
+	-	`median_risk` → 0 = low-risk profile, 1 = moderate-risk profile (i.e. typical sustained risk elevation).
+- Thus, `max_risk` highlights transient acute risk spikes, while `median_risk captures` persistent elevation → both representing complementary clinical dimensions of deterioration.
+**Computation**
+- Each metric was originally computed in **Phase 5**:
+  - For LightGBM: `evaluate_lightgbm_testset.py`
+  - For TCN_refined: `evaluate_tcn_testset_refined.py`
+- Both scripts import their metric functions from `evaluation_metrics.py`.
+- However, **Brier score** and **Expected Calibration Error (ECE)** were computed later in **Phase 6** (`performance_analysis.py`) because they require raw per-patient probability predictions, which are not stored in the phase 5 JSONs.
+- **TCN_refined details**
+- A threshold-tuning step was added to adjust for the effect of class weighting (`pos_weight`).
+- The optimal classification threshold was selected (threshold=0.43) to maximise F1 score on the validation set, rather than using the default 0.5.
+- This tuning was applied specifically to the `median_risk` target, as its output distribution was more imbalanced and required calibrated threshold adjustment to avoid excessive false negatives.
+- In contrast, LightGBM and TCN (`max_risk`) used the standard 0.5 threshold.
+
+1. **ROC AUC (Area Under the Receiver Operating Characteristic Curve)**
+- **Definition:** Measures the model’s ability to discriminate between positive (1) and negative (0) classes across all probability thresholds.
+- **Purpose:** Indicates how well the model separates high-risk from low-risk patients independent of the decision threshold.
+- **Rationale for inclusion:**  
+  - Threshold-independent, robust to class imbalance.  
+  - A clinically interpretable measure of ranking quality (how well higher probabilities correspond to sicker patients).  
+  - Used as the core discriminative metric across all binary classification tasks.
+- **Implementation:**  
+  - Computed in Phase 5 using `roc_auc_score(y_true, y_prob)` from scikit-learn.  
+  - The final values were stored in JSON files for both models.
+
+2. **F1 Score**
+- **Definition:** 
+  - Harmonic mean of Precision and Recall: `F1 = 2 * (Precision * Recall) / (Precision + Recall)`
+- **Purpose:** Balances false positives and false negatives into a single measure.  
+- **Rationale for inclusion:**  
+  - Especially meaningful in healthcare where both sensitivity and specificity matter.  
+  - Penalises models that achieve high recall at the cost of many false alarms.  
+  - Serves as a decision-threshold-dependent summary of classification quality.
+- **Implementation:** 
+  - Calculated in Phase 5 via `f1_score(y_true, y_pred)`, where `y_pred` is the binary label obtained from a chosen probability threshold (often 0.5).
+  - `median_risk` F1 was calulated with its own calculated best probability threshold.
+
+3. **Accuracy**
+- **Definition:** 
+  - Proportion of total predictions that are correct: `(TP + TN) / (TP + FP + FN + TN)`
+- **Purpose:** Provides a simple view of overall correctness.
+- **Rationale for inclusion:**  
+  - Widely understood and easy to interpret.  
+  - However, less informative under class imbalance, hence paired with AUC and F1 for balance.
+- **Implementation:** Computed in Phase 5 via `accuracy_score(y_true, y_pred)`.
+
+4. **Precision**
+- **Definition:** Fraction of predicted positives that are true positives: `TP / (TP + FP)`
+- **Purpose:** Measures reliability of positive predictions → i.e., when the model says “high risk,” how often is it right?
+- **Rationale for inclusion:**  
+  - High precision indicates low false alarm rate → clinically useful for avoiding alarm fatigue.  
+  - Complements recall for decision threshold tuning.
+- **Implementation:** Calculated in Phase 5 using `precision_score(y_true, y_pred)`.
+
+5. **Recall (Sensitivity)**
+- **Definition:** Fraction of actual positives correctly identified: `TP / (TP + FN)`
+- **Purpose:** Reflects how sensitive the model is to true deterioration events.
+- **Rationale for inclusion:**  
+  - Critical in medical triage: missing a deteriorating patient (false negative) is more harmful than a false alarm.  
+  - Ensures patient safety emphasis in evaluation.
+- **Implementation:** Computed in Phase 5 via `recall_score(y_true, y_pred)`.
+
+6. **Brier Score**
+- **Definition:**  
+  - Mean squared difference between predicted probability and actual outcome: `Brier = mean((y_prob - y_true)²)`
+- **Purpose:** 
+  - Quantifies calibration error: how close the predicted probabilities are to true outcome frequencies.
+- **Rationale for inclusion:**  
+  - Unlike AUC, it directly evaluates the probabilistic accuracy of predictions.  
+  - Lower values = better calibration and reliability.  
+  - Important when probabilities are to be used for clinical decision thresholds or risk stratification.
+- **Implementation:**  
+  - Computed **only in Phase 6** (`performance_analysis.py`) using: `brier_score_loss(y_true, y_prob)`  
+  - This required raw per-patient probabilities available in the prediction CSVs, not just aggregated metrics.
+
+7. **Expected Calibration Error (ECE)**
+- **Definition:** Measures average deviation between predicted probability and observed frequency, averaged across discrete probability bins.
+- **Purpose:** Quantifies calibration performance more intuitively than Brier, reflecting expected discrepancy between model confidence and reality.
+- **Rationale for inclusion:**  
+  - Clinically crucial → overconfident models can lead to misinformed treatment decisions.  
+  - Provides a complementary, interpretable calibration metric.  
+  - Common in deep learning evaluation literature.
+- **Implementation:**  
+  - Computed **only in Phase 6**, within `performance_analysis.py` using a custom manual implementation (`expected_calibration_error` function).  
+  - This was necessary because scikit-learn does not include a built-in ECE, and it relies on the actual probability distribution from the predictions CSV.
+
+#### Regression Metrics
+**Purpose**
+- These metrics evaluate model performance on continuous predictions, specifically the **percentage of time a patient spent above the NEWS2 high-risk threshold (`pct_time_high`)**.
+- This continuous target quantifies how long a patient remained at clinically concerning levels, providing a finer-grained assessment than binary classification metrics.
+**Computation**
+- Regression metrics were precomputed in Phase 5 for each model and stored in their respective JSON files, since both `y_true_reg` and `y_pred_reg` arrays were already available at that stage.
+- In Phase 6 (`performance_analysis.py`), these metrics were not recomputed, only visualised and compared between models for consistency and interpretability.
+- **Refined TCN details**
+	-	For the refined TCN, the regression output was log-transformed prior to training to correct for heavy right-skew (many patients having near-zero deterioration time).
+	-	Predictions were made in log space, then back-transformed to raw space; ground-truth values were also converted to log form, enabling both log-space and raw-space evaluations.
+	-	A calibration step was then applied, producing calibrated raw metrics to correct systematic prediction bias.
+	-	For final comparison, only the calibrated raw metrics (`"pct_time_high_raw_cal"`) were used because:
+	  - Only the raw-space predictions are directly comparable to LightGBM.
+	  -	Calibration ensures the fairest and most clinically reliable comparison.
+	-	The log-space metrics are retained internally for consistency checks and auditability but are not used for cross-model benchmarking.
+
+1. **RMSE (Root Mean Squared Error)**
+- **Definition:**  
+  - Square root of the mean squared difference between predicted and true values.  
+  - `RMSE = sqrt(mean((y_pred - y_true)²))`
+- **Purpose:** Measures average magnitude of prediction error → how far predictions deviate from true deterioration percentage.
+- **Rationale for inclusion:**  
+  - Sensitive to large errors → penalises outliers strongly.  
+  - Provides a clear measure of overall fit accuracy.  
+  - A standard regression metric directly comparable across models.
+- **Implementation:** Computed in Phase 5 via `mean_squared_error(y_true, y_pred, squared=False)` and stored in JSON under `"pct_time_high"` (LightGBM) and `"pct_time_high_raw_cal"` (TCN).
+
+2. **R² (Coefficient of Determination)**
+- **Definition:**  
+  - Represents proportion of variance in the true values explained by the model’s predictions.  
+  - `R² = 1 - (Σ(y_true - y_pred)² / Σ(y_true - mean(y_true))²)`
+- **Purpose:** Measures explanatory power → how well the model captures overall variability.
+- **Rationale for inclusion:**  
+  - Easy to interpret (closer to 1 = better fit).  
+  - Complements RMSE by indicating relative fit quality rather than absolute error magnitude.
+- **Implementation:**  
+  - Computed in Phase 5 using `r2_score(y_true, y_pred)` and stored in JSON.  
+  - Not recomputed in Phase 6 since it depends only on regression predictions already summarised numerically.
+
+#### Why Brier and ECE Were Deferred to Phase 6
+- **Brier** and **ECE** require raw continuous probability outputs (`prob_max`, `prob_median`), not binary thresholded predictions.  
+- Phase 5 (`evaluate_*_testset.py`) scripts only output **aggregated metrics** → the per-patient prediction data were saved separately as CSVs.  
+- Therefore, Phase 6 (`performance_analysis.py`) reloaded the raw predictions and computed these calibration metrics directly, ensuring accuracy and traceability.
+- This design maintains **pipeline modularity**:
+  - **Phase 5** = core model evaluation (discrimination & accuracy).
+  - **Phase 6** = cross-model analysis (calibration + interpretability + plotting).
+
+#### Summary
+
+| Metric | Type | Threshold Dependence | Computed In | Purpose |
+|:--|:--|:--|:--|:--|
+| **ROC AUC** | Classification | **Independent** | Phase 5 | Measures overall discrimination ability across all thresholds. |
+| **F1** | Classification | **Dependent** | Phase 5 | Balances precision and recall at the chosen threshold. |
+| **Accuracy** | Classification | **Dependent** | Phase 5 | Proportion of correct classifications (true positives + true negatives). |
+| **Precision** | Classification | **Dependent** | Phase 5 | Reliability of positive predictions (how many predicted positives are correct). |
+| **Recall (Sensitivity)** | Classification | **Dependent** | Phase 5 | Proportion of true positives correctly identified. |
+| **Brier Score** | Classification (Calibration) | **Independent** | Phase 6 | Measures probabilistic accuracy — mean squared error of predicted probabilities. |
+| **Expected Calibration Error (ECE)** | Classification (Calibration) | **Independent** | Phase 6 | Quantifies how well predicted probabilities match observed outcome frequencies. |
+| **RMSE** | Regression | **Independent** | Phase 5 | Root mean squared error — magnitude of prediction error. |
+| **R²** | Regression | **Independent** | Phase 5 | Proportion of variance in true values explained by predictions. |
+
+---
+
+### Quantitative Analysis (Summary Metrics)
+**Overview**
+- This section interprets the summary performance metrics for **LightGBM** and **TCN_refined** across all evaluated tasks: classification (`max_risk`, `median_risk`) and regression (`pct_time_high`).  
+- The analysis focuses exclusively on **numerical performance indicators** from the aggregated comparison table, without yet discussing curve shapes or visual trends.
+
+1. **Classification (`max_risk`)**
+| Model | ROC AUC | F1 | Accuracy | Precision | Recall | Brier | ECE |
+|:--|--:|--:|--:|--:|--:|--:|--:|
+| LightGBM | 0.846 | 0.929 | 0.867 | 0.867 | 1.000 | **0.097** | **0.116** |
+| TCN_refined | **0.923** | 0.929 | 0.867 | 0.867 | 1.000 | 0.101 | 0.149 |
+
+**Interpretation**
+- **Discrimination (ROC AUC):** 
+  - TCN_refined achieves a **9.1% higher AUC** (0.923 vs 0.846), showing superior ranking ability in distinguishing high-risk from low-risk patients across thresholds.
+- **Threshold-dependent performance (F1, Accuracy, Precision, Recall):** 
+  - Both models report **identical threshold metrics** → F1 = 0.93, Accuracy = 0.87, Precision = 0.87, Recall = 1.0 
+  - Meaning every positive case was correctly identified and both triggered alerts for exactly the same samples when thresholded at 0.5.  
+  - This does **not** imply identical model quality → it simply reflects that their probability distributions straddled the same side of the 0.5 cutoff for each patient.
+- **Calibration (Brier, ECE):**  
+  - LightGBM achieves marginally better calibration → **Brier 4% lower (0.097 vs 0.101)** and **ECE 22% lower (0.116 vs 0.149)** 
+  - Indicating better alignment between predicted and true probabilities for LightGBM.
+**Statistical reliability:**  
+- Because both models produced identical threshold metrics on a **tiny n = 15 test set**, these values lack statistical reliability and are dominated by rounding effects.  
+- In this regime, **only threshold-independent metrics (AUC, Brier, ECE)** retain meaning. They show that:
+  - **TCN_refined** better separates classes (higher AUC),  
+  - **LightGBM** is better calibrated (lower Brier/ECE).
+**Conclusion (max_risk):**  
+- Both models identify deterioration events perfectly.  
+  - **TCN_refined:** stronger discriminative separation.  
+  - **LightGBM:** slightly superior calibration and probabilistic reliability.  
+- Both achieve near-ceiling performance for this target.
+
+---
+
+## **2. Classification – median_risk**
+
+| Model | ROC AUC | F1 | Accuracy | Precision | Recall | Brier | ECE |
+|:--|--:|--:|--:|--:|--:|--:|--:|
+| LightGBM | **0.972** | **0.857** | **0.933** | **0.750** | 1.000 | **0.065** | **0.093** |
+| TCN_refined | 0.833 | 0.545 | 0.667 | 0.375 | 1.000 | 0.201 | 0.251 |
+
+**Interpretation:**
+- **Discrimination:** 
+  - LightGBM delivers **16.7% higher AUC** (0.97 vs 0.83), reflecting a much stronger ability to rank intermediate-risk patients correctly.
+- **Threshold metrics:**  
+  - LightGBM surpasses TCN_refined on all threshold-dependent scores:  
+    - **F1:** +57% higher (0.86 vs 0.55)  
+    - **Accuracy:** +40% higher (0.93 vs 0.67)  
+    - **Precision:** +100% higher (0.75 vs 0.38)  
+  - Both achieve Recall = 1.0, but TCN_refined’s lower precision indicates **systematic over-prediction of positives**.  
+  - Importantly, **TCN_refined used a tuned threshold of 0.43**, determined via F1-maximisation to account for class imbalance (`pos_weight`).  
+  - This tuning explains why its metrics differ from LightGBM’s default 0.5 threshold, confirming both models were evaluated fairly within their calibration regimes.
+- **Calibration:**  
+  - LightGBM demonstrates much better probability reliability → **Brier 68% lower (0.065 vs 0.201)** and **ECE 63% lower (0.093 vs 0.251)**
+  - Showing that TCN_refined’s outputs are overconfident and misaligned with actual event frequencies.
+**Statistical reliability:**  
+- Unlike max_risk, the strong divergence in metrics here is genuine → it arises from distinct classification behaviour rather than threshold coincidence.  
+- However, small sample size (n = 15) still constrains precision, so **AUC and calibration** remain the most robust indicators of performance.
+**Conclusion (median_risk):**  
+- **LightGBM** decisively outperforms TCN_refined across discrimination, accuracy, and calibration metrics.  
+- TCN_refined’s poorer performance reflects limited separation between positive and negative cases — its probabilities overlap substantially, so even at the optimised threshold of 0.43, the model over-predicts positives and remains poorly calibrated.
+- Despite threshold optimisation (0.43) for F1, TCN_refined’s poor median-risk performance likely reflects inherent calibration and discriminative instability, not a tuning flaw.
+- The model’s probabilistic outputs were overly compressed and misaligned with actual outcomes, leading to overprediction and poor calibration.
+- Given the small test set and ambiguous “medium deterioration” labels, LightGBM’s tabular representation handled uncertainty more robustly.
+
+---
+
+## **3. Regression – pct_time_high**
+
+| Model | RMSE | R² |
+|:--|--:|--:|
+| LightGBM | **0.038** | **0.793** |
+| TCN_refined | 0.056 | 0.548 |
+
+**Interpretation:**
+- **Error magnitude (RMSE):** LightGBM predictions deviate from ground truth by an average of only 0.038 percentage units, versus 0.056 for TCN_refined — a ~48 % higher average error for TCN.  
+- **Explained variance (R²):** LightGBM explains ~79 % of variance in deterioration percentage, compared to only ~55 % for TCN_refined.  
+- **Overall regression fit:** LightGBM’s outputs are both more precise and more stable, with smaller residuals and higher explanatory power.
+
+**Conclusion (pct_time_high):**  
+For the continuous deterioration percentage task, **LightGBM** clearly outperforms TCN_refined on both absolute and relative error metrics.
+
+---
+
+## **Overall Quantitative Summary**
+
+| Dimension | Winner | Notes |
+|:--|:--|:--|
+| Discrimination (ROC AUC) | **TCN_refined (max_risk)**, **LightGBM (median_risk)** | TCN slightly better at extreme risk separation, LightGBM stronger at mid-level discrimination. |
+| Threshold Accuracy (F1/Accuracy/Precision) | **LightGBM overall** | Especially superior at median risk threshold. |
+| Calibration (Brier/ECE) | **LightGBM** | More reliable probability scaling across both risk levels. |
+| Regression Fit (RMSE/R²) | **LightGBM** | Substantially lower error and higher explained variance. |
+
+**Integrated interpretation:**
+- **LightGBM** demonstrates more stable and well-calibrated performance across both binary and continuous tasks, with excellent balance between discrimination and calibration.  
+- **TCN_refined** achieves excellent discrimination for *max-risk* detection but underperforms at intermediate risk and in regression accuracy, likely reflecting overfitting to extreme-risk sequences or imperfect calibration mapping.  
+- Overall, LightGBM provides the most consistent and generalisable quantitative performance across all tasks.
 
 ---
 
 
 
-
+---
 
 Which Models Are Being Compared
 
@@ -6976,3 +7254,440 @@ This avoids a mismatch in case the JSON came from slightly different preprocessi
 
 ⸻
 
+Fixed column mapping (explicit, no guessing)
+
+LGB_COLS = {}
+TCN_COLS = {}
+
+This ensures:
+	•	No hard-coded or mismatched column names.
+	•	No accidental mixing between LightGBM and TCN column naming conventions.
+	•	100% reproducibility if you ever rerun or refactor.
+
+Benefit
+Description
+Prevents errors
+Avoids pulling wrong columns from CSVs.
+Explicit reproducibility
+You and anyone reviewing the work can see exactly which fields were used.
+Ease of maintenance
+Change column names in one place, not 10.
+Transparency
+Makes the script self-documenting — instantly clear which data source corresponds to each task.
+
+
+When generating the classification metric comparison plots (metrics_comparison_max_risk.png, metrics_comparison_median_risk.png),
+the median risk plot only showed LightGBM, even though the comparison table included both LightGBM and TCN entries.
+
+because the TCN metrics JSON used a different key name ("median_risk_tuned")
+— reflecting that those values came from a tuned version of the median-risk model.
+
+Thus:
+	•	LightGBM → target = "median_risk"
+	•	TCN_refined → target = "median_risk_tuned"
+
+When the filter searched for "median_risk", it matched only LightGBM,
+so the TCN bar never appeared in the plot.
+
+⸻
+
+🧮 Fix
+
+The key idea:
+We still want to use the tuned metrics ("median_risk_tuned") from TCN’s JSON,
+but for plotting and table display, we want both models to align under the same label "median_risk".
+
+# Fixed: normalise key name for consistent plotting
+display_key = json_key.replace("_tuned", "")
+
+This simple string replacement ensures:
+	•	If the JSON key is "median_risk_tuned", it becomes "median_risk" in the output table.
+	•	Other targets (like "max_risk") remain unchanged.
+
+🧩 Why this works perfectly
+	•	We still use "median_risk_tuned" to fetch tuned JSON metrics ✅
+	•	We rename the "target" column value to "median_risk" for visual consistency ✅
+	•	Now both models appear on the same median-risk plot ✅
+	•	No changes needed in your rows = [...] or plotting loop ✅
+
+
+orignally tried to interpret just with plots and approximations visually looking 
+1. Plots vs. numbers
+	•	Plots are primarily for quick visual intuition:
+	•	See general trends, model differences, calibration shapes, residual distributions.
+	•	Easy to spot extreme behaviour, anomalies, or differences in shapes.
+	•	Numbers are the ground truth for interpretation:
+	•	ROC AUC, PR AP, Brier, ECE, RMSE, R² give precise, quantitative performance metrics.
+	•	For publication, report the numbers; plots are supplementary.
+
+⸻
+
+2. How to approach interpretation
+	•	Start with the numbers:
+	•	E.g., “LightGBM ROC AUC = 0.846, TCN ROC AUC = 0.923 → TCN better discriminates maximum risk.”
+	•	Include Brier/ECE for calibration discussion.
+	•	Use plots to support your interpretation:
+	•	ROC / PR: visually confirm curve separation and threshold behaviour.
+	•	Calibration: confirm if probabilities are over-/under-confident.
+	•	Residuals: check distribution shape or outliers.
+	•	Do not rely on approximating numbers from plots. Plots are visual checks; numbers are authoritative.
+
+3. Best practice
+	1.	Report the numeric metrics in your tables.
+	2.	Use plots as visual evidence — highlight patterns, not precise values.
+	3.	If discrepancies exist, check CSV values rather than guessing from curves.
+
+⸻
+
+✅ Rule of thumb: Numbers = main story. Plots = supporting visuals for intuition and illustration.
+
+this means i need to change my order of how i do thing, metrics first and then plots after
+So shouldn't this interp come as the step before plots? And shouldn't the comparison be of the actual numerical values in detail, and then the plots analysis is just brief and will just broadly cover the visual trends? 
+
+Exactly — that’s the proper scientific workflow for this type of analysis:
+	1.	Step before plots: Numerical Interpretation (Core Comparison)
+	•	Use the comparison table (comparison_table.csv) or separate saved numeric files for ROC, PR, calibration, residuals, etc.
+	•	Quantitatively compare LightGBM vs TCN per target:
+	•	Classification → ROC AUC, F1, Accuracy, Precision, Recall, Brier, ECE
+	•	Regression → RMSE, R², residual distribution stats
+	•	This step is where you make the detailed, evidence-backed statements: which model is better, where trade-offs exist, which calibration is tighter, etc.
+	•	All decisions, conclusions, and written interpretations should reference these numeric values directly.
+	2.	Step after numerical comparison: Plot Visualisation (Secondary Check / Communication)
+	•	Plots are mainly visual aids: they illustrate trends, anomalies, distributions, or calibration.
+	•	Use them to quickly spot patterns and to communicate results clearly, but avoid relying on them for exact metrics.
+	•	In writing, you can describe broad trends: e.g., “TCN predictions show higher calibration at low probabilities” or “LightGBM ROC rises sharply after FPR ~0.5.”
+	•	Exact numeric interpretation always comes from the saved numbers, not eyeballing the plots.
+
+In short:
+	•	Numbers first → conclusions & comparisons
+	•	Plots second → illustrate and support your narrative visually
+
+This ensures your analysis is rigorous, reproducible, and not biased by how the curves look on a screen.
+
+🧩 1. What numbers can tell you (the quantitative layer)
+
+The comparison table and metrics give you:
+	•	Overall accuracy-type summaries (AUC, F1, RMSE, etc.).
+	•	Calibration fidelity (Brier, ECE).
+	•	Regression goodness of fit (R², RMSE).
+
+These are point metrics — they reduce an entire model’s performance into a few scalars.
+→ This is necessary for quantitative comparison, but it misses shape-level details.
+
+⸻
+
+🌊 2. What plots like KDEs or calibration curves add (the distributional layer)
+
+Plots are indispensable for exposing patterns or biases that single metrics hide.
+Plot Type
+What It Reveals That Metrics Can’t
+ROC/PR
+Where sensitivity or precision drops — e.g., model strong at high-risk region but weak at low recall.
+Calibration curve
+Whether the model over/underestimates probabilities at specific ranges (not captured by one ECE value).
+Residual KDE
+Whether prediction errors are symmetrically distributed, biased (shifted mean), or fat-tailed (outliers).
+Residual vs Truth
+Whether error magnitude depends on target size — e.g., underpredicting high-risk patients.
+
+🧠 3. Therefore, interpretation should be layered:
+
+A strong protocol:
+	1.	Start with numeric comparison (objective evidence)
+	•	“TCN achieved lower RMSE (0.05 vs 0.08) and higher R² (0.56 vs 0.79), indicating better fit.”
+	2.	Then interpret shape-level visual behaviour
+	•	“The residual KDE confirms this: TCN’s errors are narrowly centred around zero, while LightGBM shows right-skewed residuals, implying slight overestimation at high-risk ranges.”
+	3.	Synthesize both
+	•	“Together, metrics and residual distribution suggest TCN generalises more consistently, especially for patients with higher deterioration probability.”
+
+4. Practical takeaway for your workflow
+
+You’re right — numbers alone are not sufficient.
+The best structure is:
+
+Step 1: Quantitative comparison → comparison_table.csv
+Step 2: Distributional/visual comparison → KDEs, calibration plots, ROC/PR
+Step 3: Integrated interpretation in your write-up
+
+So:
+	•	Metrics = evidence
+	•	Plots = context and insight
+
+1. Structure: one unified script is correct — but internally two phases
+
+Yes, keep a single script (performance_analysis.py) because it’s doing a coherent task (final comparative analysis).
+But internally, separate it into two clear logical phases:
+
+Phase A: Quantitative metrics
+	•	Compute all scalar metrics (AUC, F1, RMSE, R², Brier, ECE).
+	•	Save them to comparison_metrics/comparison_table.csv.
+	•	These are the summary numbers you’ll quote directly.
+
+Phase B: Curve-level / distributional data + plots
+	•	Compute and save the underlying arrays for each visualisation:
+	•	ROC → fpr, tpr, thresholds
+	•	PR → precision, recall
+	•	Calibration → mean_pred, frac_pos
+	•	Residuals → arrays of residuals and KDE grid points
+	•	Then generate the plots from those saved arrays.
+
+That way, you’ll have a reproducible numeric record for every curve — not just static PNGs.
+
+2. Why the metrics table alone isn’t enough
+
+Right now, your comparison table only contains aggregates — e.g. roc_auc = 0.846.
+But if you want to say:
+
+“At FPR = 0.0, TPR was 0.78 for LightGBM but 0.92 for TCN.”
+
+you need the actual ROC curve coordinates (fpr, tpr), not just the integrated AUC.
+
+Without saving those arrays, you’re stuck visually approximating.
+
+Your write-up becomes logically structured:
+
+Step 1: Metric-level interpretation (comparison_table.csv)
+
+“LightGBM AUC 0.846 vs TCN 0.923; Brier and ECE lower for TCN, implying better calibration.”
+
+Step 2: Curve-level interpretation (roc_data_*.csv etc.)
+
+“At FPR < 0.2, TCN maintains TPR > 0.9 whereas LightGBM plateaus near 0.78, confirming TCN’s stronger sensitivity at low false-positive regions.”
+
+Step 3: Distributional interpretation (KDE, residuals, calibration curves)
+
+“TCN residuals are tightly centred around zero; LightGBM’s distribution skews rightward, suggesting overprediction for high-risk patients.”
+
+Layer
+What It Captures
+How to Save
+How to Interpret
+Metrics table
+Overall performance per target
+comparison_table.csv
+High-level comparison (AUC, RMSE, etc.)
+Curve data
+Full ROC/PR/Calibration coordinates
+roc_data_*.csv, pr_data_*.csv, etc.
+Point-by-point sensitivity/precision
+Plots
+Distributional shape
+comparison_plots/
+Visual confirmation + qualitative insight
+
+🧩 Layer 1 — Quantitative (Summary Metrics)
+
+Goal: Establish the high-level performance hierarchy numerically.
+Source: comparison_table.csv
+What you do:
+	•	Compare LightGBM vs TCN for each target using AUC, F1, Brier, ECE, RMSE, R².
+	•	State the direction of advantage and its magnitude.
+	•	Keep it factual; e.g.
+“TCN achieved ROC AUC 0.923 vs LightGBM 0.846 (Δ = 0.077), indicating better discrimination.”
+	•	This section already answers: Which model performs better overall, and by how much?
+
+✅ Purpose: gives a concise quantitative benchmark — the “headline” results.
+
+⸻
+
+🧮 Layer 2 — Curve-Level Analysis (Detailed Behaviour)
+
+Goal: Explain why those summary metrics differ.
+Source: saved numeric arrays (roc_data_*.csv, pr_data_*.csv, calibration_data_*.csv, residuals).
+What you do:
+	•	Inspect actual coordinates (e.g. FPR vs TPR, Recall vs Precision).
+	•	Quote specific regions, e.g.
+“For FPR < 0.2, TCN maintains TPR > 0.9, while LightGBM remains ≈ 0.78.”
+	•	For regression:
+“Residuals for LightGBM range –0.04 to +0.18, TCN –0.03 to +0.07; variance halved.”
+
+✅ Purpose: shows how the models behave across operating regions — sensitivity/specificity trade-offs, calibration shape, residual spread.
+This is your deep diagnostic layer, the core of the scientific interpretation.
+
+⸻
+
+🎨 Layer 3 — Visual/Qualitative Trends
+
+Goal: Communicate intuition and cross-check consistency.
+Source: PNG plots (ROC, PR, Calibration, Residuals KDE, bar charts).
+What you do:
+	•	Describe broad shapes and agreement with numeric findings.
+	•	Keep it qualitative; e.g.
+“ROC curves show TCN hugging the top-left region, confirming higher sensitivity.”
+“Residual histograms reveal LightGBM’s slight right-skew consistent with its positive bias.”
+
+✅ Purpose: aids comprehension and presentation; not used for quantitative claims.
+
+---
+
+confused as to why both mdoels output the same accuracy recalll and precision for max_risk
+
+Excellent — that’s exactly the kind of verification step that distinguishes careful interpretation from surface-level analysis.
+
+Now that you’ve confirmed:
+	•	✅ the probabilities differ between LightGBM and TCN,
+	•	✅ but accuracy, precision, recall (and F1) for max risk are identical,
+we can interpret that precisely and see why this is not an error, but does require nuance.
+
+⸻
+
+🧩 Why identical classification metrics (only for max risk) happen
+
+Let’s unpack the mechanics carefully.
+
+1️⃣ Same threshold = same decision boundary logic
+
+Both models use the same evaluation function from evaluation_metrics.py, which applies:
+
+y_pred_binary = (y_prob > 0.5).astype(int)
+
+So both models are asked the same binary question:
+
+“Did the model think the deterioration risk was > 0.5?”
+
+That threshold converts probabilities into discrete 0/1 predictions.
+So even if the probabilities differ (e.g., LightGBM gives 0.8 and TCN gives 0.95), both yield 1 after binarisation.
+
+If the probabilities differ in magnitude but not in sign relative to the threshold, you’ll get identical 0/1 decisions.
+
+⸻
+
+2️⃣ Max-risk target is likely highly separable
+
+The max-risk endpoint (deterioration vs non-deterioration) is often much easier to classify than median-risk or regression tasks.
+It likely has a clean signal (e.g., large vital derangements or consistent NEWS2 patterns).
+
+If both models have learned the same “core features” (like high respiratory rate or low oxygen saturation), their decision boundaries can end up functionally identical — even though one (TCN) is smoother or probabilistically sharper (hence higher ROC AUC).
+
+So at threshold 0.5, both models are perfectly separating the classes:
+	•	All true positives correctly classified → recall = 1.0
+	•	Very few false positives → high precision
+	•	Hence same accuracy and F1.
+
+This is not “bad” — it means both models are performing perfectly at the chosen cutoff, but TCN gives better discrimination across all thresholds (as seen in its higher AUC).
+
+⸻
+
+3️⃣ Why this is not a problem, but a limitation of threshold metrics
+
+Threshold metrics (F1, precision, recall, accuracy) only capture performance at a single decision boundary.
+They throw away most of the probability information that contributes to AUC or calibration.
+
+So in your case:
+	•	LightGBM and TCN both classify all patients correctly at 0.5.
+	•	But TCN ranks positive cases higher and negative cases lower — that’s reflected in its AUC (0.923 vs 0.846).
+	•	Thus, if you were to lower or raise the threshold, the TCN would remain stable for longer before performance drops, meaning it generalises better probabilistically.
+
+In short:
+
+The equality of F1/Precision/Recall simply means both models are perfect at 0.5 — not that they are identical models.
+
+🚫 When this could be bad
+
+Identical metrics could be concerning only if:
+	1.	The dataset is very small (e.g., only 10–20 test samples), so metrics are unstable.
+	2.	Both models were trained or evaluated on the same cached predictions, meaning they’re not actually independent.
+	3.	Calibration is ignored — e.g., a model that predicts [0.51, 0.52, 0.53] could be uncalibrated compared to one that predicts [0.7, 0.8, 0.9], even though both cross the threshold similarly.
+
+You’ve already ruled out #2, and your Brier/ECE values differ (so calibration differs) — that’s a strong sign both models are functioning independently.
+
+Since your test set only has 15 patients, this does fall under the first warning category and carries major implications for interpreting those identical metrics.
+
+Let’s break this down rigorously.
+
+⸻
+
+⚠️ Why small test size makes identical metrics unreliable
+
+When your test set = 15 patients, each patient represents:
+
+\frac{1}{15} = 6.7\% of the evaluation weight.
+
+That means:
+	•	1 misclassified patient changes accuracy by ±6.7%.
+	•	F1, precision, and recall can shift dramatically with a single case flip.
+
+So, when both models produce exactly the same discrete metrics at a threshold of 0.5, it might not reflect “identical clinical understanding” — it’s just that:
+	•	Both happen to fall on the same side of the binary cutoff for all 15 patients.
+	•	With such few samples, the statistical resolution of those metrics is coarse, meaning you can’t distinguish performance unless one of them flips at least one prediction.
+
+
+Interpretation under small n = 15:
+	•	The AUC values differ (0.846 vs 0.923), which is meaningful — it uses the full probability ranking, not discrete thresholding.
+	•	The F1/accuracy/precision/recall equality is uninformative here — it just means neither model’s probabilities cross the 0.5 threshold differently for any sample.
+	•	Because of that, threshold-dependent metrics have no discriminative power with n = 15; they are dominated by rounding effects from binary classification.
+
+⸻
+
+📊 Why this is not “wrong” but “statistically weak”
+
+This isn’t a coding or methodological error — it’s a sample size limitation problem.
+
+With 15 samples:
+	•	You’re effectively working with a binary confusion matrix with only a handful of positive cases (perhaps 5–7 deteriorations).
+	•	The space of possible confusion matrices is tiny — both models can easily land on the same one.
+	•	That means identical accuracy/recall/etc. could easily occur even if the underlying models are meaningfully different.
+
+The difference you care about (and the only robust one here) is in AUC and calibration metrics:
+	•	AUC (0.923 vs 0.846): TCN shows genuinely stronger ranking ability.
+	•	Brier (0.097 vs 0.101) and ECE (0.116 vs 0.149): LightGBM is slightly better calibrated.
+
+Risk
+Description
+Impact
+Small test set (n=15)
+Metrics have high variance; one misclassified case can swing scores.
+Reduces confidence in threshold-based metrics (F1, accuracy).
+Same threshold = same decision pattern
+Both models classify all patients the same way at 0.5.
+Makes threshold metrics identical even if probabilities differ.
+Calibration differences exist
+Brier/ECE show divergence, so models aren’t identical.
+Confirms independence but not strong statistical evidence.
+
+Conclusion:
+
+Because the test set is extremely small, identical threshold metrics (accuracy, precision, recall, F1) are not statistically meaningful.
+The only trustworthy signals here are the continuous-valued metrics — AUC (discrimination) and calibration (Brier/ECE).
+For 15 samples, we can only tentatively say TCN better discriminates and LightGBM is slightly better calibrated, but not that one is definitively superior.
+
+
+Your work is absolutely valid — you just need to frame it correctly.
+Here’s how:
+
+✅ Step 1 — Keep the metrics table
+	•	Do not remove any metric.
+	•	Keep them exactly as computed — transparency matters.
+
+✅ Step 2 — Qualify the interpretations
+
+For each section (max_risk, median_risk, regression), explicitly include a short “statistical caveat” paragraph:
+
+Note: Because the test set includes only 15 patients, threshold-dependent metrics (F1, accuracy, precision, recall) may be unstable and sensitive to single-patient changes. AUC, Brier, and ECE provide more reliable model comparisons.
+
+✅ Step 3 — Anchor conclusions to the robust metrics
+
+In your conclusions section (Phase 6 summary), base your main statements on:
+	•	AUC for discrimination.
+	•	Brier/ECE for calibration.
+	•	RMSE/R² for regression.
+
+Use the threshold metrics only for illustrative comparisons (“At a 0.5 threshold, both models classify all deteriorations correctly…”), not as proof of superiority.
+
+⸻
+
+🧩 4. Why this is still valuable scientifically
+
+Even with n = 15:
+	•	You’ve demonstrated a complete validation pipeline — metrics, calibration, regression, and cross-model comparison.
+	•	You’ve shown how temporal context (TCN) changes discrimination but not calibration.
+	•	You’ve empirically quantified that both models align in binary classification but differ in underlying probabilistic behavior.
+
+That’s excellent methodological rigour — the small n only limits external generalisability, not the quality of your process.
+
+🧩 Clarification: Why median_risk metrics remain interpretable
+
+Unlike max_risk, where both models used a fixed threshold of 0.5 and produced coincidentally identical classification metrics (likely due to the small n = 15 test set),
+median_risk used an optimised threshold in TCN_refined, allowing it to adapt to its probability distribution and class weighting.
+Therefore, divergence in F1 and accuracy for median_risk genuinely reflects differing classification behaviour rather than threshold artefacts.
+Nevertheless, due to limited sample size, ROC AUC and calibration metrics remain the more statistically reliable indicators of comparative performance.
