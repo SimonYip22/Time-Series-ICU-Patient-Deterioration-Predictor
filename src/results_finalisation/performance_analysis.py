@@ -7,6 +7,10 @@ Title: Final performance visualisations and cross-model comparison for LightGBM 
 Purpose:
 - This script consolidates all performance results from Phase 4.5 (TCN refined) and Phase 5 (LightGBM retrained) into a single Phase 6 comparative analysis.
 - It aligns both models on the same patient set, computes additional calibration diagnostics (Brier and ECE), and generates standardised visualisations for classification and regression tasks.
+- In addition to generating visual plots, this script **saves all underlying numeric data** used for those plots (e.g. ROC, PR, calibration, histograms, regression scatter, and residuals) as CSV files.
+- Saving the numeric data underlying each plot enables later quantitative analysis, reproducibility, and secondary processing (e.g. statistical comparison, re-plotting, or integration with other tools).
+- This avoids reliance on visual approximations from plots alone, and ensures all numeric results are available for future reference and audit.
+
 
 Summary of Workflow:
 1. Load prediction CSVs and metrics JSONs for both models.
@@ -18,11 +22,12 @@ Summary of Workflow:
 3. Compute calibration metrics (Brier score, ECE) directly from probability predictions.
 4. Merge metrics (from JSON + computed) into one comparison table.
 5. Generate all plots (classification, regression, calibration, residuals, and metric bars).
-6. Save everything into `src/results_finalisation/comparison_plots/`.
+6. Save everything into `src/results_finalisation/comparison_plots/` (for plots) and `src/results_finalisation/comparison_metrics/` (for numeric data).
 
 Outputs:
 - comparison_table.csv (aggregated metrics)
-- 14 plots total:
+- All numeric data underlying each plot (ROC, PR, calibration curves, probability histograms, regression scatter, residuals) are saved as CSVs in `comparison_metrics/`.
+- All 14 figures (plots) are saved as PNGs in `comparison_plots/`:
     - Classification: ROC, Precision-Recall, Calibration curves, Calibration histograms
     - Regression: Regression scatter, residual distributions, error-vs-truth
     - Metric comparison grouped bars for each target (3 separate charts: max_risk, median_risk, pct_time_high)
@@ -60,12 +65,16 @@ LIGHTGBM_MET_JSON = ROOT / "prediction_evaluations" / "lightgbm_results" / "ligh
 TCN_PRED_CSV = ROOT / "prediction_evaluations" / "tcn_results_refined" / "tcn_predictions_refined.csv"
 TCN_MET_JSON = ROOT / "prediction_evaluations" / "tcn_results_refined" / "tcn_metrics_refined.json"
 
+# Output folder for numeric metrics used in plots
+METRICS_OUT_DIR = ROOT / "results_finalisation" / "comparison_metrics"
+METRICS_OUT_DIR.mkdir(parents=True, exist_ok=True)
+
 # Output folder for all plots and comparison tables
-OUT_DIR = ROOT / "results_finalisation" / "comparison_plots"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+PLOTS_OUT_DIR = ROOT / "results_finalisation" / "comparison_plots"
+PLOTS_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output comparison table CSV summarising metrics for all tasks and models
-COMPARISON_CSV = OUT_DIR / "comparison_table.csv"
+COMPARISON_CSV = METRICS_OUT_DIR / "comparison_table.csv"
 
 # -----------------------
 # Explicit column mapping
@@ -363,6 +372,9 @@ print(f"Saved comparison table → {COMPARISON_CSV}")
 # Classification plots
 # -----------------------
 """
+Numeric data for all plots are saved in `comparison_metrics/` as CSVs before plotting.
+- This enables later quantitative interpretation of plot data without relying on visual approximations.
+
 Generate classification visualisations:
 - ROC curves (overlay both models)
 - Precision-Recall curves (overlay both models)
@@ -387,15 +399,35 @@ for name, pcol in [("max_risk", "prob_max"), ("median_risk", "prob_median")]:
     # NOTE: we use LightGBM's y_true because we've verified ordering; this is identical to TCN's y_true column if aligned.
     y_true = df_lgb[y_true_col].astype(float).values
 
+    # --- Save ROC, PR, calibration, and probability histogram numeric data for both models ---
+    # This is done before plotting
+    for model_name, y_prob_col in [("LightGBM", df_lgb[pcol].astype(float).values),
+                                   ("TCN_refined", df_tcn[pcol].astype(float).values)]:
+        # Save ROC curve numeric data
+        fpr, tpr, _ = roc_curve(y_true, y_prob_col)
+        pd.DataFrame({"fpr": fpr, "tpr": tpr}).to_csv(METRICS_OUT_DIR/f"roc_{name}_{model_name}.csv", index=False)
+
+        # Save Precision-Recall curve numeric data
+        precision, recall, _ = precision_recall_curve(y_true, y_prob_col)
+        pd.DataFrame({"recall": recall, "precision": precision}).to_csv(METRICS_OUT_DIR/f"pr_{name}_{model_name}.csv", index=False)
+
+        # Save calibration curve numeric data
+        frac_pos, mean_pred = calibration_curve(y_true, y_prob_col, n_bins=10, strategy="uniform")
+        pd.DataFrame({"mean_pred": mean_pred, "frac_pos": frac_pos}).to_csv(METRICS_OUT_DIR/f"calibration_{name}_{model_name}.csv", index=False)
+
+        # Save raw probability histogram data
+        pd.DataFrame({"pred_prob": y_prob_col}).to_csv(METRICS_OUT_DIR/f"prob_hist_{name}_{model_name}.csv", index=False)
+
+
     # ---- ROC ----
     fig, ax = plt.subplots(figsize=(6, 5))
     plot_roc(y_true, df_lgb[pcol].astype(float).values, ax, "LightGBM")  # LightGBM ROC (AUC printed in legend)
     plot_roc(y_true, df_tcn[pcol].astype(float).values, ax, "TCN_refined")  # TCN ROC
     ax.set_title(f"ROC — {name}")
     ax.legend()
-    fig.savefig(OUT_DIR / f"roc_{name}.png", dpi=150, bbox_inches="tight")
+    fig.savefig(PLOTS_OUT_DIR / f"roc_{name}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved ROC plot → {OUT_DIR / f'roc_{name}.png'}")
+    print(f"Saved ROC plot → {PLOTS_OUT_DIR / f'roc_{name}.png'}")
 
     # ---- Precision-Recall ----
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -403,9 +435,9 @@ for name, pcol in [("max_risk", "prob_max"), ("median_risk", "prob_median")]:
     plot_pr(y_true, df_tcn[pcol].astype(float).values, ax, "TCN_refined")  # TCN PR
     ax.set_title(f"Precision-Recall — {name}")
     ax.legend()
-    fig.savefig(OUT_DIR / f"pr_{name}.png", dpi=150, bbox_inches="tight")
+    fig.savefig(PLOTS_OUT_DIR / f"pr_{name}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved PR plot → {OUT_DIR / f'pr_{name}.png'}")
+    print(f"Saved PR plot → {PLOTS_OUT_DIR / f'pr_{name}.png'}")
 
     # ---- Calibration curve (reliability diagram) ----
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -413,11 +445,11 @@ for name, pcol in [("max_risk", "prob_max"), ("median_risk", "prob_median")]:
     plot_calibration_curve(y_true, df_tcn[pcol].astype(float).values, ax, "TCN_refined")
     ax.set_title(f"Calibration Curve — {name}")
     ax.legend()
-    fig.savefig(OUT_DIR / f"calibration_{name}.png", dpi=150, bbox_inches="tight")
+    fig.savefig(PLOTS_OUT_DIR / f"calibration_{name}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved calibration plot → {OUT_DIR / f'calibration_{name}.png'}")
+    print(f"Saved calibration plot → {PLOTS_OUT_DIR / f'calibration_{name}.png'}")
 
-    # ---- Calibration histograms (side-by-side) ----
+    # ---- Calibration (Probability) histograms (side-by-side) ----
     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
     # Left: LightGBM probability distribution
     axs[0].hist(df_lgb[pcol].astype(float).values, bins=10, range=(0.0, 1.0))
@@ -429,9 +461,9 @@ for name, pcol in [("max_risk", "prob_max"), ("median_risk", "prob_median")]:
     axs[1].set_title("TCN_refined probability histogram")
     axs[1].set_xlabel("Predicted probability")
     fig.suptitle(f"Calibration Histograms — {name}")
-    fig.savefig(OUT_DIR / f"calibration_hist_{name}.png", dpi=150, bbox_inches="tight")
+    fig.savefig(PLOTS_OUT_DIR / f"calibration_hist_{name}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved calibration hist → {OUT_DIR / f'calibration_hist_{name}.png'}")
+    print(f"Saved calibration hist → {PLOTS_OUT_DIR / f'calibration_hist_{name}.png'}")
 
 print("Classification plots saved.")
 
@@ -439,6 +471,9 @@ print("Classification plots saved.")
 # Regression plots
 # -----------------------
 """
+Numeric data for all plots are saved in `comparison_metrics/` as CSVs before plotting.
+- This enables later quantitative interpretation of plot data without relying on visual approximations.
+
 Generate regression visualisations:
 - True vs Predicted scatter (both models overlayed)
 - Residual histograms with KDE (both models side-by-side)
@@ -463,6 +498,15 @@ if not np.allclose(y_true_lgb, y_true_tcn, atol=1e-8):
     # If mismatch, warn — plots will still be produced but need inspection (likely patient ordering problem)
     print("WARNING: regression ground-truth mismatch between LightGBM and TCN. Verify ordering!")
 
+# --- Save regression scatter and residuals numeric data for both models (before plotting) ---
+for model_name, y_true_vals, y_pred_vals in [("LightGBM", y_true_lgb, y_pred_lgb),
+                                            ("TCN_refined", y_true_tcn, y_pred_tcn)]:
+    # Save regression scatter numeric data for both models
+    pd.DataFrame({"y_true": y_true_vals, "y_pred": y_pred_vals}).to_csv(METRICS_OUT_DIR/f"scatter_{model_name}.csv", index=False)
+    # Save residuals numeric data for both models
+    residuals = y_pred_vals - y_true_vals
+    pd.DataFrame({"y_true": y_true_vals, "y_pred": y_pred_vals, "residual": residuals}).to_csv(METRICS_OUT_DIR/f"residuals_{model_name}.csv", index=False)
+
 # ---- Scatter: true vs predicted (overlay both models) ----
 fig, ax = plt.subplots(figsize=(6, 5))
 ax.scatter(y_true_lgb, y_pred_lgb, alpha=0.85, label="LightGBM")
@@ -475,9 +519,9 @@ ax.set_xlabel("True pct_time_high")
 ax.set_ylabel("Predicted pct_time_high")
 ax.set_title("Regression Scatter — pct_time_high")
 ax.legend()
-fig.savefig(OUT_DIR / "regression_scatter_pct_time_high.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "regression_scatter_pct_time_high.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved regression scatter → {OUT_DIR / 'regression_scatter_pct_time_high.png'}")
+print(f"Saved regression scatter → {PLOTS_OUT_DIR / 'regression_scatter_pct_time_high.png'}")
 
 # ---- Residual histograms + KDE (side-by-side) ----
 # Residuals = predicted - true
@@ -502,9 +546,9 @@ axs[1].set_title("TCN_refined residuals (pred - true)")
 axs[1].set_xlabel("Residual")
 
 fig.suptitle("Residual Distributions — pct_time_high")
-fig.savefig(OUT_DIR / "regression_residuals_pct_time_high.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "regression_residuals_pct_time_high.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved residual distributions → {OUT_DIR / 'regression_residuals_pct_time_high.png'}")
+print(f"Saved residual distributions → {PLOTS_OUT_DIR / 'regression_residuals_pct_time_high.png'}")
 
 # ---- Error vs Truth (residual vs true) ----
 fig, ax = plt.subplots(figsize=(6, 5))
@@ -515,9 +559,9 @@ ax.set_xlabel("True pct_time_high")
 ax.set_ylabel("Residual (pred - true)")
 ax.set_title("Error vs Truth — pct_time_high")
 ax.legend()
-fig.savefig(OUT_DIR / "regression_error_vs_truth.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "regression_error_vs_truth.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved error-vs-truth → {OUT_DIR / 'regression_error_vs_truth.png'}")
+print(f"Saved error-vs-truth → {PLOTS_OUT_DIR / 'regression_error_vs_truth.png'}")
 
 print("Regression plots saved.")
 
@@ -545,7 +589,7 @@ for tgt in ["max_risk","median_risk"]:
     ax.bar(x+1.5*width, sub["ece"], width, label="ECE")
     ax.set_xticks(x); ax.set_xticklabels(sub["model"])
     ax.set_title(f"Classification Metric Comparison — {tgt}")
-    ax.legend(); fig.savefig(OUT_DIR/f"metrics_comparison_{tgt}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.legend(); fig.savefig(PLOTS_OUT_DIR/f"metrics_comparison_{tgt}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
 
 # Regression
 sub = df_comp[df_comp["target"] == "pct_time_high"]
@@ -556,7 +600,9 @@ if not sub.empty:
     ax.bar(x+width/2, sub["r2"], width, label="R²")
     ax.set_xticks(x); ax.set_xticklabels(sub["model"])
     ax.set_title("Regression Metric Comparison — pct_time_high")
-    ax.legend(); fig.savefig(OUT_DIR/"metrics_comparison_pct_time_high.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.legend(); fig.savefig(PLOTS_OUT_DIR/"metrics_comparison_pct_time_high.png", dpi=150, bbox_inches="tight"); plt.close(fig)
 
+print("All numeric metrics used in plots successfully saved to:")
+print(f"   {METRICS_OUT_DIR}")
 print("All plots and comparison tables successfully saved to:")
-print(f"   {OUT_DIR}")
+print(f"   {PLOTS_OUT_DIR}")
