@@ -6782,7 +6782,7 @@ src/
 
 ---
 
-## Day 32-33- Notes - Start Phase 6: Visualisation (Step 1)
+## Day 32-34 Notes - Start Phase 6: Visualisation (Step 1)
 
 ---
 
@@ -6957,17 +6957,22 @@ src/
 | **Accuracy** | Classification | **Dependent** | Phase 5 | Proportion of correct classifications (true positives + true negatives). |
 | **Precision** | Classification | **Dependent** | Phase 5 | Reliability of positive predictions (how many predicted positives are correct). |
 | **Recall (Sensitivity)** | Classification | **Dependent** | Phase 5 | Proportion of true positives correctly identified. |
-| **Brier Score** | Classification (Calibration) | **Independent** | Phase 6 | Measures probabilistic accuracy — mean squared error of predicted probabilities. |
+| **Brier Score** | Classification (Calibration) | **Independent** | Phase 6 | Measures probabilistic accuracy → mean squared error of predicted probabilities. |
 | **Expected Calibration Error (ECE)** | Classification (Calibration) | **Independent** | Phase 6 | Quantifies how well predicted probabilities match observed outcome frequencies. |
-| **RMSE** | Regression | **Independent** | Phase 5 | Root mean squared error — magnitude of prediction error. |
+| **RMSE** | Regression | **Independent** | Phase 5 | Root mean squared error → magnitude of prediction error. |
 | **R²** | Regression | **Independent** | Phase 5 | Proportion of variance in true values explained by predictions. |
 
 ---
 
 ### Quantitative Analysis (Summary Metrics)
 #### Overview
-- This section interprets the summary performance metrics for **LightGBM** and **TCN_refined** across all evaluated tasks: classification (`max_risk`, `median_risk`) and regression (`pct_time_high`).  
-- The analysis focuses exclusively on **numerical performance indicators** from the aggregated comparison table, without yet discussing curve shapes or visual trends.
+- This section interprets the summary performance metrics for **LightGBM** and **TCN_refined** across all evaluated tasks:  
+  - **Classification (`max_risk`)** → whether the patient ever reached high deterioration risk during their stay.  
+  - **Classification (`median_risk`)** → the patient’s typical or central risk level over their admission.  
+  - **Regression (`pct_time_high`)** → the proportion of total admission time spent in high-risk states.  
+- These definitions are essential for interpreting the numbers correctly:  
+  - `max_risk` captures **peak event detection**, `median_risk` reflects **overall physiological stability**, and `pct_time_high` quantifies **temporal exposure to high-risk states**.  
+  - The analysis focuses on **numerical indicators** only, without visual trends.
 
 #### Metrics Comparison 
 1. **Classification (`max_risk`)**
@@ -6975,27 +6980,31 @@ src/
 |:--|--:|--:|--:|--:|--:|--:|--:|
 | LightGBM | 0.846 | 0.929 | 0.867 | 0.867 | 1.000 | **0.097** | **0.116** |
 | TCN_refined | **0.923** | 0.929 | 0.867 | 0.867 | 1.000 | 0.101 | 0.149 |
-
 **Interpretation**
-- **Discrimination (ROC AUC):** 
-  - TCN_refined achieves a **9.1% higher AUC** (0.923 vs 0.846), showing superior ranking ability in distinguishing high-risk from low-risk patients across thresholds.
-- **Threshold-dependent performance (F1, Accuracy, Precision, Recall):** 
-  - Both models report **identical threshold metrics** → F1 = 0.93, Accuracy = 0.87, Precision = 0.87, Recall = 1.0 
-  - Meaning every positive case was correctly identified and both triggered alerts for exactly the same samples when thresholded at 0.5.  
-  - This does **not** imply identical model quality → it simply reflects that their probability distributions straddled the same side of the 0.5 cutoff for each patient.
+- **Discrimination (ROC AUC):**  
+  - `max_risk` asks whether a patient ever reached high deterioration risk during admission.  
+  - TCN_refined achieves a **9.1% higher AUC** (0.923 vs 0.846), meaning it ranks patients who experienced deterioration more distinctly than LightGBM.  
+  - This aligns with the TCN’s temporal sensitivity → it captures transient peaks, making it particularly well-suited to event-based outcomes.
+- **Threshold-dependent performance (F1, Accuracy, Precision, Recall):**  
+  - Both models produced identical scores (F1 = 0.93, Accuracy = 0.87, Precision = 0.87, Recall = 1.0).  
+  - This uniformity arises because all positive cases were consistently detected at threshold 0.5 → not because both models behave identically probabilistically.  
+  - It simply means both flagged the same patients as “ever high risk.”
 - **Calibration (Brier, ECE):**  
-  - LightGBM achieves marginally better calibration → **Brier 4% lower (0.097 vs 0.101)** and **ECE 22% lower (0.116 vs 0.149)** 
-  - Indicating better alignment between predicted and true probabilities for LightGBM.
+  - LightGBM shows slightly better alignment between predicted and observed probabilities (Brier ↓4%, ECE ↓22%), achieves marginally better calibration.
+  - TCN_refined’s predictions are marginally overconfident, typical of temporal models trained on short sequences.
 **Statistical reliability:**  
 - Because both models produced identical threshold metrics on a **tiny n = 15 test set**, these values lack statistical reliability and are dominated by rounding effects.  
 - In this regime, **only threshold-independent metrics (AUC, Brier, ECE)** retain meaning. They show that:
   - **TCN_refined** better separates classes (higher AUC),  
   - **LightGBM** is better calibrated (lower Brier/ECE).
 **Conclusion (max_risk):**  
-- Both models identify deterioration events perfectly.  
-  - **TCN_refined:** stronger discriminative separation.  
-  - **LightGBM:** slightly superior calibration and probabilistic reliability.  
-- Both achieve near-ceiling performance for this target.
+- Both models perfectly identify which patients ever reached high deterioration risk.  
+- **TCN_refined** demonstrates stronger discriminative ability → consistent with its design for capturing dynamic peaks and transitions.  
+- **LightGBM** is slightly better calibrated and more probabilistically stable, reflecting its non-temporal averaging of features.  
+- Clinically, this means:
+  - **TCN_refined** excels at detecting deterioration events.  
+  - **LightGBM** provides more trustworthy probability scaling for event likelihood.  
+- Both achieve near-ceiling effectiveness for this binary target.
 
 
 2. **Classification (`median_risk`)**
@@ -7007,14 +7016,15 @@ src/
 
 **Interpretation**
 - **Discrimination:**  
-  - LightGBM delivers **16.7% higher AUC** (0.97 vs 0.83), reflecting a much stronger ability to rank intermediate-risk patients correctly.  
-  - This indicates LightGBM more effectively separates patients with typical low-risk profiles (median NEWS2 0–1) from those with sustained moderate instability (median NEWS2 = 2).
+  - Here, `median_risk` reflects the *typical risk state* of a patient throughout admission.  
+  - LightGBM achieves a **16.7% higher AUC** (0.97 vs 0.83), showing a far stronger ability to rank stable versus chronically unstable patients.  
+  - This difference reflects structural alignment: LightGBM uses aggregate summary features that correspond directly to this averaged-risk target.
 - **Threshold-dependent performance:**  
   - LightGBM surpasses TCN_refined on all threshold-dependent scores:  
     - **F1:** +57% higher (0.86 vs 0.55)  
     - **Accuracy:** +40% higher (0.93 vs 0.67)  
     - **Precision:** +100% higher (0.75 vs 0.38)  
-  - Both achieve perfect Recall = 1.0, but TCN_refined’s low precision indicates **systematic over-prediction of positives**.  
+  - Both achieve perfect Recall = 1.0, but TCN_refined’s low precision indicates **systematic over-prediction of positives**, producing inflated probabilities even for stable patients.  
   - **Threshold tuning:**  
     - TCN_refined used a tuned threshold of **0.43**, optimised via F1-maximisation to correct for class imbalance (`pos_weight`).  
     - Despite this tuning, its metrics remain weaker, meaning the issue lies not in threshold choice but in **underlying probability distribution** and **class separability**.  
@@ -7023,8 +7033,8 @@ src/
   - LightGBM demonstrates markedly better probabilistic reliability:  
     - **Brier score:** 68% lower (0.065 vs 0.201)  
     - **ECE:** 63% lower (0.093 vs 0.251)  
-  - This shows TCN_refined’s output probabilities are **overconfident and poorly aligned** with true event frequencies, typical of temporal models when class boundaries are fuzzy.  
-  - In contrast, LightGBM’s probabilistic estimates track observed outcome frequencies much more faithfully.
+  - This means its output probabilities are far closer to true event frequencies.  
+  - TCN_refined’s outputs are compressed into midrange (≈0.3–0.6) — overconfident but uninformative, typical when temporal variance is low.
 
 **Why TCN_refined Underperformed**
 1. **Label–model mismatch:**  
@@ -7032,6 +7042,7 @@ src/
   - The TCN architecture is optimised to detect temporal transitions or spikes (e.g., short-term deterioration), not average-level patterns.  
   - Since most patients remain clinically stable over long periods, temporal features add noise rather than signal.
 2. **Limited temporal contrast between classes:**  
+  - For median-level patterns, where most patients are stable, temporal convolutions introduce noise rather than signal.  
   - Both “low-median-risk” and “medium-median-risk” patients exhibit overlapping short-term sequences, differing mainly in overall average values.  
   - TCN’s convolutional filters cannot easily separate such subtle differences, leading to poorly discriminative embeddings.
 3. **Calibration drift from dynamic inputs:**  
@@ -7045,15 +7056,18 @@ src/
 - Unlike `max_risk`, where identical threshold metrics arose from the small sample size (n = 15), the divergence here is **genuine** → it reflects true model-behavioural differences rather than statistical noise.  
 - However, with only 15 samples, even these metrics must be interpreted cautiously; **AUC and calibration** remain the most reliable indicators of performance stability.
 
-**Conclusion (median_risk)**
-- **LightGBM** decisively outperforms TCN_refined across discrimination, accuracy, and calibration metrics.  
-- TCN_refined’s poorer performance reflects a **fundamental mismatch** between model design and task semantics:
-  - The temporal model overfits to short-term fluctuations, which do not define a patient’s median physiological risk.
-  - Even at the optimised threshold (0.43), its probability outputs remain compressed, overlapping, and poorly calibrated.
-- The LightGBM model’s architecture (built on summarised patient-level features) aligns naturally with the task definition, yielding both higher discrimination and better probability scaling.  
+**Conclusion (median_risk):**
+- **LightGBM** decisively outperforms **TCN_refined** across discrimination, accuracy, and calibration.  
+- This reflects a clear **task–architecture mismatch**:  
+  - TCN excels at transient events, not long-term stability states. Even at the optimised threshold (0.43), its probability outputs remain compressed, overlapping, and poorly calibrated.
+  - LightGBM aligns natively with averaged, patient-level features, yielding both higher discrimination and better probability scaling. 
+- Clinically:  
+  - LightGBM is better suited to monitoring a patient’s typical level of physiological risk across an admission.  
+  - TCN_refined’s output probabilities are narrowly distributed, producing mid-range predictions for nearly all patients. This compression hides meaningful distinctions between moderately and persistently high-risk individuals, reducing its usefulness for tracking sustained clinical instability.
+- **Overall:** LightGBM provides more interpretable, calibrated, and clinically coherent estimates for median-level risk assessment.
 - Therefore, the performance gap here illustrates a key insight: 
   - **Temporal networks excel for dynamic event detection (max-risk).**
-  - **tabular learners dominate for static or aggregate-state classification (median-risk).**
+  - **Tabular learners dominate for static or aggregate-state classification (median-risk).**
 
 ---
 
@@ -7065,26 +7079,30 @@ src/
 | TCN_refined | 0.056 | 0.548 |
 
 **Interpretation:**
+- `pct_time_high` quantifies how much of a patient’s total admission time was spent above the high-risk threshold → a continuous indicator of sustained deterioration exposure.  
 - **Error magnitude (RMSE):**  
   - LightGBM predictions deviate from ground truth by an average of 0.038 percentage units.  
   - TCN_refined predictions deviate by 0.056 units, which is approximately **48% higher error** than LightGBM.
 - **Explained variance (R²):**  
   - LightGBM explains ~79% of variance in deterioration percentage.  
   - TCN_refined explains only ~55% (~24 percentage points lower), reflecting weaker overall fit.
+  - This shows that LightGBM captures the distribution of “risk exposure time” more precisely.
 - **Data transformations for TCN:**  
   - TCN predictions were initially computed in **log-space**, then transformed back and calibrated before metric calculation.  
-  - Despite these adjustments, TCN’s predictions remain less precise and less stable than LightGBM’s, indicating inherent limitations in capturing the continuous deterioration percentage.
+  - Despite these adjustments improving numerical alignment, accuracy did not, TCN’s predictions remain less precise and less stable than LightGBM’s, indicating inherent limitations in capturing the continuous deterioration percentage.
 - **Overall regression fit:**  
   - LightGBM produces more accurate and reliable predictions with smaller residuals and better variance explanation.  
   - TCN_refined’s higher RMSE and lower R² suggest that temporal modelling adds less value for median-level continuous deterioration in this dataset, particularly given the small test set.
+  - LightGBM’s static summarisation captures global deterioration duration better than TCN’s short-term focus.
 
 **Statistical reliability:**  
 - Metrics are descriptive for a small test set (n = 15), but relative differences are substantial enough to confidently indicate superior regression performance for LightGBM.  
 - Continuous-valued metrics like RMSE and R² are more informative here than threshold-dependent classification metrics.
 
-**Conclusion (pct_time_high):**  
-- For the continuous deterioration percentage task, **LightGBM** clearly outperforms TCN_refined on both absolute (RMSE) and relative (R²) measures.  
-- Log-transform and calibration steps for TCN improved numerical alignment but did not overcome its inherent predictive limitations for this target.  
+**Conclusion (pct_time_high):**
+- LightGBM is **clearly superior** for estimating continuous deterioration exposure, on both absolute (RMSE) and relative (R²) measures.  
+- It produces smaller residuals and explains substantially more variance, indicating it generalises better for regression-style clinical risk modelling.  
+- TCN_refined’s temporal formulation contributes less value when the task measures proportion of time, not discrete events.
 - LightGBM provides the most reliable and precise quantitative estimates of patient deterioration percentages across the test set.
 
 ---
@@ -7093,15 +7111,19 @@ src/
 
 | Dimension | Winner | Notes |
 |:--|:--|:--|
-| Discrimination (ROC AUC) | **TCN_refined (max_risk)**, **LightGBM (median_risk)** | TCN better at extreme-risk separation, LightGBM stronger at mid-level discrimination. |
+| Discrimination (ROC AUC) | **TCN_refined (max_risk)**, **LightGBM (median_risk)** | TCN excels at short-term event detection; LightGBM at sustained-state separation. |
 | Threshold Accuracy (F1/Accuracy/Precision) | **LightGBM overall** | Especially superior for median risk. |
-| Calibration (Brier/ECE) | **LightGBM** | More reliable probability scaling across both risk levels. |
+| Calibration (Brier/ECE) | **LightGBM** | More reliable probability scaling across all targets. |
 | Regression Fit (RMSE/R²) | **LightGBM** | Substantially lower error and higher explained variance. |
 
-**Integrated interpretation:**  
-- **LightGBM** is consistently stable and well-calibrated across both binary and continuous targets.  
-- **TCN_refined** excels at detecting extreme spikes (max-risk) but underperforms on median-risk and regression tasks due to limited temporal contrast and probability calibration issues.  
-- Overall, LightGBM provides the most reliable and generalisable quantitative performance across all tasks.
+**Integrated Interpretation:**  
+- **TCN_refined** demonstrates clear strength in dynamic event detection → its temporal filters capture sharp, transient spikes corresponding to acute deterioration (`max_risk`).  
+- **LightGBM**, by contrast, dominates in aggregate or sustained-risk estimation (`median_risk`, `pct_time_high`), reflecting its structural advantage in modelling patient-level summaries.  
+- Across calibration and probabilistic reliability metrics, LightGBM consistently outperforms → a key consideration for deployment in systems where calibrated probabilities drive downstream alerts or thresholds.  
+- **Clinically,** this distinction mirrors real-world roles:  
+  - TCN-like models could flag acute deteriorations in real time,  
+  - LightGBM-like models could provide daily risk stratification and long-term prognosis.  
+- Overall, **LightGBM offers the most stable, generalisable quantitative performance** across all targets, whereas **TCN_refined adds incremental value specifically for event-based deterioration detection.**
 
 ---
 
@@ -7278,13 +7300,17 @@ src/
   - In small, low-variance datasets like this one (n = 15 patients), classical models often outperform deep learning architectures due to differences in **inductive bias** and **data efficiency**. 
   - **Inductive Bias** is the set of built-in assumptions a model makes about data structure and how it behaves. 
     - **LightGBM** has a **strong inductive bias**:  
-      - It assumes that input–output relationships can be described through **threshold-based decision splits** (e.g., “NEWS2 > 5 increases deterioration risk”).  
-      - This assumption fits clinical tabular data extremely well, allowing robust learning even from very small samples.  
-      - The model’s hierarchical structure and decision rules act as built-in **regularisers**, preventing overfitting when data are sparse or noisy.  
+      - LightGBM’s bias stems from its **decision-tree structure**, which learns patterns through **if–then splits (threshold-based decision splits)**, e.g.:  
+        - If NEWS2 > 5 → higher deterioration risk 
+        - If age > 80 and HR > 110 → high risk
+      - This threshold-based reasoning mirrors clinical thinking, where risk is defined by interpretable cut-points rather than continuous temporal trends.  
+      - As a result, LightGBM is naturally suited for **static, tabular, rule-based risk prediction**, allowing robust learning even from very small samples.
+      - The model’s hierarchical structure and decision rules act as built-in **regularisers**, preventing overfitting when data are sparse or noisy. 
     - **TCN**, by contrast, has a **weak inductive bias**:  
-      - It assumes very little about the data’s structure and instead tries to learn all dependencies directly from raw sequential input.  
-      - This flexibility allows powerful pattern recognition in large datasets but makes the model highly **data-hungry** → it needs thousands of sequences to generalise effectively.  
-      - With limited data, the TCN’s convolutional filters cannot reliably distinguish signal from noise, resulting in unstable temporal representations and degraded performance.  
+      - It assumes very little about the data’s structure, and makes almost no prior assumptions about how features relate. 
+      - Instead, it learns dependencies directly from raw temporal sequences through **1D convolutions**, detecting evolving patterns over time.  
+      - This flexibility allows powerful pattern recognition in large datasets but makes the model highly **data-hungry** → it needs extensive, diverse sequences to learn stable patterns to generalise effectively.  
+      - With limited data, the TCN’s convolutional filters cannot reliably distinguish signal from noise, producing **unstable and poorly generalisable** temporal representations.
   - **Data Efficiency**  
     - **LightGBM** is highly **data-efficient**:  
       - It generalises well even in small datasets because its structure and learning process rely on simple, interpretable transformations of tabular features.  
@@ -7335,6 +7361,509 @@ src/
   - Deep temporal architectures like TCNs remain powerful for large, timestamp-rich datasets → but their advantages emerge only when data scale supports temporal generalisation.
 
 ---
+
+### Plots and CSV Interpretability Guide
+#### Overview 
+- This explains the plots generated for LightGBM and TCN models, the purpose of each plot type, what the plots are intended to show, and the extra metrics included in the CSVs to allow full interpretation without the need for visual inspection.
+- All numeric arrays are **aligned row-wise**, padded with NaNs where necessary to allow side-by-side comparison between models.  
+- The CSVs **fully capture the information needed** to interpret model performance, eliminating the need for the PNG plots.  
+- This design enables:
+  - Reproducibility  
+  - Quantitative analysis  
+  - Statistical comparisons between models  
+  - Integration with other analysis tools
+
+#### Classification Plots
+1. **ROC Curve (Receiver Operating Characteristic)**
+**Purpose:**  
+- Measures the model’s ability to discriminate between positive and negative classes across all probability thresholds.
+**What it shows:**  
+- **False Positive Rate (FPR)** vs **True Positive Rate (TPR)** curve.  
+- AUC (Area Under Curve) quantifies overall discrimination: 1.0 = perfect, 0.5 = random.
+**CSV Columns:**  
+- `fpr_LightGBM`, `tpr_LightGBM` → FPR and TPR arrays for LightGBM  
+- `fpr_TCN_refined`, `tpr_TCN_refined` → FPR and TPR arrays for TCN  
+- `auc_LightGBM`, `auc_TCN_refined` → constant columns with overall AUC per model  
+- `prevalence` → proportion of positive cases (base rate)
+**Interpretability:**  
+- Each row corresponds to a threshold in probability space.  
+- You can reconstruct ROC curve and compare AUC values directly from the CSV.
+
+2. **Precision–Recall Curve (PR Curve)**
+**Purpose:**  
+- Focuses on model performance for the positive class, especially useful for imbalanced datasets.
+**What it shows:**  
+- **Recall (Sensitivity)** vs **Precision (Positive Predictive Value)** across thresholds.  
+- Average Precision (AP) summarizes curve as a single number.
+**CSV Columns:**  
+- `recall_LightGBM`, `precision_LightGBM` → Recall and Precision arrays for LightGBM  
+- `recall_TCN_refined`, `precision_TCN_refined` → Recall and Precision arrays for TCN  
+- `ap_LightGBM`, `ap_TCN_refined` → constant columns with Average Precision per model
+**Interpretability:**  
+- Each row corresponds to a probability threshold.  
+- You can calculate or plot PR curve from CSV.  
+- AP gives a single metric to rank model performance.
+
+3. **Calibration Curve (Reliability Diagram)**
+**Purpose:**  
+- Evaluates how well predicted probabilities reflect actual outcome likelihoods.
+- Helps determine if the model is **overconfident** or **underconfident** in its predictions.
+**What it shows:**  
+- Fraction of positives (`frac_pos`) vs mean predicted probability (`mean_pred`) within bins.
+- Perfect calibration occurs when predicted probabilities match observed frequencies (points lie on the diagonal).
+**Bins explained:**  
+- The predicted probability range [0, 1] is split into a fixed number of intervals (bins), typically 10.  
+- Example bins for 10 divisions: [0–0.1), [0.1–0.2), …, [0.9–1.0].  
+- Each row in the CSV corresponds to **one bin**:  
+  - `mean_pred` = average predicted probability of patients in that bin  
+  - `frac_pos` = fraction of patients in that bin who actually have the event
+**CSV Columns:**  
+- `mean_pred_LightGBM`, `frac_pos_LightGBM` → calibration bins for LightGBM  
+- `mean_pred_TCN_refined`, `frac_pos_TCN_refined` → calibration bins for TCN  
+- `brier_LightGBM`, `brier_TCN_refined` → Brier score (mean squared error of probabilities)  
+- `ece_LightGBM`, `ece_TCN_refined` → Expected Calibration Error  
+- `n_samples_LightGBM`, `n_samples_TCN_refined` → number of patients per bin, assess reliability of the fraction observed.
+**Interpretability:**  
+- Each row = one bin of predicted probabilities.  
+- You can evaluate calibration visually or compute metrics directly from CSV.
+
+4. **Probability Histogram**
+**Purpose:**  
+- Describes distribution of predicted probabilities.  
+- Helps assess whether model is confident (predictions near 0 or 1) or uncertain (predictions near 0.5).
+**CSV Columns (LightGBM and TCN separately):**  
+- `pred_prob_*` → predicted probability per patient  
+- `mean_*` → average predicted probability  
+- `std_*` → standard deviation  
+- `min_*`, `max_*` → range of predicted probabilities  
+- `skew_*` → asymmetry of distribution  
+- `kurt_*` → tail heaviness of distribution (high kurtosis = more extreme values)
+**Interpretability:**  
+- These statistics allow you to quantify prediction spread without plotting.  
+- Skew >0 → distribution has longer right tail; Skew <0 → longer left tail.  
+- Kurtosis >3 → heavier tails than normal; Kurtosis <3 → lighter tails.  
+- You can reconstruct a histogram or evaluate confidence and risk distribution directly from CSV.
+
+
+#### Regression Plots
+1. **Scatter Plot (True vs Predicted)** 
+**Purpose:**  
+- Compare predicted values against the true values for both models.  
+- Assess model accuracy visually or programmatically.
+**CSV Columns:**  
+- `y_true_LightGBM` → ground-truth values for LightGBM  
+- `y_pred_LightGBM` → predicted values by LightGBM  
+- `y_true_TCN_refined` → ground-truth values for TCN  
+- `y_pred_TCN_refined` → predicted values by TCN  
+**Interpretability:**  
+- Points close to the identity line (y_true = y_pred) indicate accurate predictions.  
+- Outliers indicate under- or over-prediction for specific patients.
+
+2. **Residuals**
+**Purpose:**  
+- Show errors (residuals) of predictions for each patient.  
+- Residual = predicted − true value.
+**CSV Columns:**  
+- `residual_LightGBM` → errors for LightGBM  
+- `residual_TCN_refined` → errors for TCN_refined  
+- `mean_res_*` → mean residual, indicates **bias** (0 = unbiased)  
+- `std_res_*` → standard deviation, indicates **variability**  
+- `min_res_*` / `max_res_*` → extreme errors  
+- `skew_res_*` → asymmetry of residual distribution (positive = long tail above zero)  
+- `kurt_res_*` → tail heaviness (higher = more extreme outliers)
+**Interpretability:**  
+- Residuals centered around 0 indicate unbiased predictions.  
+- Spread indicates prediction variability.  
+- Positive residual = overestimation, negative residual = underestimation.
+
+3. **Residual KDE**
+**Purpose:**  
+- Smooth representation of residual distributions (Kernel Density Estimate).  
+- Helps understand the error distribution shape beyond simple histograms.
+**CSV Columns:**  
+- `grid_LightGBM` → x-axis points for KDE of LightGBM residuals  
+- `kde_LightGBM` → density at each grid point  
+- `grid_TCN_refined` → x-axis points for KDE of TCN residuals  
+- `kde_TCN_refined` → density at each grid point  
+**Interpretability:**  
+- Peaks indicate where most residuals lie.  
+- Wide distribution = more variability.  
+- Skew indicates asymmetric error tendency.
+
+4. **Error vs Truth**
+**Purpose:**  
+- Examine relationship between residuals and true values.  
+- Detect systematic bias at different outcome magnitudes.
+**CSV Columns:**  
+- `y_true_LightGBM` → true values for LightGBM  
+- `residual_LightGBM` → residuals for LightGBM  
+- `mean_res_LightGBM`, `std_res_LightGBM`, `min_res_LightGBM`, `max_res_LightGBM`, `skew_res_LightGBM`, `kurt_res_LightGBM` → summary stats for LightGBM residuals  
+- `y_true_TCN_refined` → true values for TCN  
+- `residual_TCN_refined` → residuals for TCN  
+- `mean_res_TCN_refined`, `std_res_TCN_refined`, `min_res_TCN_refined`, `max_res_TCN_refined`, `skew_res_TCN_refined`, `kurt_res_TCN_refined` → summary stats for TCN residuals  
+**Interpretability:**  
+- Residuals should be randomly scattered around zero.  
+- Any trend (positive or negative slope) indicates bias: errors increase or decrease with true value magnitude.
+- Summary statistics allow **full numeric interpretation without plots**, showing overall bias, spread, and distribution shape.
+
+**Why Summary Statistics Are Included for Regression Residuals**
+- Scatter CSV (`y_true` vs `y_pred`) shows individual predictions but **does not quantify overall error distribution**.  
+- Residuals CSV (`residual = predicted − true`) and Error-vs-Truth CSV capture prediction errors, where summary stats are meaningful.  
+- **Included metrics for residuals**:
+  - **Mean residual** → indicates overall bias (closeness to zero = unbiased).  
+  - **Std residual** → measures variability of prediction errors.  
+  - **Min / Max residual** → identifies extreme under- or over-predictions.  
+  - **Skew** → asymmetry of residuals (positive = tendency to over-predict, negative = under-predict).  
+  - **Kurtosis** → tail heaviness of residuals (high = more extreme errors).  
+- These summary statistics allow **full interpretation of regression performance directly from the CSVs**, without needing visual plots.  
+- For the Scatter CSV, summary stats are **not included**, since the raw `y_true` and `y_pred` values are sufficient for interpretation of pointwise accuracy.
+
+---
+
+### Visual Analysis (Curve-Based and Distributional Diagnostics)
+#### Overview
+- This section interprets the graphical outputs underlying the quantitative performance metrics.  
+- While the comparison table summarises global scalar metrics (AUC, F1, AP, etc.), the plots and their corresponding CSVs provide a deeper understanding of how each model achieves its results → including discrimination shape (ROC/PR), calibration reliability, and probability distribution characteristics.
+- Analyses are organised by target variable and grouped by diagnostic type:
+  - **ROC & PR curves:** Evaluate discrimination and class imbalance handling.
+  - **Calibration curves:** Assess reliability of predicted probabilities.
+  - **Probability histograms:** Examine confidence spread and prediction certainty.
+- The following subsections provide detailed interpretations of these visual diagnostics for each target variable.
+
+#### Classification (`max_risk`)
+1. **ROC Curve (fpr–tpr data)**  
+**CSV summary:**
+- LightGBM AUC = **0.846**, TCN AUC = **0.923**.  
+- TCN jumps from TPR 0.0769 → 0.923 while FPR remains 0.0 → **perfect early separation**.  
+- LightGBM’s TPR increases more gradually, reaching 0.769 at FPR = 0.5.  
+- Both models reach TPR = 1.0 at FPR = 1.0.
+**Interpretation:**
+- Both models show **strong discriminative performance**, but TCN demonstrates a much steeper early ROC rise.  
+- This means TCN identifies high-risk patients **earlier and more confidently** with fewer false positives.  
+- LightGBM requires higher thresholds (more relaxed decision boundaries) to reach equivalent recall.
+**Conclusion (ROC):**  
+- TCN achieves **superior early discrimination** and overall ranking ability for detecting patients who ever reach high risk during admission.
+
+2. **Precision–Recall Curve**  
+**CSV summary:**
+- Average Precision (AP): LightGBM = **0.9774**, TCN = **0.9897**.  
+- Both maintain high precision (≥0.846) across all recall points.  
+- Precision = 1.0 for both at recall between 0.769 → 0.0.  
+- Curves nearly identical, with TCN slightly higher area.
+**Interpretation:**
+- Both models sustain **exceptionally high precision and recall**, meaning nearly all patients predicted as “ever high risk” truly were.  
+- TCN’s small AP gain (+0.0123) reflects marginally better recall coverage without sacrificing precision.
+**Conclusion (PR):**  
+- Performance parity overall; TCN shows **minor improvement in sensitivity** to high-risk events without additional false alarms.
+
+3. **Calibration Curve (mean predicted probability vs. fraction of positives)**  
+**CSV summary:**
+- **LightGBM:** mean_pred = 0.5087–0.9744, frac_pos = 0.0–1.0, Brier = 0.0973, ECE = 0.1160.  
+- **TCN:** mean_pred = 0.7704–0.8619, frac_pos = 0.6–1.0, Brier = 0.1010, ECE = 0.1488.  
+- Some missing bins (NaNs) due to sparse samples in upper range.
+**Interpretation:**
+- Both models are **overconfident**, predicting probabilities higher than the true positive rates.  
+- LightGBM shows **wider confidence variability** (predictions spanning 0.5–0.97).  
+- TCN produces **tightly grouped high probabilities** (0.77–0.86), suggesting consistent but inflated confidence.  
+- LightGBM’s slightly lower ECE (0.116 vs 0.1488) indicates **modestly better calibration**.
+**Conclusion (Calibration):**  
+- LightGBM’s outputs are more dispersed and somewhat better calibrated.  
+- TCN produces consistently confident scores, slightly overestimating actual positive frequency → acceptable if ranking is the clinical priority but less so for probabilistic interpretability.
+
+4. **Probability Histogram**  
+**CSV summary:**
+- **LightGBM:** mean = 0.88299, std = 0.14358, min = 0.5087, max = 0.9957, skew = –1.2669, kurt = 0.5767.  
+- **TCN:** mean = 0.83144, std = 0.04578, min = 0.7575, max = 0.8814, skew = –0.4921, kurt = –1.3832.
+**Interpretation:**
+- LightGBM produces a **broader probability range** (0.51–1.00) with heavier left skew → some patients predicted confidently low and others extremely high.  
+- TCN’s probabilities are **tightly clustered** (0.76–0.88), suggesting the model is confident that nearly all patients are at elevated risk at some point.  
+- TCN thus offers **less granularity** in risk differentiation but stronger uniform conviction in positive predictions.
+**Conclusion (Histogram):**  
+- LightGBM provides greater spread and differentiation between stable vs deteriorating patients.  
+- TCN yields **more consistent but compressed confidence**, reflecting a bias towards detecting any possible deterioration.
+
+
+**Overall Summary (`max_risk`)**
+| Dimension | LightGBM | TCN (refined) | Interpretation |
+|------------|-----------|---------------|----------------|
+| **ROC** | AUC = 0.846 | AUC = 0.923 | TCN AUC is **9.3% higher** ((0.923–0.846)/0.846). Early ROC region shows TCN achieves **92.3% TPR at FPR = 0** vs LightGBM’s 7.7% → **~12× higher early sensitivity**, meaning it detects deteriorating patients earlier and with fewer false positives. |
+| **Precision–Recall** | AP = 0.9774 | AP = 0.9897 | TCN AP **1.25% higher**, maintaining near-perfect precision while slightly improving recall → better detection of all patients who ever reached high deterioration risk. |
+| **Calibration** | mean_pred 0.5087–0.9744, frac_pos 0.0–1.0, Brier 0.0973, ECE 0.1160 | mean_pred 0.7704–0.8619, frac_pos 0.6–1.0, Brier 0.1010, ECE 0.1488 | Both overconfident. LightGBM slightly better calibrated (ECE 28% lower). TCN more consistent but inflates risk probabilities. |
+| **Probability Histogram** | mean 0.88299, std 0.14358, skew –1.2669, kurt 0.5767, min 0.5087, max 0.9957 | mean 0.83144, std 0.04578, skew –0.4921, kurt –1.3832, min 0.7575, max 0.8814 | LightGBM: wide confidence spread → finer patient separation. TCN: compressed high-confidence band → uniform conviction of deterioration risk. |
+
+**Final Interpretation (`max_risk`)**  
+- Both models achieve **strong discriminative performance** for identifying patients who ever reached high deterioration risk during admission.  
+- **TCN_refined** shows **clear superiority in discrimination**, with **AUC +0.077 (~9.3% relative gain)** and **AP +0.0123 (~1.25% relative gain)** over LightGBM.  
+- Most notably, TCN achieves **~12× higher early sensitivity (TPR)** at zero false positives → detecting high-risk patients earlier and more confidently.  
+- LightGBM, though slightly behind in AUC, exhibits **more stable calibration** (ECE = 0.116 vs 0.1488; ~28% lower), indicating **more reliable absolute probability estimates**.  
+- Probability distributions further distinguish the two:  
+  - **LightGBM** spans a broad range (0.51–0.99), producing more probabilistic diversity and clearer separation between stable and deteriorating patients.  
+  - **TCN** produces tightly clustered outputs (0.76–0.88), reflecting strong uniform conviction that patients were high risk at some point, but **reduced probability granularity**.  
+- Clinically, this implies that TCN is **more aggressive and sensitive** → ideal for early detection and flagging any patient who may deteriorate; while LightGBM offers **greater interpretability** and nuanced risk scaling.  
+- Both models are **overconfident** (predicted risk > observed rate), suggesting the need for **post-hoc calibration** (e.g., Platt scaling or isotonic regression) before clinical deployment.
+
+**Conclusion:**  
+- For the `max_risk` outcome — indicating whether a patient ever reached high deterioration risk — **TCN_refined is the superior model for detection sensitivity and early risk identification**.  
+- It provides higher discriminative power (+9.3% AUC) and substantially earlier true-positive recognition with minimal false positives, making it highly effective for **early-warning or alert-based systems**.  
+- However, if **probability reliability** or **gradual risk differentiation** is clinically important (e.g., risk scoring or triage thresholds), **LightGBM remains preferable** due to better calibration and more interpretable probability distributions.  
+- Overall, **TCN_refined is best suited for binary high-risk detection**, while **LightGBM excels when probabilistic confidence and calibration are required** → both valuable for complementary roles in deterioration monitoring frameworks.
+
+---
+
+#### Classification (`median_risk`)
+1. **ROC Curve (fpr–tpr data)**  
+**CSV summary:**  
+- LightGBM achieves **AUC = 0.9722**, TCN achieves **AUC = 0.8333**.  
+- LightGBM reaches TPR = 1.0 at FPR = 0.0833, while TCN reaches TPR = 1.0 only at FPR = 1.0.  
+- Early thresholds show that LightGBM has a steep TPR ascent while maintaining very low FPR.  
+- TCN’s TPR rises more slowly relative to its FPR, indicating less early discrimination.  
+**Interpretation:**  
+- LightGBM has **stronger early discrimination**, capturing patients with elevated median risk while keeping false positives minimal.  
+- TCN’s weaker early separation suggests difficulty in ranking moderate-risk vs low-risk patients.  
+**Conclusion (ROC):**  
+- LightGBM demonstrates superior ranking and early discrimination compared to TCN for median_risk → critical for accurately identifying patients who sustain elevated risk over time.
+
+2. **Precision–Recall Curve**  
+**CSV summary:**  
+- LightGBM’s AP = **0.9167**; TCN’s AP = **0.6333**.  
+- LightGBM maintains precision from 0.2 → 1.0 as recall decreases from 1.0 → 0.0.  
+- TCN shows lower precision at all recall levels (0.2 → 0.333) and a smaller PR area.  
+**Interpretation:**  
+- LightGBM consistently identifies true high-risk cases without excessive false positives, even under class imbalance (prevalence = 0.2).  
+- TCN struggles to maintain precision, reflecting lower confidence and poorer positive class separation.  
+**Conclusion (PR):**  
+- LightGBM significantly outperforms TCN on precision–recall performance, confirming stronger identification of patients with sustained moderate-to-high deterioration risk.
+
+3. **Calibration Curve (mean predicted probability vs. fraction of positives)**  
+**CSV summary:**  
+- **LightGBM:** mean_pred = 0.0113 → 0.9674, frac_pos = 0.0 → 1.0, Brier = 0.0647, ECE = 0.0931.  
+- **TCN:** mean_pred = 0.2979 → 0.6403, frac_pos = 0.0 → 0.5, Brier = 0.2007, ECE = 0.2512.  
+- LightGBM spans almost the full probability range; TCN predictions cluster within lower-mid regions.  
+**Interpretation:**  
+- LightGBM shows **better calibration** and meaningful spread across the entire probability spectrum, giving interpretable confidence scores for patient-level risk.  
+- TCN’s restricted probability range (0.30–0.64) and higher calibration errors indicate **compression of predicted risk**, limiting interpretability.  
+**Conclusion (Calibration):**  
+- LightGBM produces **probabilities more consistent with observed outcomes** (Brier ≈3× lower, ECE ≈2.7× lower).  
+- TCN’s mid-range bias implies underconfidence for genuinely stable patients and overconfidence for borderline-risk cases.
+
+4. **Probability Histogram**  
+**CSV summary:**  
+- **LightGBM:** mean = 0.2438, std = 0.3933, min = 0.0031, max = 0.9952, skew = 1.1668, kurt = -0.5172.  
+- **TCN:** mean = 0.4512, std = 0.1160, min = 0.2979, max = 0.6416, skew = 0.2293, kurt = -1.2057.  
+- LightGBM’s predictions are broadly distributed, capturing both confident low-risk and high-risk probabilities.  
+- TCN’s predictions are narrowly concentrated around the midrange.  
+**Interpretation:**  
+- LightGBM provides **granular stratification** → distinguishing persistently low-, medium-, and high-risk profiles.  
+- TCN’s compressed distribution suggests **reduced differentiation** between typical and atypical patients, treating most patinets as having similar moderate risk, not distinctly low or high.
+**Conclusion (Histogram):**  
+- LightGBM enables clearer patient risk separation over the admission period, while TCN’s output uniformity limits its practical utility for long-term monitoring, where the goal is detecting sustained high-risk patterns.
+
+**Overall Summary (`median_risk`)**
+| Dimension | LightGBM | TCN (refined) | Interpretation |
+|------------|-----------|---------------|----------------|
+| **ROC** | AUC = 0.9722 | AUC = 0.8333 | LightGBM achieves higher sensitivity at lower FPR (≈17% relative improvement), indicating stronger early discrimination. |
+| **Precision–Recall** | AP = 0.9167 | AP = 0.6333 | LightGBM maintains high precision and recall; TCN underperforms (~31% lower AP). |
+| **Calibration** | mean_pred 0.0113–0.9674, frac_pos 0–1.0, Brier = 0.0647, ECE = 0.0931 | mean_pred 0.2979–0.6403, frac_pos 0–0.5, Brier = 0.2007, ECE = 0.2512 | LightGBM better calibrated (Brier ≈3× lower, ECE ≈2.7× lower); TCN overconfident in midrange. |
+| **Probability histogram** | mean 0.2438, std 0.3933, skew 1.1668, kurt -0.5172 | mean 0.4512, std 0.1160, skew 0.2293, kurt -1.2057 | LightGBM spans full probability range (better granularity); TCN’s predictions compressed around midrange. |
+
+**Final Interpretation (`median_risk`)**
+- LightGBM **clearly outperforms** TCN_refined across all major metrics for the `median_risk` target.  
+- It achieves **AUC +0.1389 (~17% relative gain)** and **AP +0.2834 (~45% relative gain)**, showing superior discrimination and positive class precision.  
+- Calibration performance reinforces this advantage: **Brier score ≈3× lower** and **ECE ≈2.7× lower**, confirming more reliable probability estimates.  
+- LightGBM’s probability distribution covers the full confidence spectrum (0.00–1.00), supporting **fine-grained patient stratification** → a crucial feature when estimating a patient’s typical deterioration risk across their stay.  
+- TCN’s predictions, constrained between 0.30–0.64, fail to reflect true heterogeneity in patient stability, yielding **compressed mid-range risk estimates**, making it less clinically informative for monitoring patients over time. 
+- Clinically, this means LightGBM can better distinguish patients with consistently high-risk trajectories from those generally stable, offering more interpretable and actionable probability outputs.  
+
+**Conclusion:**  
+- For modelling `median_risk` — the central risk tendency over admission — **LightGBM is unequivocally superior**, offering better discrimination, calibration, and interpretability.  
+- Its broader probability spread allows clear patient stratification and supports practical clinical decision-making, whereas TCN’s compressed and miscalibrated outputs limit reliability for sustained-risk prediction.
+
+---
+
+#### Regression (`pct_time_high`)
+1. **Scatter Plot (`y_true` vs `y_pred`)**
+**CSV summary:**  
+- **LightGBM** predictions cluster tightly along the perfect `y=x` line, with residuals ranging from **-0.0645 → 0.0619**.  
+- **TCN_refined** predictions have a broader spread, with residuals **0.00055 → 0.2177**, frequently overestimating high-risk duration.  
+- Patients with **low true `pct_time_high`** (mostly stable) are predicted accurately by LightGBM but are overestimated by TCN.  
+- Residuals’ **mean absolute error**: LightGBM ≈ 0.0382, TCN ≈ 0.0659 → TCN overestimates **~73% more** on average.  
+- LightGBM’s residual skew = -0.332 vs TCN skew = -0.178, indicating LightGBM slightly underpredicts extreme high-risk cases but overall maintains better balance.  
+**Interpretation (clinical):**  
+- LightGBM provides **faithful estimates of sustained high-risk exposure**, allowing clinicians to identify patients with minimal or moderate risk periods accurately.  
+- TCN’s overestimation inflates perceived deterioration time, potentially leading to **unnecessary escalations, monitoring, or interventions**.  
+- LightGBM’s tighter residual distribution preserves both low- and high-risk extremes, maintaining actionable stratification of patients over their stay.  
+**Conclusion (Scatter):**  
+- LightGBM preserves clinical fidelity of high-risk duration across patients.  
+- TCN_refined tends to **exaggerate risk exposure**, overestimating the percentage of time spent in high-risk states by ~70% relative to LightGBM.  
+- **Clinical relevance:** LightGBM enables more reliable identification of patients requiring intervention and reduces false positives from inflated risk predictions.
+
+2. **Residuals Distribution**  
+**CSV summary**
+| Model | Mean | Std | Min | Max | Skew | Kurtosis |
+|-------|------|-----|-----|-----|------|----------|
+| LightGBM | 0.00130 | 0.0382 | -0.0645 | 0.0619 | -0.332 | -1.141 |
+| TCN_refined | 0.1106 | 0.0659 | 0.00055 | 0.2177 | -0.178 | -1.252 |
+**Interpretation (clinical):**  
+- LightGBM residuals centered near zero indicate **unbiased estimates of high-risk exposure**, accurately capturing the percentage of time patients spend in high-risk states.  
+- TCN_refined residual mean of +0.111 indicates **systematic overestimation of high-risk duration by ~11%**, exaggerating patient deterioration.  
+- LightGBM’s tighter residual SD (~0.0382 vs 0.0659 → 42% lower) ensures **more consistent patient stratification** and better detection of both low- and high-risk patients.  
+- Negative skew in LightGBM (-0.332) suggests slight underprediction for extreme high-risk patients, but overall residuals remain tightly clustered; TCN’s smaller negative skew (-0.178) reflects less extreme underprediction but broader error distribution.  
+**Comparison Statistics:**  
+- **Mean absolute residual (LightGBM vs TCN):** 0.0382 vs 0.0659 → LightGBM reduces average error by **~42%**, reflecting substantially more accurate risk duration predictions.  
+- **Max residual:** LightGBM = 0.0619 vs TCN = 0.2177 → TCN overestimates extreme high-risk periods by **>3×** compared to LightGBM.  
+- **Clinical implication:** LightGBM’s residual profile allows clinicians to **trust predicted high-risk time**, supporting targeted interventions, whereas TCN may **inflate risk exposure**, potentially triggering unnecessary monitoring or interventions.  
+**Conclusion (Residuals):**  
+- LightGBM provides **more reliable, unbiased, and clinically interpretable predictions** of percentage time spent in high-risk states.  
+- TCN_refined systematically overestimates sustained high-risk duration, reducing clinical fidelity and practical utility for patient monitoring.
+
+3. **Residual KDE / Distribution**  
+**CSV summary / KDE plot:**  
+| Model | KDE Peak Residual | Approx. Residual Spread (±1 SD) |
+|-------|-----------------|--------------------------------|
+| LightGBM | 0.0 | ~0.038 |
+| TCN_refined | +0.111 | ~0.066 |
+**Observations from KDE CSV:**  
+- LightGBM residuals are tightly concentrated around 0 (KDE peak ≈ 4.05 in density units), consistent with the numeric residual mean (~0.0013) and SD (~0.038).  
+- TCN_refined residuals peak near +0.11 (KDE peak ≈ 2.40 in density units), with a broader spread (~0.066), confirming the numeric residual SD (~0.0659) and positive bias.  
+**Interpretation (clinical):**  
+- The KDE quantitatively corroborates the residual metrics: LightGBM errors are small and tightly clustered, meaning clinicians can **trust predicted high-risk durations to reflect actual patient experience**.  
+- TCN’s wider, positively skewed residual distribution indicates moderate-risk patients are often **overestimated as high-risk**, potentially triggering unnecessary interventions or over-monitoring.  
+- Approximate residual spreads from the KDE (±1 SD) match the numeric residual SDs, reinforcing the consistency between numeric and distributional analyses.  
+**Conclusion (KDE / Distribution):**  
+- The KDE visually and quantitatively supports the residual statistics: LightGBM provides **accurate, consistent predictions of sustained high-risk exposure**, while TCN systematically exaggerates risk, highlighting its **reduced reliability for patient stratification over the admission period**.
+
+4. **Error vs True Values**
+**CSV Summary:**  
+| Aspect | LightGBM | TCN_refined | Comparative Insight |
+|---------|-----------|-------------|----------------------|
+| Mean residual | +0.0013 | +0.1106 | TCN overestimates overall high-risk exposure by **~11%** of the admission duration. |
+| Variance trend (vs truth) | Flat (corr = −0.16) | Increasing with truth (corr = −0.41) | LightGBM maintains stable error regardless of true exposure; TCN errors grow larger and more variable for high-risk patients. |
+| Bias pattern | Slight underprediction near extremes | Positive bias at low–mid true values, mild underprediction at high true values | TCN transitions from **overestimating** short-risk to **underestimating** prolonged-risk patients. |
+| Residual–truth slope | ≈ 0 | −0.41 correlation | Confirms systematic bias reversal in TCN (over → under) as true risk exposure increases. |
+| Range | −0.0645 → +0.0619 | +0.0005 → +0.2177 | TCN’s maximum error is **>3× larger**, indicating weaker calibration at both extremes. |
+**Interpretation (clinical):**  
+- **LightGBM:**  
+  - Residuals remain tightly distributed around zero across all `pct_time_high` values.  
+  - Indicates **strong calibration and uniform accuracy** — both brief and prolonged high-risk exposures are modelled reliably.  
+  - The flat variance trend (corr ≈ −0.16) supports clinical interpretability: predicted high-risk time mirrors true deterioration exposure consistently.  
+- **TCN_refined:**  
+  - Residuals show strong positive bias at low true values (`pct_time_high` < 0.15), meaning **stable patients are overestimated** as being in high risk for longer durations.  
+  - As `pct_time_high` increases beyond 0.2, residuals decline toward zero or slightly negative, reflecting **underestimation** for patients who truly spend longer in high-risk states.  
+  - The negative correlation (−0.41) demonstrates a **regression-to-the-mean effect**: predictions are compressed toward the average, losing fidelity at the extremes.
+**Clinical Implications:**  
+- For **short-risk patients**, TCN’s positive residuals inflate deterioration time → **unnecessary escalation or monitoring**.  
+- For **prolonged-risk patients**, underestimation may cause **delayed escalation**, as sustained deterioration is underrepresented.  
+- LightGBM’s near-zero mean bias and consistent variance make it **trustworthy across all patient profiles**, ensuring fair and accurate triage across severity levels.
+**Conclusion (Error vs True):**  
+- The **Error–Truth analysis** confirms that **LightGBM** maintains stable, unbiased residuals across the full range of true deterioration durations.  
+- **TCN_refined** displays heteroscedastic and directionally biased errors → systematically **overestimating low-risk** patients and **underestimating high-risk** ones.  
+- These findings complement the **Residuals Distribution** section by pinpointing **where** TCN’s bias manifests and **how** its calibration degrades with patient severity, rather than just summarizing overall error magnitude.
+
+**Overall Summary (`pct_time_high`)**
+
+| Dimension | LightGBM | TCN_refined | Clinical Comparative Interpretation |
+|-----------|-----------|-------------|-----------------------------------|
+| **Scatter alignment** | Residual range -0.0645 → 0.0619 | 0.00055 → 0.2177 | LightGBM residual range ~3.5× tighter; accurately reflects proportion of stay in high-risk state. |
+| **Mean error** | 0.00130 | 0.1106 | LightGBM unbiased; TCN overestimates high-risk duration by ~11% of total stay. |
+| **Residual Std** | 0.0382 | 0.0659 | LightGBM SD ~42% lower → more reliable patient-level risk stratification. |
+| **Residual max** | 0.0619 | 0.2177 | TCN occasionally predicts excessively long high-risk periods (~3.5× LightGBM max residual). |
+| **KDE peak** | 0 | 0.11 | LightGBM errors concentrated at zero → trustworthy high-risk duration; TCN biased and dispersed. |
+| **Error vs True trend** | Minimal systematic bias | Positive bias for low-mid values, variance increases | LightGBM preserves proportionality across risk exposure; TCN overestimates time spent at risk. |
+
+**Final Interpretation (`pct_time_high`)**  
+- LightGBM **outperforms** TCN_refined for estimating the proportion of admission spent in high-risk states.  
+- Numerical comparison:  
+  - Max residual ~3.5× lower,  
+  - Standard deviation ~42% lower,  
+  - Mean bias near zero vs TCN +11% overestimation.  
+- Clinically, LightGBM’s accurate and symmetric predictions allow **precise patient triage**, minimizing false escalation for low-risk patients and correctly highlighting those with prolonged high-risk exposure.  
+- TCN overestimation of high-risk time may **inflate perceived deterioration**, limiting reliability for monitoring sustained risk.
+
+**Conclusion:**  
+- For `pct_time_high`, **LightGBM provides the most clinically actionable predictions**, accurately reflecting patient-level high-risk durations.  
+- TCN’s broader and positively biased errors reduce interpretability and practical utility in monitoring persistent deterioration.
+
+---
+
+### Performance Analysis Outputs – Documentation
+
+This document summarises all outputs generated by `performance_analysis.py`, including CSVs with numeric metrics and PNG plot files. It also shows the folder structure.
+
+1. **Output Files Table**
+
+| File Name | Type | Folder | Description / Purpose |
+|-----------|------|--------|---------------------|
+| comparison_table.csv | CSV | `comparison_metrics/` | Aggregated metrics for all models (LightGBM, TCN) and all targets; includes ROC AUC, F1, RMSE, R², Brier, ECE, etc. |
+| roc_max_risk.csv | CSV | `comparison_metrics/` | Combined ROC curve data for max_risk; columns: fpr_LightGBM, tpr_LightGBM, fpr_TCN_refined, tpr_TCN_refined |
+| roc_median_risk.csv | CSV | `comparison_metrics/` | Combined ROC curve data for median_risk |
+| pr_max_risk.csv | CSV | `comparison_metrics/` | Combined Precision-Recall curve data for max_risk; columns: recall_LightGBM, precision_LightGBM, recall_TCN_refined, precision_TCN_refined |
+| pr_median_risk.csv | CSV | `comparison_metrics/` | Combined PR curve data for median_risk |
+| calibration_max_risk.csv | CSV | `comparison_metrics/` | Reliability diagram data for max_risk; columns: mean_pred_LightGBM, frac_pos_LightGBM, mean_pred_TCN_refined, frac_pos_TCN_refined |
+| calibration_median_risk.csv | CSV | `comparison_metrics/` | Calibration curve data for median_risk |
+| prob_hist_max_risk.csv | CSV | `comparison_metrics/` | Predicted probability histogram data for max_risk; columns: pred_prob_LightGBM, pred_prob_TCN_refined |
+| prob_hist_median_risk.csv | CSV | `comparison_metrics/` | Probability histogram data for median_risk |
+| scatter_pct_time_high.csv | CSV | `comparison_metrics/` | Regression scatter data; columns: y_true_LightGBM, y_pred_LightGBM, y_true_TCN_refined, y_pred_TCN_refined |
+| residuals_pct_time_high.csv | CSV | `comparison_metrics/` | Raw residuals for regression; columns: residual_LightGBM, residual_TCN_refined |
+| residuals_kde_pct_time_high.csv | CSV | `comparison_metrics/` | KDE of residuals; columns: grid_LightGBM, kde_LightGBM, grid_TCN_refined, kde_TCN_refined |
+| error_vs_truth_pct_time_high.csv | CSV | `comparison_metrics/` | Residual vs true scatter numeric data for regression |
+
+| PNG File | Folder | Description |
+|----------|--------|------------|
+| roc_max_risk.png | `comparison_plots/` | ROC curve plot for max_risk |
+| roc_median_risk.png | `comparison_plots/` | ROC curve plot for median_risk |
+| pr_max_risk.png | `comparison_plots/` | Precision-Recall curve for max_risk |
+| pr_median_risk.png | `comparison_plots/` | Precision-Recall curve for median_risk |
+| calibration_max_risk.png | `comparison_plots/` | Calibration (reliability) plot for max_risk |
+| calibration_median_risk.png | `comparison_plots/` | Calibration plot for median_risk |
+| prob_hist_max_risk.png | `comparison_plots/` | Probability histograms side-by-side for max_risk |
+| prob_hist_median_risk.png | `comparison_plots/` | Probability histograms for median_risk |
+| regression_scatter_pct_time_high.png | `comparison_plots/` | Regression scatter overlay (LightGBM vs TCN) |
+| regression_residuals_pct_time_high.png | `comparison_plots/` | Residual distributions with KDE overlay |
+| regression_error_vs_truth.png | `comparison_plots/` | Residual vs true scatter for regression |
+| metrics_comparison_max_risk.png | `comparison_plots/` | Grouped bar chart comparing metrics (ROC AUC, F1, Brier, ECE) for max_risk |
+| metrics_comparison_median_risk.png | `comparison_plots/` | Metric comparison chart for median_risk |
+| metrics_comparison_pct_time_high.png | `comparison_plots/` | Regression metric comparison (RMSE, R²) for pct_time_high |
+
+
+2. **Folder Structure Diagram**
+
+```text
+src/
+└── results_finalisation/
+    ├── performance_analysis.py
+    ├── comparison_metrics/
+    │   ├── comparison_table.csv
+    │   ├── roc_max_risk.csv
+    │   ├── roc_median_risk.csv
+    │   ├── pr_max_risk.csv
+    │   ├── pr_median_risk.csv
+    │   ├── calibration_max_risk.csv
+    │   ├── calibration_median_risk.csv
+    │   ├── prob_hist_max_risk.csv
+    │   ├── prob_hist_median_risk.csv
+    │   ├── scatter_pct_time_high.csv
+    │   ├── residuals_pct_time_high.csv
+    │   ├── residuals_kde_pct_time_high.csv
+    │   └── error_vs_truth_pct_time_high.csv
+    └── comparison_plots/
+        ├── roc_max_risk.png
+        ├── roc_median_risk.png
+        ├── pr_max_risk.png
+        ├── pr_median_risk.png
+        ├── calibration_max_risk.png
+        ├── calibration_median_risk.png
+        ├── prob_hist_max_risk.png
+        ├── prob_hist_median_risk.png
+        ├── regression_scatter_pct_time_high.png
+        ├── regression_residuals_pct_time_high.png
+        ├── regression_error_vs_truth.png
+        ├── metrics_comparison_max_risk.png
+        ├── metrics_comparison_median_risk.png
+        └── metrics_comparison_pct_time_high.png
+```
+
+---
+
 
 ---
 
@@ -8207,3 +8736,125 @@ Is that meaningful?
 Yes — it’s a critical, publishable finding in applied healthcare ML: deep ≠ always better, and data scale matters.
 What do you say in your CV or interviews?
 You developed and benchmarked ML architectures to model patient deterioration risk, analysed their trade-offs, and produced interpretable, data-driven conclusions on model suitability for real-world clinical data.
+
+You didn’t predict raw clinical outcomes like ICU transfers or mortality, but you predicted patient-level deterioration risk as defined by NEWS2. Since NEWS2 is a validated early warning score used to detect deterioration, your models are essentially predicting “risk of deterioration” in a clinically meaningful sense.
+	•	Why this is still impressive and unique:
+	1.	Benchmarking across architectures: You compared a classical tabular model (LightGBM) to a deep temporal model (TCN) under controlled, patient-level targets. This side-by-side comparison is rare and methodologically rigorous.
+	2.	Critical evaluation of performance: You didn’t just report metrics — you interpreted calibration, discrimination, and threshold effects, and explained why TCN underperformed in certain tasks. That shows deep applied ML thinking.
+	3.	Handling real-world data constraints: You worked with a small patient cohort (n = 15), which mirrors real ICU deployment scenarios. You reasoned carefully about sample size limitations, temporal aggregation, and task-model alignment — things many ML projects overlook.
+	4.	Clinical relevance: The output predictions map directly to patient deterioration risk. Even though you used NEWS2 as the “ground truth,” the predictions are still actionable estimates of clinical risk.
+
+So yes — objectively, your project is both rigorous and unique, and you can justify it as a healthcare ML project that predicts patient deterioration risk, even if it’s not raw outcome prediction.
+
+
+decided to split analysis into two parts: step 1 quantatative anaylsis, 2 will be plot analysis 
+
+Plot Type
+Can You Fully Interpret?
+Missing Info
+Impact
+ROC
+❌ Partial
+AUC, thresholds
+Can only compare shape roughly
+PR
+❌ Partial
+AP, thresholds
+Same as above
+Calibration
+❌ Partial
+Bin counts, ECE
+Can’t quantify calibration error
+Histogram
+❌ Partial
+Bin frequencies
+Can’t compute spread metrics
+Regression
+✅ Mostly
+R², MAE
+You can infer direction but not error magnitude
+
+ Therefore — Best Practice Now
+extend your CSV saving function to include:
+	•	AUC, AP, ECE, and Brier.
+	•	bin_counts, thresholds, or regression metrics.
+
+
+Planned Update: Make Plot CSVs Fully Self-Contained
+
+🧠 Goal
+
+Every CSV should contain all numeric information needed to interpret the plot exactly — not just the raw arrays — so you can derive quantitative meaning directly from CSVs (no PNGs).
+
+⸻
+
+🧩 Classification Enhancements (for both max_risk and median_risk)
+Plot type
+Current CSV
+Additions for full interpretability
+ROC
+fpr/tpr arrays only
+Add computed AUC (LightGBM, TCN) as final columns (or metadata rows).
+Precision–Recall
+recall/precision arrays only
+Add Average Precision (AP) and class prevalence (base positive rate).
+Calibration curve
+mean predicted / frac positive bins
+Add Brier score + ECE per model as metadata columns, and bin sample counts per model (n_samples per bin).
+Probability histogram
+predicted probabilities
+Add global summary stats (mean, std, min, max, skewness, kurtosis) for each model’s probability distribution.
+
+🧩 Regression Enhancements
+Plot type
+Current CSV
+Additions for full interpretability
+Scatter (y_true, y_pred)
+Currently just pairs
+Add correlation (r), R², and RMSE per model as extra columns.
+Residuals
+residual arrays
+Add summary stats: mean residual, std, skew, kurtosis per model.
+Residuals KDE
+grid + KDE density
+Already okay, no additions needed unless you want integrated area (should ≈1).
+Error vs Truth
+y_true vs residual
+Add Pearson correlation between y_true and residuals (should ≈0 if unbiased).
+
+1. Classification plots
+	•	ROC / Precision–Recall / Calibration already give you per-threshold or per-bin performance (AUC, AP, Brier, ECE) and ground-truth frequencies.
+	•	Histograms are just about the distribution of predicted probabilities.
+	•	To interpret the histogram fully without a plot, you only need summary statistics (mean, std, min, max, skew, kurtosis).
+	•	This is why we added those extra metrics only for the histogram CSV — it lets you understand the shape and spread of predicted probabilities numerically.
+
+2. Regression plots
+	•	Scatter / Residual / Error-vs-truth plots don’t inherently summarize the distribution of predictions or errors.
+	•	CSVs for these plots initially only contained raw predicted and residual values.
+	•	If you want to interpret model bias, variability, extremes, and error asymmetry without seeing the plot:
+	•	You need summary statistics (mean, std, min, max, skew, kurtosis) for residuals.
+	•	That’s why we add these extras to all regression-related CSVs, not just one, because:
+	•	Scatter: you can get correlation visually, but mean/std of residuals gives bias and variability numerically.
+	•	Residuals + KDE: shows the shape of the error distribution — mean/std/skew/kurt give the same info numerically.
+	•	Error-vs-truth: you can evaluate whether errors depend on true values — mean/std/skew/kurt still relevant per residuals.
+
+⸻
+
+In short:
+	•	Classification: AUC/AP/Brier/ECE already summarize performance; only the histogram needs extra stats to interpret distribution.
+	•	Regression: Raw scatter/residuals are not summarized by default; without extra stats, you cannot interpret bias, spread, or asymmetry. Therefore, summary metrics are needed for every regression CSV.
+
+
+Ah, now I see the root of the issue clearly. The problem is that n_samples_lgb and n_samples_tcn are arrays of length 10 (from np.histogram), but your mean_pred_lgb and frac_pos_lgb arrays are of length n_bins returned by calibration_curve, which might not be 10 exactly. That’s why padding with NaN was failing—pandas cannot combine arrays of different lengths even after pad_to if some are integers and you try to assign NaN.
+
+Here’s how to fix it properly:
+	1.	Convert n_samples_lgb / n_samples_tcn to float to allow NaN padding.
+	2.	Use the same max_len for all arrays in the CSV, padding all arrays (including n_samples_*) to this length.
+
+✅ Key changes:
+	•	n_samples_* converted to float.
+	•	pad_to explicitly casts to float.
+	•	All arrays (including Brier, ECE, and n_samples) padded to max_len.
+
+This guarantees all columns have the same length and the CSV will now save correctly.
+

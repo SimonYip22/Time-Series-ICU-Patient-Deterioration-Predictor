@@ -1,8 +1,21 @@
 # Neural Network (TCN) Time-Series ICU Deterioration Predictor (PyTorch & LightGBM) 📈⏳ 
 
-Python-based ICU deterioration predictor leveraging advanced time-series ML modeling using TCN Neural Network (PyTorch) on timestamp-level vitals and LightGBM on patient-level features, capturing temporal trends, missingness, and sequence dynamics. 
+Early warning system predicting ICU patient deterioration on MIMIC-IV Clinical Demo v2.2 dataset (100 patients), framework comparing LightGBM vs Temporal Convolutional Network across 3 targets: peak deterioration (max_risk), typical risk (median_risk), and proportion of admission in high-risk states (pct_time_high).
 
-Benchmarked against NEWS2, with real-time alerts and dual CLI/FastAPI deployment for real-time monitoring.
+Temporal and aggregated feature engineering with clinical-validity-aware missing data handling, using custom NEWS2-derived ground-truth values (GCS/LOC mapping, supplemental O₂ and CO₂ retainer custom logic).
+
+TCN trained on 171 temporal-features x 96 timestamps, 24hr rolling windows across 8 vital parameters, with 3-layer TemporalBlock stack, kernel=3, dropout=0.2, head_hidden=64, batch=32, 50 epochs, early stopping at epoch 10;
+
+LightGBM trained on 40 aggregated patient-features with 5-fold stratified CV, with hyperparameter tuning.
+
+TCN greater sensivity on max_risk (AUC +9.3%, AP +1.25%), LightGBM greater reliability and calibration on median_risk (AUC +17%, Brier ↓68%, ECE ↓63%) and more precise pct_time_high (RMSE ↓32%, R² +44%, residual SD ↓42%).
+
+evaluating interpretability (SHAP) versus saliency-based explanations for clinical adoption.
+
+Deployed, reproducible auditable pipeline with deployment-lite, and full documentation for clinical validation.
+
+TCN_refined captures short-term acute events with rapid early detection, whereas LightGBM provides robust, calibrated estimates of sustained deterioration exposure; supports ICU triage, continuous monitoring, and escalation decisions with quantified, actionable confidence.
+TCN excels at short-term acute events with rapid detection while LightGBM provides reliable long-term estimates of sustained deterioration exposure, suggesting ensemble approach for production deployment.
 
 Portfolio-ready, deployed, and clinically-informed.
 
