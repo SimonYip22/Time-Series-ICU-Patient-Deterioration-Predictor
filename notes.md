@@ -6786,6 +6786,11 @@ src/
 
 ---
 
+### Goals
+
+
+### What We Did
+
 ### Comparison Metrics Definitions
 #### Overview
 - This section defines all key metrics used for model comparison between **LightGBM** and **TCN_refined**, explaining what each measures, why it was chosen, and how it was computed within the project workflow.  
