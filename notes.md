@@ -6782,7 +6782,7 @@ src/
 
 ---
 
-## Day 32-34 Notes - Start Phase 6: Visualisation (Step 1)
+## Day 32-35 Notes - Start Phase 6: Visualisation (Step 1)
 
 ---
 
@@ -7763,25 +7763,69 @@ src/
 
 | Dimension | LightGBM | TCN_refined | Clinical Comparative Interpretation |
 |-----------|-----------|-------------|-----------------------------------|
-| **Scatter alignment** | Residual range -0.0645 → 0.0619 | 0.00055 → 0.2177 | LightGBM residual range ~3.5× tighter; accurately reflects proportion of stay in high-risk state. |
-| **Mean error** | 0.00130 | 0.1106 | LightGBM unbiased; TCN overestimates high-risk duration by ~11% of total stay. |
-| **Residual Std** | 0.0382 | 0.0659 | LightGBM SD ~42% lower → more reliable patient-level risk stratification. |
-| **Residual max** | 0.0619 | 0.2177 | TCN occasionally predicts excessively long high-risk periods (~3.5× LightGBM max residual). |
-| **KDE peak** | 0 | 0.11 | LightGBM errors concentrated at zero → trustworthy high-risk duration; TCN biased and dispersed. |
-| **Error vs True trend** | Minimal systematic bias | Positive bias for low-mid values, variance increases | LightGBM preserves proportionality across risk exposure; TCN overestimates time spent at risk. |
+| **Scatter alignment** | Residual range −0.0645 → 0.0619 | 0.00055 → 0.2177 | LightGBM residuals ~3.5× tighter; predictions closely follow `y=x`, reflecting true proportion of stay in high-risk state. |
+| **Mean error** | 0.0013 | 0.1106 | LightGBM effectively unbiased; TCN systematically overestimates high-risk duration by ~11% of the admission. |
+| **Residual Std** | 0.0382 | 0.0659 | LightGBM SD ~42% lower → more consistent patient-level risk stratification; TCN shows greater variability, especially at high true values. |
+| **Residual max** | 0.0619 | 0.2177 | TCN occasionally predicts excessively long high-risk periods (~3.5× LightGBM max), indicating weaker calibration at extremes. |
+| **KDE peak** | 0 | 0.11 | LightGBM errors tightly concentrated at zero → high clinical reliability; TCN biased toward overestimation for low-to-mid pct_time_high patients. |
+| **Error vs True trend** | Minimal systematic bias | Positive bias for low-to-mid values, slight underestimation at high values | LightGBM maintains proportionality across all risk levels; TCN displays regression-to-mean bias, compressing extremes. |
+
 
 **Final Interpretation (`pct_time_high`)**  
-- LightGBM **outperforms** TCN_refined for estimating the proportion of admission spent in high-risk states.  
-- Numerical comparison:  
+- **LightGBM:**  
+  - Residuals are consistently centered around zero across the full spectrum of true high-risk duration (`pct_time_high`).  
+  - Flat variance and tight residual distribution support **strong calibration**, allowing clinicians to trust predicted high-risk time for both brief and prolonged deterioration episodes.  
+  - KDE peak at zero confirms high prediction fidelity; extreme patients are not systematically over- or under-predicted.  
+- **TCN_refined:**  
+  - Positive residuals dominate at low-to-mid true values, indicating **systematic overestimation** for patients with short high-risk periods.  
+  - At high true values, residuals slightly decrease or invert, showing **underestimation** of prolonged high-risk exposure.  
+  - Error variance increases with higher true values, highlighting **heteroscedasticity** and reduced reliability for patients at the extremes.  
+  - Overall, TCN exhibits a **regression-to-the-mean effect**, flattening true extremes and compressing predicted risk durations toward the population average.
+- **Clinical Implications:**  
+  - LightGBM enables precise **triage and prioritisation**, minimizing false escalation for stable patients while correctly highlighting patients with sustained high-risk states.  
+  - TCN’s overestimation of low-risk patients may trigger unnecessary monitoring or interventions, while underestimation of high-risk patients could delay critical escalation.
+
+**Conclusion (`pct_time_high`)**
+- **LightGBM consistently outperforms TCN_refined** for predicting the proportion of admission spent in high-risk states.  
+- Quantitative advantages:  
   - Max residual ~3.5× lower,  
   - Standard deviation ~42% lower,  
-  - Mean bias near zero vs TCN +11% overestimation.  
-- Clinically, LightGBM’s accurate and symmetric predictions allow **precise patient triage**, minimizing false escalation for low-risk patients and correctly highlighting those with prolonged high-risk exposure.  
-- TCN overestimation of high-risk time may **inflate perceived deterioration**, limiting reliability for monitoring sustained risk.
+  - Mean bias near zero versus TCN +11% overestimation.  
+- LightGBM’s **tight, symmetric, and unbiased residuals** ensure clinically actionable predictions, reliable stratification, and preservation of patient-level deterioration dynamics.  
+- TCN_refined shows **broader, positively biased, and heteroscedastic errors**, reducing interpretability and practical utility for monitoring sustained high-risk exposure.  
+- **Clinical takeaway:** For `pct_time_high`, LightGBM delivers the **most reliable, calibrated, and actionable predictions**, while TCN’s systematic biases and error variability limit its clinical applicability.
 
-**Conclusion:**  
-- For `pct_time_high`, **LightGBM provides the most clinically actionable predictions**, accurately reflecting patient-level high-risk durations.  
-- TCN’s broader and positively biased errors reduce interpretability and practical utility in monitoring persistent deterioration.
+---
+
+### Final Integrated Analysis and Conclusion
+#### Overall Comparison Across All Targets
+| Target | Best Model | Key Quantitative Advantages | Key Interpretive Insights |
+|--------|------------|----------------------------|--------------------------|
+| **max_risk** | TCN_refined | ROC AUC +0.077 vs LightGBM, AP +0.0123, ~12× higher early TPR at FPR=0 | Excels at detecting transient deterioration events; early warning sensitivity superior; probability spread compressed → aggressive detection but reduced calibration. |
+| **median_risk** | LightGBM | ROC AUC +0.1389 (~17% relative), AP +0.2834 (~45% relative), Brier ≈3× lower, ECE ≈2.7× lower | Superior at identifying sustained physiological instability; well-calibrated, interpretable probabilities; TCN underperforms due to temporal-target mismatch. |
+| **pct_time_high** | LightGBM | RMSE 0.038 vs 0.056 (~48% lower), R² 0.793 vs 0.548, mean residual ~0 vs 0.111, residual SD ~42% lower | Predicts proportion of high-risk exposure accurately; minimal bias; residuals tightly centered → reliable patient-level stratification; TCN overestimates low-risk and underestimates prolonged-risk patients. |
+
+**Integrated Insights**
+1. **Task–Model Alignment**
+   - Temporal models (TCN) excel at **dynamic, short-term event detection** (`max_risk`), capturing sharp transient spikes.
+   - Classical tabular models (LightGBM) excel at **aggregate, patient-level predictions** (`median_risk`, `pct_time_high`), leveraging summary statistics for stable and calibrated outputs.
+2. **Calibration vs Discrimination**
+   - LightGBM demonstrates **better calibration** across all targets (Brier, ECE), supporting probabilistic interpretability for clinical decision-making.
+   - TCN provides **higher discrimination** for acute events but suffers from **heteroscedastic errors** and systematic bias in aggregated measures.
+3. **Residual Patterns**
+   - LightGBM residuals: tightly centered, symmetric, minimal heteroscedasticity → consistent clinical reliability.
+   - TCN residuals: overestimation of low-risk, underestimation of high-risk, broader spread → regression-to-mean bias.
+4. **Practical Clinical Implications**
+   - **LightGBM:** reliable for patient-level triage, monitoring cumulative high-risk exposure, and assigning persistent risk scores.
+   - **TCN_refined:** valuable for early-warning systems and detecting transient deterioration events, but requires careful calibration for aggregate or long-term predictions.
+   - Combining models could leverage strengths: TCN for early alerts, LightGBM for stable risk stratification.
+
+#### Final Conclusion
+- **Best overall performer:** **LightGBM** for multi-target ICU deterioration prediction.  
+- **Strengths:** Calibrated, interpretable, robust for small-sample, patient-level predictions; outperforms TCN on sustained and cumulative risk targets (`median_risk`, `pct_time_high`).  
+- **TCN_refined:** Outperforms LightGBM in **early detection of acute deterioration events** (`max_risk`) due to temporal sensitivity but is less reliable for aggregate or long-term outcomes.  
+- **Real-world context:** Both models have complementary roles; **LightGBM** ensures dependable daily patient-level monitoring, while **TCN** can provide additional alerting for sudden risk spikes.  
+- **CV/Publication-ready insight:** This comparative study quantifies model performance with full metrics (AUC, AP, RMSE, R², residual distribution, calibration scores), demonstrates actionable differences in temporal vs static modelling, and highlights practical deployment considerations in ICU deterioration prediction.
 
 ---
 
