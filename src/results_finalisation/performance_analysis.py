@@ -103,7 +103,7 @@ TCN_COLS = {
     "prob_max": "prob_max",
     "y_true_median": "y_true_median",
     "prob_median": "prob_median",
-    # Important: use calibrated *raw* predictions for regression comparison with LightGBM
+    # Important: use raw predictions for regression comparison with LightGBM
     "y_true_reg": "y_true_reg",
     "y_pred_reg_raw": "y_pred_reg_raw"
 }
@@ -347,7 +347,7 @@ Notes:
 - For classification targets we merge JSON (AUC/F1/...) with computed Brier & ECE (from CSV).
 - For regression we pull precomputed metrics from JSON:
     - LightGBM uses "pct_time_high" key
-    - TCN uses "pct_time_high_raw_cal" key (explicit calibrated raw metric as requested)
+    - TCN uses "pct_time_high_raw_cal" key (explicit calibrated raw metric)
 - The table is intentionally compact: one row per (model, target) with key metrics.
 """
 print("Building comparison metrics table...")
@@ -731,9 +731,9 @@ ax.set_xlabel("True pct_time_high")
 ax.set_ylabel("Predicted pct_time_high")
 ax.set_title("Regression Scatter — pct_time_high")
 ax.legend()
-fig.savefig(PLOTS_OUT_DIR / "regression_scatter_pct_time_high.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "scatter_pct_time_high.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved regression scatter → {PLOTS_OUT_DIR / 'regression_scatter_pct_time_high.png'}")
+print(f"Saved regression scatter → {PLOTS_OUT_DIR / 'scatter_pct_time_high.png'}")
 
 # ---- Residual histograms + KDE (side-by-side) ----
 fig, axs = plt.subplots(1, 2, figsize=(12, 4))
@@ -752,9 +752,9 @@ axs[1].set_title("TCN_refined residuals (pred - true)")
 axs[1].set_xlabel("Residual")
 
 fig.suptitle("Residual Distributions — pct_time_high")
-fig.savefig(PLOTS_OUT_DIR / "regression_residuals_pct_time_high.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "residuals_pct_time_high.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved residual distributions → {PLOTS_OUT_DIR / 'regression_residuals_pct_time_high.png'}")
+print(f"Saved residual distributions → {PLOTS_OUT_DIR / 'residuals_pct_time_high.png'}")
 
 # ---- Error vs Truth (residual vs true) ----
 fig, ax = plt.subplots(figsize=(6, 5))
@@ -765,9 +765,9 @@ ax.set_xlabel("True pct_time_high")
 ax.set_ylabel("Residual (pred - true)")
 ax.set_title("Error vs Truth — pct_time_high")
 ax.legend()
-fig.savefig(PLOTS_OUT_DIR / "regression_error_vs_truth.png", dpi=150, bbox_inches="tight")
+fig.savefig(PLOTS_OUT_DIR / "error_vs_truth_pct_time_high.png", dpi=150, bbox_inches="tight")
 plt.close(fig)
-print(f"Saved error-vs-truth → {PLOTS_OUT_DIR / 'regression_error_vs_truth.png'}")
+print(f"Saved error-vs-truth → {PLOTS_OUT_DIR / 'error_vs_truth_pct_time_high.png'}")
 
 print("Regression plots and numeric data saved successfully.")
 
