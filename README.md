@@ -1,4 +1,4 @@
-# Neural Network (TCN) Time-Series ICU Deterioration Predictor (PyTorch & LightGBM) 📈⏳ 
+# Time-Series ICU Patient Deterioration Predictor 📉⏳ 
 
 Early warning system predicting ICU patient deterioration on MIMIC-IV Clinical Demo v2.2 dataset (100 patients), framework comparing LightGBM vs Temporal Convolutional Network across 3 targets: peak deterioration (max_risk), typical risk (median_risk), and proportion of admission in high-risk states (pct_time_high).
 
