@@ -96,15 +96,20 @@ for target in TARGETS:
     # Select features and target values
     X_train = train_df[feature_cols]
 
-    # TreeExplainer for LightGBM
+    # --- Compute SHAP values safely using TreeExplainer ---
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X_train)
 
-    # If classification -> use SHAP for positive class only
-    if target in ["max_risk", "median_risk"]:
-        shap_array = shap_values[1]  # binary classification, SHAP returns a list of two arrays, we only are interested in the positive class (high-risk) → shap_values[1]
+    # --- Handle classifiers vs regressors correctly ---
+    if isinstance(shap_values, list):  
+        # Binary classification → two arrays (class 0, class 1), we only want the array for class 1
+        shap_array = shap_values[1]
     else:
-        shap_array = shap_values     # regression output (single array)
+        # Regression → single array
+        shap_array = shap_values
+
+    print(f"[DEBUG] Target: {target}")
+    print(f"[DEBUG] SHAP array shape: {shap_array.shape}")
 
     #---------------------------------------------------------
     # Compute mean absolute SHAP importance

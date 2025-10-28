@@ -8563,6 +8563,263 @@ src/
 
 ---
 
+### SHAP (SHapley Additive exPlanations) Explained 
+
+
+
+### SHAP Debugging and Classification Target Fix
+**Overview**
+- This document summarises the workflow, debugging, and rationale for computing SHAP (SHapley Additive exPlanations) values for the final LightGBM models (`max_risk`, `median_risk`, `pct_time_high`) trained in Phase 5. 
+- It explains why the original SHAP computation produced identical feature importance for the classifiers, the debugging process, terminal outputs, and the final correct implementation.
+1. **Background and Initial Problem**
+  **Original SHAP Computation**
+  ```python
+  explainer = shap.TreeExplainer(model)
+  shap_values = explainer.shap_values(X_train)
+
+  if target in ["max_risk", "median_risk"]:
+      shap_array = shap_values[1]  # binary classification
+  else:
+      shap_array = shap_values     # regression
+  ```
+  - When we first ran the SHAP script, the regression target (`pct_time_high`) produced reasonable results as SHAP values varied across features and patients, but both **binary classification targets** (`max_risk`, `median_risk`) produced **identical mean absolute SHAP values** across all features.
+    - The output CSV showed every feature having exactly the same `mean_abs_shap` value.
+    - All SHAP values were constant, resulting in meaningless bar plots.
+  **Logical contradiction**
+  - That is mathematically impossible under normal circumstances.
+  - If SHAP is working correctly:
+    - Each feature gets a different contribution depending on how it affects the model’s output.
+    - The mean absolute SHAP values should vary, usually by orders of magnitude.
+  - So this result violated a basic expectation of SHAP’s behaviour, which meant one of two things had to be true:
+    1. The model output was constant (all predictions identical), or
+    2. The SHAP array shape or content was wrong.
+
+Evidence
+Observation
+Logical Deduction
+Mean absolute SHAP identical across features
+All 0.09354
+SHAP must be collapsing feature dimension
+Sum of mean absolute SHAP = 0.0935
+Equals single feature value
+Confirms collapse or wrong aggregation
+Model predictions varied
+Model working fine
+SHAP computation wrong, not dataset
+Regression SHAP normal
+Problem only with classifiers
+Confirms LightGBM binary-specific issue
+→ Conclusion
+Before adding prints, we already knew from outputs that SHAP values were collapsing into a single per-feature array, not per-patient
+
+2. **Step 1 — Terminal Inspection to Diagnose the Issue**
+
+- To understand what was happening, we instrumented the script with extensive `print()` diagnostics:
+    ```python
+    print(f"[INFO] Target: {target}")
+    print(f"[INFO] X_train shape: {X_train.shape}")
+    print(f"[INFO] Number of features: {len(feature_cols)}")
+
+    print(f"[INFO] Raw shap_values type: {type(shap_values)}")
+    if target in ["max_risk", "median_risk"]:
+        print(f"[INFO] shap_values list length (classes): {len(shap_values)}")
+        print(f"[INFO] Positive class shap array shape: {shap_values[1].shape}")
+    else:
+        print(f"[INFO] Regression shap array shape: {shap_values.shape}")
+
+    print(f"[INFO] First 5 rows of SHAP array (first 5 features):\n{shap_array[:5]}")
+
+    print(f"[INFO] Mean absolute SHAP values (top 10 features):\n{shap_importance.head(10)}")
+
+    print(f"[INFO] Sum of mean absolute SHAP across all features: {mean_abs_shap.sum():.4f}")
+
+    print("Variance across patients for each feature SHAP:", np.var(shap_array, axis=0))
+    ```
+Rationale for each print:
+Print Statement
+Purpose
+X_train.shape
+Verify the input has correct shape (70 patients × 40 features).
+len(feature_cols)
+Ensure number of features matches expectations.
+type(shap_values)
+Confirm whether SHAP returned ndarray or list.
+len(shap_values)
+For classifiers, check number of class arrays returned by SHAP.
+shap_values[1].shape
+Confirm shape for positive class SHAP array.
+shap_array[:5]
+Inspect first few SHAP values for sanity.
+shap_importance.head(10)
+Check computed mean absolute SHAP values.
+np.var(shap_array, axis=0)
+Confirm there is variance across patients (avoid collapsed identical values).
+np.unique(preds)
+Verify model predictions are diverse, not constant.
+
+
+Diagnostic Findings
+
+	•	Regression: array shape (70, 40) → OK.
+	•	Classifiers: array collapsed (40,) → all features identical → problem confirmed to be SHAP handling of binary classifiers.
+
+This confirmed that classification models were returning 1D SHAP arrays, while the regression model correctly returned a 2D matrix.
+
+3. **Step 2 — Hypothesis**
+
+LightGBM’s SHAP interface differs between regression and classification:
+	•	For regression, TreeExplainer returns a (n_samples, n_features) array.
+	•	For binary classification, depending on SHAP version, it may return:
+	•	A list of two arrays: [class_0_array, class_1_array], both shaped (n_samples, n_features).
+	•	Or, under certain LightGBM/SHAP combinations, it collapses to a single 1D vector if the model output is interpreted as the raw margin rather than class probabilities.
+
+So, the likely cause:
+
+SHAP was computing raw decision values rather than per-sample probability contributions.
+
+4. **Step 3 — Attempt 1: Forcing Probability Mode (model_output="probability")**
+
+We tried to fix this by explicitly telling SHAP to output probabilities rather than raw margins:
+
+explainer = shap.TreeExplainer(model, model_output="probability")
+shap_values = explainer.shap_values(X_train)
+
+Result
+
+Failed with error:
+
+ValueError: Only model_output="raw" is supported for feature_perturbation="tree_path_dependent"
+
+Explanation
+
+TreeExplainer with default tree_path_dependent feature perturbation does not support model_output="probability". This fix was not compatible.
+SHAP’s default LightGBM explainer uses feature_perturbation="tree_path_dependent" for efficiency.
+However, in that mode, only "raw" outputs are supported. "probability" mode requires interventional perturbation, which is slower but mathematically consistent with probabilistic outputs.
+
+5. **Step 4 — Attempt 2: Switching to Interventional Mode (feature_perturbation="interventional")**
+
+We modified it to explicitly use interventional perturbation:
+
+explainer = shap.TreeExplainer(
+    model,
+    data=X_train,
+    model_output="probability",
+    feature_perturbation="interventional"
+)
+
+Result
+
+This produced a different error:
+
+AttributeError: 'TreeEnsemble' object has no attribute 'values'
+
+Explanation
+This combination triggered internal LightGBM TreeEnsemble attributes incorrectly. SHAP could not compute the expected value with this setup.
+This error is due to an incompatibility between certain LightGBM and SHAP versions (notably SHAP ≥0.45) — the internal object TreeEnsemble in LightGBM models does not expose the .values attribute that SHAP’s interventional explainer expects.
+Hence, this version combination cannot compute interventional SHAP values directly from LightGBM models.
+
+6. **Step 5 — Root Cause Confirmation via Shape Diagnostics**
+
+After the above failures, we revisited our diagnostic prints.
+
+	1.	Observation: The SHAP array for the classifiers collapsed to shape (40,) instead of (70, 40) like regression, and all mean absolute values were identical across features.
+	2.	Check model/data: Predicted probabilities and X_train were fine — the model was trained correctly, and patient features varied. (model.predict_proba(X_train)[:,1]) varied normally across patients, confirming the model itself was trained correctly.
+	3.	Tried fixes:
+	•	model_output="probability" → failed with “only raw supported” error.
+	•	feature_perturbation="interventional" → failed with TreeEnsemble .values error.
+	4.	Logical deduction: 
+  - The models and data were correct, because predicted outputs varied.
+	-	The issue was not the model, nor the X_train, but the SHAP explainer’s treatment of binary classification models.
+  - With all other possibilities exhausted, the only remaining explanation was how the SHAP TreeExplainer treats binary classifiers by default — collapsing outputs into a single 1D array (raw margin) instead of giving per-patient arrays.
+
+So yes: because all other fixes failed and everything else was verified correct, we concluded the cause had to be the SHAP explainer’s treatment of classifier outputs.
+
+
+
+7. **Step 6 — Final Fix**
+
+We changed the logic to explicitly check for classification models by testing whether shap_values is a list (as SHAP does for multi-class models):
+
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X_train)
+
+if isinstance(shap_values, list):
+    # Binary classification → two arrays (class 0, class 1)
+    shap_array = shap_values[1]
+else:
+    # Regression → single array
+    shap_array = shap_values
+
+Rationale:
+	1.	Default TreeExplainer with model_output="raw" works for both regression and binary classification.
+	2.	For classifiers, SHAP returns a list of two arrays (one per class). Using shap_values[1] ensures we get the array for the positive class (high-risk) per patient.
+	3.	Regression outputs a single array directly (70, 40).
+	4.	This restored the correct SHAP array shape (70, 40) for classifiers, enabling meaningful per-feature SHAP computation and top-10 bar plots.
+
+Why This Works
+	•	For regression → SHAP returns (n_samples, n_features) directly.
+	•	For binary classification → SHAP returns a list of two arrays, one per class.
+	•	By taking shap_values[1], we extract the SHAP values for the positive class (“high-risk”).
+	•	This ensures we use the correct per-sample, per-feature attributions.
+
+Validation
+
+The print diagnostics confirmed that the shape was now correct:
+
+[DEBUG] Target: max_risk
+[DEBUG] SHAP array shape: (70, 40)
+[DEBUG] Target: median_risk
+[DEBUG] SHAP array shape: (70, 40)
+[DEBUG] Target: pct_time_high
+[DEBUG] SHAP array shape: (70, 40)
+
+SHAP values varied meaningfully between patients and features, and the feature importances were no longer identical.
+
+8. **Conceptual Summary**
+
+Problem
+Cause
+Fix
+All classifier SHAP values identical
+SHAP collapsed LightGBM binary output to 1D raw margins
+Explicitly extract positive-class array via shap_values[1]
+model_output=“probability” error
+TreeExplainer’s default perturbation doesn’t support it
+Avoid forcing probability mode in tree_path_dependent
+interventional error
+Version mismatch between SHAP and LightGBM
+Don’t override explainer type; rely on default
+Regression worked fine
+Regression output always scalar per sample
+No change needed
+
+6. Summary of Workflow & Rationale
+	1.	Problem Observed: Classifier SHAP values collapsed → identical feature importance.
+	2.	Verified: Model training, X_train, predictions were correct.
+	3.	Attempted Fixes: model_output="probability", feature_perturbation="interventional" → both failed due to LightGBM + TreeExplainer constraints.
+	4.	Conclusion: Only remaining explanation was SHAP handling of binary classifiers (default list of class arrays).
+	5.	Final Fix: Use TreeExplainer(model) + check isinstance(shap_values, list) → select positive class.
+	6.	Terminal prints: Added comprehensive logging to verify array shape, variance, predictions, and SHAP computation correctness.
+  
+9. **Lessons Learned**
+	•	Always print shap_values shape — it immediately reveals whether SHAP is producing per-sample explanations.
+	•	SHAP for LightGBM classifiers can return either a list or single array depending on SHAP version and model output type.
+	•	Avoid forcing "probability" mode unless you also set feature_perturbation="interventional" and are using compatible versions.
+	•	Regression tasks are simpler because they always have one output, so SHAP returns a consistent 2D array.
+	•	The final fix ensures reproducible, interpretable, per-patient feature importance computation.
+
+	•	Regression vs Classification: Regression SHAP worked immediately because output is single continuous value. Binary classification returns two arrays; using only one is critical.
+	•	Collapsed array issue: Mean absolute SHAP being identical was due to collapsing the 2D array to 1D.
+	•	Debugging approach: Iterative testing with terminal outputs allowed exclusion of dataset and model issues.
+	•	Final output: Correct per-patient SHAP array (70, 40) for all targets, meaningful mean absolute SHAP values, interpretable top-10 bar plots.
+
+⸻
+
+
+---
+
+
+
 ## Interpretability 
 
 Not wasted — but contextually misplaced.
