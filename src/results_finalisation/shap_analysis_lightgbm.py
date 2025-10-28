@@ -108,14 +108,17 @@ for target in TARGETS:
         # Regression → single array
         shap_array = shap_values
 
-    print(f"[DEBUG] Target: {target}")
-    print(f"[DEBUG] SHAP array shape: {shap_array.shape}")
+    print(f"[INFO] Target: {target}")
+    print(f"[INFO] X_train shape: {X_train.shape}")
+    print(f"[INFO] SHAP array shape: {shap_array.shape}")
 
     #---------------------------------------------------------
     # Compute mean absolute SHAP importance
     #---------------------------------------------------------
     # Compute mean for target array
     mean_abs_shap = np.abs(shap_array).mean(axis=0)
+
+    print(f"[INFO] Mean |SHAP| sum: {mean_abs_shap.sum():.4f}")
 
     # Create DataFrame 
     shap_importance = pd.DataFrame({
@@ -126,25 +129,7 @@ for target in TARGETS:
     # Save numeric SHAP importance
     shap_importance.to_csv(OUTPUT_DIR / f"{target}_shap_summary.csv", index=False)
 
-    print(f"[INFO] Target: {target}")
-    print(f"[INFO] X_train shape: {X_train.shape}")
-    print(f"[INFO] Number of features: {len(feature_cols)}")
-
-    print(f"[INFO] Raw shap_values type: {type(shap_values)}")
-    if target in ["max_risk", "median_risk"]:
-        print(f"[INFO] shap_values list length (classes): {len(shap_values)}")
-        print(f"[INFO] Positive class shap array shape: {shap_values[1].shape}")
-    else:
-        print(f"[INFO] Regression shap array shape: {shap_values.shape}")
-
-    print(f"[INFO] First 5 rows of SHAP array (first 5 features):\n{shap_array[:5]}")
-
-    print(f"[INFO] Mean absolute SHAP values (top 10 features):\n{shap_importance.head(10)}")
-
-    print(f"[INFO] Sum of mean absolute SHAP across all features: {mean_abs_shap.sum():.4f}")
-
-    print("Variance across patients for each feature SHAP:", np.var(shap_array, axis=0))
-
+    # Debugging
     if target in ["max_risk", "median_risk"]:
         preds = model.predict_proba(X_train)[:, 1]  # positive class
     else:
