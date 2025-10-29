@@ -6671,7 +6671,7 @@ src/
 
 ---
 
-## Phase 6: Visualisation, Comparison & Finalisation (Steps 1-5)
+## Phase 6: Visualisation, Comparison & Finalisation (Steps 1-6)
 **Goal: To synthesise all evaluation outputs from Phase 5 into summary metrics, numerical data, visualisations, and interpretability artefacts. This phase transforms raw metrics into human-readable scientific insights, completing the machine-learning pipeline and preparing it for reporting or publication.**
 
 1. **Comparative Analysis: Create Summary Metrics (`performance_analysis.py`)**
@@ -6771,24 +6771,56 @@ src/
     - Produces a comprehensive, validated foundation → merging rigorous quantitative benchmarking with interpretable visual analytics
     - Explainability and inference analyses (Step 3) will build upon this first stage of analysis.
 
-3. **Interpretability**
-  - **Purpose**: Derive clinically meaningful insights into model behaviour and feature importance.
-  - **Planned Outputs**:
-    - **LightGBM**: 
-      - Interpretable feature importance drivers → identify dominant physiological drivers (e.g., HR, RR, SpO₂).  
-      - Simpler model = easily interpretable feature-level insights.
-    - **TCN**: 
-      - Temporal saliency (integrated gradients or Grad-CAM-style saliency over timesteps).
-      - Deep temporal model = harder, but richer temporal insights.
-      - Enables “when and why” interpretation rather than just “what.” 
-  - **Contrast LightGBM (static feature drivers) vs TCN (temporal saliency risk patterns)**: 
-    - LightGBM → static feature-level interpretability (e.g. “respiratory rate, SpO₂ dominate risk prediction”) → what features matter 
-    -	TCN → temporal interpretability (e.g. “deterioration spikes in respiratory rate at hour 12 drove the prediction”) → when features matter 
-	-	**Reasoning**: 
-    - Show which vitals/labs/time periods drive prediction.   
-    - Moves beyond accuracy into **explainability**.  
-    - Provides clinical interpretability and trust in AI predictions.
-    - Turns black-box temporal models into explainable decision aids.
+3. **LightGBM SHAP Interpretability (`shap_analysis_lightgbm.py`)**
+  - **Purpose**: 
+    - Script provides **final interpretability** for all trained LightGBM models, by quantifying each clinical feature’s contribution to predictions using **SHAP (SHapley Additive exPlanations)** values.
+    - Deliver transparent, reproducible feature-level insights for all three targets
+  - **Process (Summary)**:
+    1. **Data + Model Loading**
+      - Load processed patient-level features (`news2_features_patient.csv`) and training IDs (`patient_splits.json`).
+      - Recreate binary target definitions for consistency.
+      - Exclude non-feature columns to define the exact feature set used in training.
+    2. **Model Iteration Loop**
+      - For each target (`max_risk`, `median_risk`, `pct_time_high`):
+        - Load corresponding trained LightGBM model (`.pkl`).
+        - Extract training features (`X_train`).
+        - Compute SHAP values using:
+          ```python
+          explainer = shap.TreeExplainer(model)
+          shap_values = explainer.shap_values(X_train)
+          ```
+        - Handle classification vs regression outputs:
+          - Use `shap_values[1]` for binary classifiers (positive/high-risk class).
+          - Use single array for regression (`pct_time_high`).
+    3. **Feature Importance Aggregation**
+      - Convert SHAP matrix → global importances:
+        ```python
+        mean_abs_shap = np.abs(shap_array).mean(axis=0)
+        ```
+      - Summarise in ranked DataFrame (`feature`, `mean_abs_shap`) and save as CSV.
+    4. **Visualisation**
+      - Generate bar plots of top 10 features per target for quick visual interpretation.
+      - Save plots and CSVs to `interpretability_lightgbm/`.
+    5. **Diagnostics**
+      - Shape checks (`X_train`, `shap_array`) and aggregation tests ensure correct dimensionality (70×40) and non-collapsed SHAP arrays.
+  - **Reasoning**
+    - **Why SHAP:** SHAP decomposes each model prediction into additive feature contributions, giving a mathematically rigorous explanation of model behaviour.  
+    - **Why TreeExplainer:** Exact, fast computation for tree-based models, avoids approximations used by model-agnostic explainers, ensures feature attributions align with actual LightGBM decision paths.  
+    - **Why Mean Absolute SHAP:** Stable, direction-agnostic summary of each feature’s average influence → enables clean, comparable feature ranking across targets.  
+    - **Why on Training Set:** Provides global interpretability of what the model actually learned → avoids instability from small test-set SHAP computation. 
+  - **Outputs**
+    - All outputs are written to: `src/results_finalisation/interpretability_lightgbm/`
+    - Each CSV provides precise quantitative feature importance values; plots offer visual interpretability for reporting and documentation.
+    | **File** | **Description** |
+    |-----------|-----------------|
+    | 3x `<target>_shap_summary.csv` | Ranked table of mean |SHAP| values (global feature importance) per target classifier/regressor. |
+    | 3x `<target>_shap_summary.png` | Top 10 feature bar plot per target. |
+  - **Summary**
+    - Script produces the definitive interpretability layer for the final LightGBM models (the exact models evaluated in Phase 5) by computing per-patient, per-feature SHAP attributions and summarising them into stable global rankings. 
+    - Gives us transparent explanations: what features drive predictions (global ranking) and how strongly (mean |SHAP|). 
+    - It closes the loop between numeric performance (Steps 1–2) and clinical interpretation, enabling evidence-backed statements about why one model behaves better or worse on particular targets.
+    - For interpretability, these results are then saved into csv files for reproducibility, and saved as png files for easy visualisations.
+    - These results explain why the LightGBM models produce the predictions used in the comparative analysis (Steps 1–2).
 
 4. **Inference Demonstration (Deployment-Lite)**
   - **Purpose**: Create a lightweight demonstration of end-to-end inference for usability validation.
@@ -8361,9 +8393,13 @@ src/
 
 ---
 
-## Day 37-38 Notes - Continue Phase 6: Interpretability - Saliency vs SHAP (Steps )
+## Day 37-38 Notes - Continue Phase 6: Interpretability - LightGBM SHAP (Step 3)
 
 ### Goals 
+- Implement and validate the **LightGBM SHAP analysis script** (`shap_analysis_lightgbm.py`). 
+- Ensure correct **per-patient SHAP explanations** for all three targets (`max_risk`, `median_risk`, `pct_time_high`) using **TreeExplainer**.
+- Diagnose and fix SHAP output inconsistencies (e.g., classifier collapse issues).  
+- Finalize Phase 6 lightGBM interpretability pipeline with validated, reproducible, and clinically interpretable SHAP results.  
 
 ### What We Did
 #### Step 3: LightGBM SHAP Analysis Script (`shap_analysis_lightgbm.py`)
@@ -8402,6 +8438,9 @@ src/
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X_train)
     ```
+    - `TreeExplainer` is SHAP’s exact explainer for tree-based models like LightGBM, XGBoost, and CatBoost.
+    - It uses the internal tree structure to efficiently compute Shapley values → the average marginal contribution of each feature to the model’s prediction, across all possible feature orderings.
+    - This provides local (per-patient) and global (mean absolute) feature importance without retraining or perturbation sampling.
     4. **Handle output shape:** 
     ```python
     if isinstance(shap_values, list):  
@@ -8411,66 +8450,87 @@ src/
     ```
     - If `shap_values` is a list: 
       - Classification model (LightGBM binary output): `shap_array = shap_values[1]`
-        - LightGBM classifiers often return two SHAP arrays ([class_0, class_1]).
-        - We only need class_1 (positive class) to understand factors contributing to high risk.
+        - LightGBM classifiers return a list of arrays (`[class_0, class_1]`), one per class.
+        - We only need `class_1` (positive class) to understand factors contributing to high risk, so we explicilty take the positive class.
+        - **Rationale:** In binary tasks, SHAP sometimes collapses this to a single 1D array if not handled explicitly, so we restore the correct 2D structure (70, 40) — one SHAP vector per patient — preventing the array from flattening and producing valid per-feature contributions again.
+    - If `shap_values` is not a list:
       - Regression model: `shap_array = shap_values`
-  - `TreeExplainer` is 
+      - LightGBM regressors return a single (`n_samples`, `n_features`) array → one SHAP value per feature per sample.
 
 4. **Compute Mean Absolute SHAP Importance**
   ```python
   mean_abs_shap = np.abs(shap_array).mean(axis=0)
   ```
-  - Absolute value: Removes directionality (positive or negative effect).
-  - Mean across patients: Produces one importance score per feature.
-  - DataFrame creation: Stores ranked importances.
+  **Computation**
+  - **Absolute value:** Removes directionality (positive = increases risk, negative = decreases risk).
+  - **Mean across patients (axis=0):** Aggregates SHAP magnitudes over all 70 patients, producing one importance score per feature.
+  - **Purpose:** Quantifies the average strength of influence for each feature on the model’s predictions.
   ```python
   shap_importance = pd.DataFrame({
       "feature": feature_cols,
       "mean_abs_shap": mean_abs_shap
   }).sort_values(by="mean_abs_shap", ascending=False)
   ```
-  - Quantifies the average strength of influence for each feature on the model’s predictions.
+  **DataFrame creation** 
+  - Converts results into a ranked DataFrame for interpretability, stores ranked importances.
   - **Output:** For each target, save numeric SHAP importance values CSV → `interpretability_lightgbm/{target}_shap_summary.csv`
+  **Rationale**
+  - It transforms per-patient local explanations into a single global feature importance ranking, allowing direct comparison of which physiological variables drive predictions most strongly across the model.
 
 5. **Plot Top 10 Features Visualisations**
   ```python
   plt.barh(top_features["feature"][::-1], top_features["mean_abs_shap"][::-1])
   ```
-  - Provide visual outputs suitable for documentation and interpretability analysis.
+  - Produces a horizontal bar plot of the top 10 most influential features ranked by mean absolute SHAP value.
+	- [::-1] reverses the order so the most important feature appears at the top.
+	-	Visually summarises which physiological variables contribute most strongly to the model’s predictions, for inclusion in reports and interpretability documentation.
   - **Output:** For each target save PNG bar plot of top 10 most influential features → `interpretability_lightgbm/{target}_shap_summary.png`
 
 6. **Diagnostic Print Outputs**
-  - To ensure correctness, the script includes diagnostic prints
-  - These checks were added during debugging to confirm that SHAP outputs were correct and not collapsed (as happened in the earlier version).
+  - To ensure correctness, the script includes several diagnostic print statements.  
+  - These checks were added during debugging to confirm that SHAP outputs were correctly shaped and not collapsed (as occurred in earlier versions).
 
-Print Statement
-Purpose
-X_train.shape
-Confirm data has expected dimensions (70 patients × 40 features).
-shap_array.shape
-Verify SHAP output matches (`n_samples`, `n_features`) and hasn’t collapsed.
-`mean_abs_shap.sum()`
-Detect aggregation errors (constant SHAP values = invalid).
-`np.unique(preds)`
-Confirm model predictions vary across patients (rules out model saturation).
+| **Print Statement** | **Purpose** |
+|----------------------|-------------|
+| `X_train.shape` | Confirm that the input data has the expected dimensions (70 patients × 40 features). |
+| `shap_array.shape` | Verify that SHAP outputs match the expected shape (`n_samples`, `n_features`) and haven’t collapsed into a single vector. |
+| `mean_abs_shap.sum()` | Detect aggregation or shape errors — identical or constant SHAP values indicate invalid computation. |
+| `np.unique(preds)` | Confirm that model predictions vary across patients, ruling out a constant or saturated model. |
 
 **Outputs**
-- All output files are stored in: `src/results_finalisation/interpretability_lightgbm/`
+- All generated files are stored in: `src/results_finalisation/interpretability_lightgbm/`
 
-Output File
-Description
-`{target}_shap_summary.csv`
-Full ranked table of feature importances by mean absolute SHAP value.
-`{target}_shap_summary.png`
-Bar plot of top 10 most important features.
-Terminal Logs
-Diagnostic outputs confirming SHAP integrity (shapes, variance, prediction spread).
+| **Output File** | **Description** |
+|------------------|-----------------|
+| `max_risk_shap_summary.csv` | Full ranked table of feature importances for the **max_risk** classifier (mean absolute SHAP values for all features). |
+| `max_risk_shap_summary.png` | Bar plot of the top 10 most important features influencing **max_risk** predictions. |
+| `median_risk_shap_summary.csv` | Full ranked table of feature importances for the **median_risk** classifier. |
+| `median_risk_shap_summary.png` | Bar plot of the top 10 most important features influencing **median_risk** predictions. |
+| `pct_time_high_shap_summary.csv` | Full ranked table of feature importances for the **pct_time_high** regression model. |
+| `pct_time_high_shap_summary.png` | Bar plot of the top 10 most important features influencing **pct_time_high** predictions. |
 
 **Rationale**
-- SHAP (Phase 6) for LightGBM is the definitive explanation step that builds on Phase 3 feature-importance and Phase 5 performance metrics. 
-- Phase 3 feature-importance (CV-averaged LightGBM split/importances) gave an early sanity check; Phase 6 SHAP shows final, per-patient attributions for the exact models being reported, enabling causal/clinical interpretation of why a model wins/loses for particular targets and explaining calibration/residual patterns discovered in Steps 1–2.
-- For classifiers, per-class SHAP must be handled correctly (we extract class-1). 
-- Dependence plots or per-patient SHAP summaries can add nuance; we deliberately prioritized robust numeric SHAP outputs and diagnostic checks first.
+- **Purpose of SHAP (Phase 6):** 
+  - This phase provides the definitive interpretability layer for the LightGBM models trained and validated in earlier phases. 
+  - It quantifies **per-patient**, **per-feature** contributions to each model’s prediction, completing the interpretability pipeline.
+- **Relation to Prior Phases:**  
+  - **Phase 3 (Feature Importance):** Used cross-validated LightGBM split importances as an early sanity check for signal strength and feature relevance.  
+  - **Phase 5 (Model Performance):** Provided the final metrics (AUROC, RMSE, etc.) establishing predictive validity.  
+  - **Phase 6 (SHAP Analysis):** Builds directly on these by explaining *why* each model performs as it does — clarifying which features drive correct or incorrect predictions and how risk patterns emerge.
+- **Clinical Interpretability:** 
+  - SHAP allows direct mapping between model behaviour and clinical reasoning (e.g., showing how respiratory rate or SpO₂ influences high-risk classifications).
+- **Classification Handling:**  
+  - For binary LightGBM classifiers, SHAP returns two arrays (class 0 and class 1).  
+  - The analysis correctly extracts the **class 1 (positive / high-risk)** SHAP array to interpret model behaviour in terms of clinically meaningful outcomes.
+- **Design Priorities:**  
+  - Dependence plots and patient-level SHAP summaries can be added later for deeper interpretation.  
+  - For this phase, the focus was ensuring:
+    - Numeric SHAP stability  
+    - Per-patient (70 × 40) validity  
+    - Transparent diagnostic logging  
+    - Reliable mean absolute SHAP rankings and plots
+
+---
 
 ### Model Interpretability Rationale
 **Overview**
@@ -8669,8 +8729,68 @@ Diagnostic outputs confirming SHAP integrity (shapes, variance, prediction sprea
 ---
 
 ### SHAP (SHapley Additive exPlanations) Explained 
+**What SHAP is**
+- **SHAP (SHapley Additive exPlanations)** is a game-theoretic approach to explain how each input feature contributes to a model’s output.  
+- It assigns each feature a *Shapley value*, derived from cooperative game theory, representing the **average marginal contribution** of that feature across all possible feature combinations.  
+- In other words, SHAP answers: “If this feature were removed or changed, how much would the model’s prediction change on average?”
+**How It Works**
+  1. **Model Prediction as a Game:** Each input feature is treated as a “player” in a coalition whose goal is to achieve the model’s output (prediction).  
+  2. **Shapley Value Calculation:** SHAP computes each feature’s contribution by averaging its marginal effect across all feature subsets, ensuring fair, additive, and consistent attributions.
+  3. **Additivity Property:**  
+    - For any model `f(x)`, the prediction can be expressed as: `f(x) = φ₀ + Σ φᵢ`
+    - Where:
+      - `φ₀` = baseline model output (the expected prediction when no features are present)  
+      - `φᵢ` = contribution of feature `i` to the final prediction  
+  4. **Interpretation:**  
+    - Positive SHAP values → feature pushes prediction up (toward positive class or higher risk).  
+    - Negative SHAP values → feature pushes prediction down (toward negative class or lower risk).  
+    - Magnitude = strength of influence.
+**Why SHAP Is Needed**
+- Model performance metrics (AUROC, RMSE, etc.) tell **how well** a model works but not **why** it makes its decisions.  
+- SHAP provides:
+  - **Transparency:** Explains each prediction in terms of measurable feature contributions.  
+  - **Trust and validation:** Clinicians can verify that model reasoning aligns with medical logic.  
+  - **Debugging insight:** Detects overfitting or spurious correlations.  
+  - **Scientific interpretability:** Enables reasoning about causal or clinical relevance of features.  
+- In this project, SHAP (Phase 6) completes the interpretability chain → linking **model performance (Phase 5)** to **clinical understanding.**
+**What Must Be Decided in a SHAP Analysis**
+| **Decision** | **Explanation** | **Our Choice** | **Rationale** |
+|---------------|----------------|----------------|----------------|
+| **Explainer Type** | Determines which SHAP algorithm variant to use. Options include `TreeExplainer` (for tree models), `KernelExplainer` (model-agnostic), and `DeepExplainer` (for neural networks). | `TreeExplainer` | LightGBM is a tree-based model; `TreeExplainer` provides exact SHAP values efficiently without sampling noise. |
+| **Model Output Type** | Defines what SHAP explains → either raw decision values (“logits”) or post-activation probabilities. For classification models, SHAP can explain the contribution to each class probability separately. | Default `raw` output for regression, **positive class (class-1)** output for classification. | For LightGBM, using `model_output="raw"` avoids unsupported configurations and numerical instability. Focusing on class-1 (the “high-risk” class) makes SHAP values clinically interpretable as feature contributions toward higher risk. |
+| **Aggregation Method** | Specifies how SHAP values are summarised across all patients. Options include mean, mean absolute, or variance-based aggregation. | Mean absolute SHAP values | The mean of absolute SHAP magnitudes captures overall feature influence regardless of sign (direction). This is standard in global feature-importance reporting. |
+| **Scope of Analysis** | Defines whether SHAP analysis is performed per individual prediction (local interpretability) or summarised across the entire dataset (global interpretability). | **Global (dataset-level)** | Our aim was reproducibility and model sanity checking. Local SHAP visualisations can be added later for patient-specific insights, but global analysis was prioritised to ensure stable feature ranking across the cohort. |
+| **Data subset for SHAP** | Which samples to compute SHAP on (training vs test vs combined). | **Training set (70 patients)** | Reflects what the model actually learned, provides stable global importance estimates, and aligns with Phase 6’s goal of explaining the trained model rather than test-set noise. |
+| **Visualisation** | Determines how SHAP values are presented. Can include summary plots, dependence plots, or ranked bar charts. | Top-10 feature bar plots | Focused on interpretability and concise communication. Highlighting the ten most influential features per target makes patterns immediately interpretable and publication-ready. |
 
+**Why We Chose `TreeExplainer`**
+- **Purpose-built for tree-based models:** 
+  - `TreeExplainer` is designed specifically for gradient-boosted trees such as LightGBM, XGBoost, and CatBoost. 
+  - It directly leverages the internal tree structure to compute **exact SHAP values** rather than approximations.  
+- **Computationally efficient:** 
+  - It achieves polynomial-time complexity, scaling efficiently even for large patient-level datasets.  
+- **Avoids approximation noise:** 
+  - Unlike model-agnostic explainers such as `KernelExplainer` or `SamplingExplainer`, it does **not** rely on random perturbations or surrogate models, ensuring stable, reproducible attributions.  
+- **Faithful to LightGBM’s logic:** 
+  - By tracing each decision path within the trained LightGBM ensemble, it produces SHAP values that exactly match how the model partitions feature space and assigns risk.  
+- **Compared alternatives:**
+  - `KernelExplainer`: works for any model, but slow and approximate.
+  - `LinearExplainer`: fast and exact, but only valid for linear models.
+  - `DeepExplainer`: suitable for neural networks, not gradient-boosted trees.
+- **Conclusion:**  
+  - `TreeExplainer` provides the most **accurate**, **efficient**, and **semantically aligned** interpretability method for LightGBM models, making it the clear choice for this phase.
 
+**Limitations & pragmatic trade-offs**
+- **We prioritised global stability over directional nuance:** mean |SHAP| gives robust rankings; directional analyses (positive vs negative effects, dependence plots) are useful but secondary for the pipeline’s primary goal (definitive feature ranking for comparative reporting).
+- **Model-output modes:** We avoided forcing `model_output="probability"` because TreeExplainer with certain feature-perturbation settings can be unsupported or unstable across SHAP/LightGBM versions; using the default TreeExplainer + correct class extraction gives stable, reproducible results.
+- **Local explanations / dependence plots are optional extras:** They add richer interpretation for individual patients or conditional effects, but are not required for the core Phase 6 comparative interpretability deliverable.
+
+**Summary**
+- SHAP bridges the gap between **performance** and **interpretation**.  
+- It turns opaque LightGBM predictions into clear, quantitative explanations → showing exactly which patient features drove high or low risk classifications.  
+- In this project, using `TreeExplainer` ensures that interpretability is not just qualitative, but **numerically grounded, reproducible, and clinically verifiable.**
+
+---
 
 ### SHAP Debugging and Classification Target Fix
 **Overview**
@@ -8867,386 +8987,203 @@ Diagnostic outputs confirming SHAP integrity (shapes, variance, prediction sprea
 
 ⸻
 
+### Interpretation of SHAP Outputs
+#### Overview
+- This section interprets SHAP values for the three LightGBM targets:
+  - **max_risk**: the highest deterioration risk the patient reached during their stay.
+  - **median_risk**: the average risk level throughout the stay.
+  - **pct_time_high**: the percentage of time spent in high-risk states.
+- The goal is to identify the most influential features for each outcome and provide physiologically meaningful insights.
+
+#### Interpretation of SHAP Outputs (`max_risk`)
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `spo2_min` | 1.082 | Lowest SpO₂ is the dominant predictor of high-risk classification, consistent with respiratory deterioration driving escalation. |
+| 2 | `supplemental_o2_mean` | 0.697 | Higher average O₂ supplementation increases predicted risk, aligning with oxygen support needs. |
+| 3 | `respiratory_rate_max` | 0.533 | Elevated maximum respiratory rate reflects physiological stress contributing to high-risk predictions. |
+| 4 | `temperature_missing_pct` | 0.406 | Missing temperature measurements influence predictions → likely proxying clinical instability or gaps in monitoring. |
+| 5 | `heart_rate_mean` | 0.266 | Persistent tachycardia moderately increases predicted risk. |
+| 6–10 | Temperature- and heart rate–related variables | 0.18–0.15 | Vital signs collectively contribute to model discrimination of maximum risk. |
+**Interpretation Summary**
+- Primary drivers are respiratory physiology (SpO₂, O₂ delivery).
+- Secondary drivers include temperature and heart rate.
+- Non-contributing features (systolic BP, CO₂ metrics) have minimal impact.
+**Conclusion:**  
+- For `max_risk`, SHAP confirms the model aligns with clinical expectations, emphasizing oxygenation and respiratory status.
+
+#### Interpretation of SHAP Outputs (`median_risk`)
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `respiratory_rate_mean` | 1.301 | Average respiratory rate is the dominant feature for median risk, reflecting ongoing respiratory instability. |
+| 2 | `spo2_mean` | 0.901 | Low average SpO₂ strongly influences risk predictions, consistent with hypoxia. |
+| 3 | `heart_rate_max` | 0.636 | Maximum heart rate signals physiological stress. |
+| 4 | `systolic_bp_missing_pct` | 0.635 | Missing BP readings indicate unobserved instability or monitoring gaps. |
+| 5 | `level_of_consciousness_missing_pct` | 0.536 | Missing consciousness measurements impact predictions, highlighting incomplete observations during high-risk periods. |
+| 6–10 | Respiratory rate and temperature variables | 0.5–0.15 | Continuous contribution of respiratory patterns and thermoregulation in median-risk predictions. |
+**Interpretation Summary**
+- Median risk prediction continues to prioritize respiratory and oxygenation variables.
+- Missingness metrics act as indirect markers of instability.
+- Temperature and heart rate are secondary contributors.
+- Zero-contribution features (CO₂ metrics, some supplemental O₂) are non-informative.
+**Conclusion:**  
+- For `median_risk`, respiratory dynamics and oxygenation dominate, with missingness features serving as a proxy for clinical instability.
+
+#### Interpretation of SHAP Outputs (`pct_time_high`)
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `respiratory_rate_mean` | 0.034 | Average respiratory rate drives cumulative high-risk duration, emphasizing sustained respiratory instability. |
+| 2 | `heart_rate_max` | 0.014 | Maximum heart rate contributes moderately, reflecting physiological stress. |
+| 3 | `supplemental_o2_mean` | 0.012 | Mean supplemental O₂ requirement affects predicted high-risk duration. |
+| 4 | `spo2_mean` | 0.012 | Average SpO₂ influences risk duration, consistent with hypoxia prolonging high-risk periods. |
+| 5 | `temperature_median` | 0.011 | Temperature reflects systemic stress or infection. |
+| 6–10 | `spo2_min`, `heart_rate_mean`, missingness features | 0.010–0.007 | Minor contributions from missing data metrics and secondary physiological measures. |
+**Interpretation Summary**
+- Respiratory and oxygenation metrics dominate cumulative high-risk time predictions.
+- Missingness features contribute slightly, highlighting data completeness as an indirect marker.
+- Low-contributing features are physiologically less relevant for predicting high-risk duration.
+**Conclusion:**  
+- For `pct_time_high`, SHAP reveals that sustained respiratory dynamics and oxygenation are key determinants, with minor influence from missingness and secondary vital signs.
+
+#### Missingness Features as Clinical Instability Indicators
+- Some SHAP features represent the fraction of missing data → `temperature_missing_pct`, `systolic_bp_missing_pct`, and `level_of_consciousness_missing_pct`
+- These “missingness features” can act as **proxies for clinical instability**.  
+- When vital signs or observations are not recorded, it may indicate periods of high-risk or urgent clinical activity. 
+- The model has learned that gaps in monitoring often correlate with deterioration, so these features appear important in SHAP analysis, even though they do not directly reflect physiology.
+
+#### Overall Summary
+- **Respiratory features (RR, SpO₂, O₂ support)** are the strongest predictors across all targets.
+- **Heart rate and temperature** contribute moderately.
+- **Missingness features** (BP, LOC, temperature) indicate real-world data capture gaps and correlate with risk. Act as indirect indicators of clinical instability, reflecting how incomplete observations often coincide with acute deterioration episodes in real-world ICU data. 
+- **CO₂ metrics and some supplemental O₂ features** have negligible influence, suggesting these signals either lacked sufficient data quality or were redundant with stronger respiratory indicators.  
+- Overall, the SHAP results confirm that LightGBM’s learned decision logic is **clinically interpretable**, **physiologically coherent**, strengthening confidence in the model’s validity and transparency.
 
 ---
 
+### Reflection  
+#### Challenges
+1. **Unclear Role of Interpretability in Evaluation**
+  - Initially uncertain whether interpretability (SHAP) formed part of model comparison or a separate explanatory phase.
+  - Confusion arose because Phase 3 already included feature-importance analysis, creating apparent duplication.
+2. **SHAP Implementation Issues**
+  - Early SHAP runs produced identical mean absolute values across all features — a clear sign of **collapsed arrays**.
+  - LightGBM’s SHAP interface behaved differently for regressors vs. binary classifiers, returning inconsistent array formats (`ndarray` vs. list of arrays).
+  - Attempts to force probability-based outputs (`model_output="probability"`) caused `interventional` mode errors due to SHAP–LightGBM version mismatches.
+3. **Uncertainty About Input Data Requirements**
+  - It was unclear whether to recompute binary targets for SHAP or simply use the trained model and raw features.
+  - The distinction between what SHAP requires (features only) and what was recreated for consistency (binary targets) needed clarification.
+4. **Conceptual Ambiguity Around SHAP Scope**
+  - Ambiguity existed about whether to run SHAP on the training or test sets.
+  - Similarly, uncertainty about whether to interpret directional SHAP values (positive/negative) or only absolute magnitudes caused hesitation.
 
+#### Solutions and Learnings
+1. **Clarified Analytical Role**
+  - Interpretability (Step 3) is not part of the comparative performance metrics (Steps 1–2) but a **complementary explanatory layer**: Performance → Behaviour → Reasoning
+  - Phase 3 = developmental diagnostics; Phase 6 = final mechanistic explanation for the validated model.
+2. **Technical Resolution of SHAP Collapsing**
+  - Identified LightGBM’s binary-class SHAP behaviour as the cause:
+    - SHAP returned `[class_0, class_1]` arrays for classifiers.
+    - Without selecting `shap_values[1]`, all features appeared identical.
+  - Final fix: explicitly extract the positive-class SHAP array:
+    ```python
+    if isinstance(shap_values, list):
+        shap_array = shap_values[1]
+    else:
+        shap_array = shap_values
+    ```
+  - Verified via shape and variance checks that SHAP now produced correct (`n_samples`, `n_features`) matrices.
+3. **Clarified Data and Target Handling**
+  - SHAP uses **only X (features)** and the trained model, not the targets.
+  - Binary targets were reconstructed purely for clarity and consistency in looping logic, then excluded from `feature_cols`.
+4. **Refined Conceptual Framework**
+  - **TreeExplainer** chosen as the optimal SHAP algorithm for LightGBM:
+    - Exact and efficient for tree-based models.
+    - Correctly captures hierarchical feature interactions.
+  - **Global SHAP (training set)** chosen for final interpretability:
+    - Stable, representative, and aligned with learned model patterns.
+    - Local SHAP (test set) reserved for optional illustrative use.
+5. **Interpretability Objective Refined**
+  - Directional (+/−) SHAP and dependence plots were deemed **exploratory** rather than evaluative.
+  - The goal was to produce **clinically interpretable, reproducible global feature importance** using mean absolute SHAP:
+    ```python
+    mean_abs_shap = np.abs(shap_array).mean(axis=0)
+    ```
+  - This aligns with the comparative, not exploratory, intent of Phase 6.
 
-## Interpretability 
-
-Not wasted — but contextually misplaced.
-
-Here’s the logical breakdown 👇
-
-⸻
-
-So, Phase 3 feature importance = developmental diagnostic.
-It was part of the model-construction logic check, not the final evaluation.
-
-⸻
-
-🚫 Why It’s Not Used in the Final Comparative Analysis
-	1.	The Phase 3 model was trained on different folds (CV, not the 70/15 split).
-	2.	It used the same hyperparameters but a different data partition → different learned weights → different importance ranking.
-	3.	Therefore, the numeric values and plots don’t correspond to the final evaluated model.
-
-That means:
-	•	You shouldn’t include those PNGs or CSVs in the final interpretability results,
-	•	But you can include them in an appendix or development section showing early model diagnostics.
-
-⸻
-
-✅ How You Frame It in Your Documentation
-
-You can accurately write:
-
-“Preliminary feature importance analysis in Phase 3 verified the physiological validity of learned predictors (e.g., SpO₂, respiratory rate, heart rate).
-These results guided later preprocessing and model refinement.
-Final interpretability in Phase 6 recomputed SHAP values on the fully validated LightGBM model to ensure alignment with final performance metrics.”
-
-That shows:
-	•	You applied interpretability iteratively, not redundantly.
-	•	Each phase had a distinct scientific function: early diagnostic vs final explanation.
-
-⸻
-
-🧠 Summary
-	•	Phase 3 feature importance
-→ Early developmental interpretability: sanity-check, feature validation, guidance for next steps.
-→ Still useful as evidence that your model development was disciplined and interpretable.
-	•	Phase 6 SHAP
-→ Final explanatory interpretability: explains why the final LightGBM achieved the comparative results seen in Phase 6 Steps 1–2.
-
-So, no — it wasn’t wasted.
-It’s not “final-use data,” but it proves you built models responsibly and verified interpretability throughout the pipeline — something reviewers and hiring managers take very seriously.
-
-
----
-
-was unsure about how interpretability fit into evaluation and whther it was part of comparative analysis 
-
-🔹 How It Fits Into Your Project
-
-In your pipeline structure:
-	•	Phase 6 Steps 1–2 (Comparative Analysis) = performance comparison (how the models differ numerically).
-	•	Phase 6 Step 3 (Interpretability) = explanation layer (why those differences arise based on feature contributions and temporal structure).
-
-So yes — Interpretability is technically separate, but logically continuous with comparative analysis.
-It’s not part of the comparison itself, but it uses the comparison’s findings as context.
-
-Think of it as:
-
-“Now that we know which model performs better and how, we want to know why.”
-
-🔹 Summary
-	•	Comparative analysis = part of evaluation → how models perform.
-	•	Interpretability = part of explanation → why they perform that way.
-	•	They are distinct but sequential, forming a logical chain:
-
-Performance → Behaviour → Reasoning.
-
-So in your Phase 6 structure:
-	•	Steps 1–2 = Comparative (quantitative + diagnostic).
-	•	Step 3 = Interpretability (feature/temporal analysis).
-	•	Step 4–5 = Finalisation and reporting.
-
-🔹 The Analytical Progression
-	1.	Step 1: Quantitative summary metrics → establishes which model is better.
-	2.	Step 2: Numeric diagnostics → shows what patterns caused that difference (e.g. calibration shape, residual structure).
-	3.	Step 3 (Interpretability): reveals why the model behaves this way (feature effects, attention across time, etc.).
-
-So interpretability forms the third and final analytical layer, transitioning from performance analysis → mechanistic understanding.
+#### Overall Reflection
+- This phase clarified how interpretability fits into the analytical chain, not as performance validation, but as **mechanistic explanation**.  
+- Through systematic debugging and theoretical consolidation:
+  - We confirmed that SHAP for LightGBM requires careful handling of classifier outputs and correct selection of the positive-class array.
+  - Diagnostic prints and shape checks were critical in identifying SHAP collapse early, preventing misinterpretation.
+  - The process reinforced the importance of understanding tool-specific behaviour (e.g., SHAP vs. LightGBM interactions) rather than relying on defaults.
+  - The final implementation now produces stable, interpretable, and physiologically coherent SHAP values across all targets.
+- In essence, this step transformed SHAP from a “black-box add-on” to a **rigorous interpretability mechanism**, linking model performance to physiological reasoning with reproducible logic and technical integrity.
 
 ---
 
-4. SHAP explainer:
-	•	TreeExplainer (specific for tree-based models like LightGBM)
-	•	Extremely fast
-	•	Exact SHAP values for decision tree ensembles
-	•	Captures feature interactions correctly
-	•	Other options:
-	•	KernelExplainer → model-agnostic, slower, approximates SHAP for any model
-	•	LinearExplainer → for linear models, fast and exact
-	•	Rationale: TreeExplainer is the correct choice for LightGBM because it is exact, fast, and handles tree structure efficiently.
-
-5. Outputs:
-	•	Numeric CSVs with SHAP values per patient per feature, per target:
-	•	interpretability_lightgbm/<target>_shap_values.csv
-	•	Bar plots of mean absolute SHAP per feature (Top 10 features per target):
-	•	interpretability_lightgbm/<target>_shap_summary.png
-
-6. Why this is sufficient:
-	•	Numeric CSVs give precise per-patient, per-feature contributions → no need to rely on plots for quantitative analysis.
-	•	Bar plots provide a quick visual summary of which features drive predictions.
-	•	Together, they allow complete interpretability for your comparative analysis in Phase 6.
-	•	SHAP complements Phase 3 feature importance:
-	•	Phase 3 was for exploratory analysis during model tuning on CV folds.
-	•	Phase 6 is final interpretability for the retrained model on the 70/15 patient split — the SHAP values now correspond directly to the model whose predictions are being compared against TCN.
-	•	Both SHAP and feature importance can give similar “feature ranking” insights, but SHAP provides per-patient contributions and is theoretically more accurate.
-
-7. Why no additional plots are necessary:
-	•	Summary bar plots + numeric CSVs are sufficient for Phase 6 interpretability.
-	•	Dependence plots or summary dot plots would be optional exploratory analysis but not essential for the pipeline.
-
----
-unsure about whats standard practice for SHAP is it on the training set or tets set
+## Day 39 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
 
 
-For SHAP, the typical approach depends on what you want to interpret:
-	1.	Global Feature Importance (overall model behavior)
-	•	Usually computed on the training set (here, the 70 patients).
-	•	This shows which features the model relies on across all its learned patterns, giving a general explanation of feature importance.
-	•	Pros: reflects what the model has actually learned, more stable, less sensitive to a small test set.
-	•	Cons: slightly optimistic because these are the same patients the model trained on.
-	2.	Local/Individual Explanations (specific predictions)
-	•	Can be computed on the test set (here, the 15 patients).
-	•	Useful for explaining specific patient predictions, e.g., why a certain patient was high-risk.
-	•	Pros: matches the evaluation dataset, aligns with Phase 6 comparisons.
-	•	Cons: small number of patients → not suitable for robust global conclusions.
+### Purpose
+To derive **clinically meaningful temporal insights** into *when* and *why* the Temporal Convolutional Network (TCN) makes certain predictions, complementing Step 3’s LightGBM feature-level SHAP analysis.
 
-✅ Best practice for your project:
-	•	Compute SHAP on the 70 training patients to get global, stable feature importance that reflects the model’s learned patterns.
-	•	Optionally, you can compute SHAP for the 15 test patients to illustrate example predictions or confirm trends locally.
-
-For Phase 6, the main goal is final interpretability of the model’s learned relationships, so 70 training patients is sufficient and standard.
-
-Yes — that’s the standard practice for global feature importance using SHAP.
-
-Here’s why:
-	1.	Global Explanation vs Local Explanation
-	•	Global SHAP: Shows which features the model relied on across all predictions it learned during training. This is what most papers report as “feature importance” for model interpretation.
-	•	Local SHAP: Can be computed for a specific subset (like a test set) to explain individual predictions, but with very few patients (like your 15-test set), global trends would be unstable.
-	2.	Stability and Representativeness
-	•	The training set (70 patients) provides more data points to generate stable and representative SHAP values.
-	•	Using a tiny test set risks noisy or misleading explanations.
-	3.	Consistency with Model Learning
-	•	SHAP reflects the model’s learned mapping from inputs → outputs. The model learned patterns on the training set, so interpreting it on the same data shows what it actually learned.
-	•	Interpreting on test data is mainly for illustration or sanity-check, not for final feature importance.
-
-✅ Conclusion: For Phase 6 final interpretability of LightGBM, we should compute SHAP using the 70 training patients, save numeric values (CSV), and generate summary bar plots. Optionally, small subsets of test patients can be used for demonstration, but the core global interpretation comes from the training data.
-
----
-confused as to why we are recreating the binary targets only to remove them from feature columns, we did this for the evaluation script becayse we were retraining the models, but since we now have the pkl files we dont need to train or do anything, so was confused as to why we had to load and recreate the training feature columns 
-
-Why we “remove” targets for SHAP
-
-1️⃣ What SHAP actually needs
-
-When you compute SHAP values, you are not training anything — the model is already trained (that’s your .pkl LightGBM).
-What SHAP needs is simply:
-	•	the trained model (model.pkl), and
-	•	the exact same feature inputs (X_train) that were used when training that model.
-
-The target (y_train) is not passed to SHAP — it’s only used to compute metrics or for reference.
-So, for SHAP, you must provide only the input features (the predictors).
-
-That’s why we exclude max_risk, median_risk, and pct_time_high from the DataFrame used for SHAP. They’re the ground-truth outcomes, not part of the model’s input.
-
-⸻
-
-2️⃣ Why we sometimes still “recreate” the binary columns
-
-You’re right: the LightGBM models were trained using those binary targets (max_risk_binary, median_risk_binary, etc.).
-However — we only recreate those here for bookkeeping / clarity, not for SHAP itself.
-We do it so that we know which model corresponds to which label definition.
-	•	When we load max_risk_retrained_model.pkl, we also define train_df["max_risk_binary"] to remind ourselves that this model was trained on that binary mapping (>2 → 1).
-	•	Then we drop it again from the actual feature_cols, because we’re only feeding predictors into SHAP.
-
-So, in practice:
-	•	we don’t use those binary target columns in the SHAP computation,
-	•	we just recreate them to ensure our script knows which target mapping belongs to which model.
-
-⸻
-
-4️⃣ Why we’re doing SHAP here even though model is trained
-
-Because we want to:
-	•	quantify contribution of each feature to predictions (global + local explanations),
-	•	compare those patterns to the earlier Phase 3 feature importance,
-	•	and confirm that the final Phase 5 LightGBM (retrained on 70 patients) is physiologically coherent — i.e. the same key clinical features drive prediction.
-
-This makes SHAP an interpretability and validation tool, not a training step.
+Whereas Step 3 explained **what features** mattered (static feature contributions),  
+Step 4 explains **when and how those features over time** influenced the model’s decision — turning the temporal model from a black box into a clinically interpretable system.
 
 ---
 
-For classification targets, LightGBM returns a list of SHAP arrays (shap_values[1] is for the positive class).
-So for max_risk and median_risk, you must extract the correct class index before saving or averaging SHAP values.
+### Conceptual Framework
 
-Avoid saving per-patient SHAP CSVs with thousands of columns unless explicitly needed — these are heavy and not very interpretable.
-Instead, save the mean absolute SHAP summary table for each target (one row per feature, one column = mean |SHAP|).
-This matches the comparative interpretability goal.
-
-You don’t need to recompute y_train here — it’s not used for SHAP directly.
-The SHAP values depend only on the model and X_train, not the target.
+| Model | Nature | Interpretability Method | Explains | Output Type |
+|--------|---------|-------------------------|-----------|--------------|
+| **LightGBM** | Static, feature-level | SHAP (TreeExplainer) | *What features* drive prediction | Mean feature importances |
+| **TCN** | Dynamic, time-series | Saliency mapping (e.g., Integrated Gradients or Grad-CAM) | *When and why* risk changes | Temporal saliency heatmaps |
 
 ---
 
-🔹 1. Training vs. SHAP
-	•	When you train a model, you need both
-X = features and y = target labels.
-That’s where the model learns the mapping f: X \rightarrow y.
-	•	But SHAP is applied after training, to explain an already trained model.
-The model weights and tree splits already encode how features relate to the target.
-Therefore, SHAP doesn’t need the y_train labels — it only needs:
-	•	The trained model (already fitted on X and y before),
-	•	The input data X you want to explain (to compute local feature effects).
-
-  2. Why we still recreate binary targets
-
-You’re right — it seems redundant since we don’t pass y_train to SHAP.
-However, there are two solid reasons for doing it anyway:
-
-Reason
-Explanation
-Data consistency
-We want the Phase 6 interpretability script to reproduce the exact same feature/target definitions as used in Phase 5 training. This guarantees we’re explaining the same learning problem the model was trained on.
-Code safety & clarity
-When looping over targets (max_risk, median_risk, pct_time_high), we need to know which targets were binary classification vs. regression. Recreating binary targets makes the logic explicit and prevents confusion if this script is reused later.
-
-So:
-
-✅ The binary targets are recreated for consistency and structure, not because SHAP itself uses them.
+### Analytical Goals
+- **Temporal attribution:** Identify *which time periods* in each patient’s sequence most strongly influenced predicted risk.
+- **Feature-level dynamics:** Determine *which physiological variables* (e.g., SpO₂, RR, HR) drive risk peaks at different timesteps.
+- **Contrast static vs temporal learning:** Compare LightGBM’s “static summary features” vs. TCN’s “temporal sequence attention.”
 
 ---
 
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_train)
-
-	•	TreeExplainer is a SHAP utility optimised for tree-based models (like LightGBM, XGBoost, CatBoost).
-	•	It computes SHAP values — i.e., per-feature contribution scores — for each sample in the dataset (X_train).
-
-Each SHAP value represents how much a feature increased or decreased the model’s prediction compared to the average prediction.
-So after this step:
-	•	You have a matrix of shape (n_samples, n_features) for regression, or a list of two matrices (class 0 and class 1) for binary classification
-
-  ---
-
-if target in ["max_risk", "median_risk"]:
-    shap_array = shap_values[1]  # class 1 = "high risk" or "positive"
-else:
-    shap_array = shap_values     # regression output (single array)
-
-Explanation
-	•	For binary classification, SHAP returns a list of two arrays:
-	•	shap_values[0] → contribution to predicting class 0 (negative / low risk)
-	•	shap_values[1] → contribution to predicting class 1 (positive / high risk)
-
-We’re only interested in what drives “high-risk” predictions — so we use shap_values[1].
-This isolates the SHAP explanations for the model’s positive class, aligning directly with clinical interpretation (“which features increase the probability of deterioration?”).
-
-For regression (pct_time_high), SHAP returns a single array, since there’s only one continuous output, not multiple classes.
-
-mean_abs_shap = np.abs(shap_array).mean(axis=0)
-
-Explanation
-
-Each SHAP value can be positive or negative:
-	•	Positive → feature increases predicted risk
-	•	Negative → feature decreases predicted risk
-
-To assess overall feature importance, we take the absolute value of SHAP scores (magnitude of influence) and compute their mean across all patients:
-This yields a single scalar per feature, reflecting how strongly that feature influences predictions on average, regardless of direction.
-
-Why:
-	•	Individual SHAP values show per-patient effects.
-	•	Mean absolute SHAP summarizes global feature importance — which features consistently have the biggest impact.
-
-Why We Take Mean Absolute SHAP
-	•	It converts thousands of per-patient SHAP contributions into a single stable global importance measure.
-	•	It allows direct comparison across features and targets.
-	•	It mirrors what “feature importance” did in Phase 3 — but now using a theoretically grounded and locally exact measure (SHAP).
+### Planned Outputs
+- **Saliency maps** for representative patients:
+  - Visual overlays showing *temporal importance weights* (e.g., which hours contributed most to high-risk prediction).
+- **Aggregated temporal feature importance plots:**
+  - Average saliency per variable over time, summarising typical deterioration patterns.
+- **Summary CSVs:**
+  - Quantitative tables capturing mean/peak saliency per variable per target.
 
 ---
 
-mean_abs_shap = np.abs(shap_array).mean(axis=0)
-
-Step 1: What shap_array actually is
-
-After running:
-shap_values = explainer.shap_values(X_train)
-
-You get an array of SHAP values for each sample and each feature — effectively the local contribution of every feature to each individual prediction.
-
-For example, suppose:
-	•	You have 70 patients (rows)
-	•	You have 40 features (columns)
-
-shap_array.shape = (70, 40)
-
-Each cell shap_array[i, j] means:
-
-“For patient i, feature j contributed X amount (positive or negative) to the final prediction.”
-
-So before aggregation, SHAP gives you a per-patient, per-feature explanation matrix.
-
-Step 2: Applying np.abs(shap_array)
-
-Each SHAP value can be positive or negative:
-	•	Positive SHAP value: the feature increases the model’s prediction (e.g., makes high risk more likely).
-	•	Negative SHAP value: the feature decreases the model’s prediction (e.g., makes high risk less likely).
-
-However, when we’re trying to measure overall feature importance,
-we’re not concerned with direction — only magnitude (how strongly a feature affects predictions).
-
-So we take the absolute value:
-np.abs(shap_array)
-
-This transforms all number to positive
-
-Now each number represents the strength of the feature’s influence, regardless of direction.
-
-Step 3: Applying .mean(axis=0)
-
-Now we average across all patients (rows):
-.mean(axis=0)
-
-That means:
-	•	For each feature (each column), we take the mean absolute SHAP value across all patients.
-	•	This gives one number per feature — its average contribution magnitude.
-
-So if shap_array had shape (70, 40),
-then mean_abs_shap will have shape (40,).
-
-Each value in mean_abs_shap tells us:
-
-“On average, how much did this feature move the model’s prediction, regardless of direction?”
-
-Step 4: Why this is used for feature importance
-
-This average absolute SHAP value per feature directly reflects global feature importance —
-the overall impact of each feature on model predictions.
-
-It’s conceptually similar to LightGBM’s “feature importance by gain” but much more interpretable,
-because it’s measured in the same units as the model’s output (e.g. predicted log-odds or regression value).
-
-We take the absolute → to prevent cancellation.
-We take the mean → to aggregate across all patients.
-We get mean absolute SHAP → the most stable, interpretable global measure of feature influence.
+### Rationale
+- The TCN model captures **temporal dependencies** that LightGBM cannot — e.g., trends, spikes, or recovery patterns.
+- Saliency-based interpretability answers the **“when and why”** question:
+  - *When* risk signals emerge (temporal localisation).
+  - *Why* the network attended to those signals (feature-level saliency).
+- This bridges the gap between:
+  - **Quantitative evaluation (Steps 1–2)** → performance and calibration,
+  - **Static interpretability (Step 3)** → feature importance,
+  - **Temporal interpretability (Step 4)** → dynamic reasoning over time.
 
 ---
 
-was unsure whether we should just do absolute magnitude, or if we should also do directional with - and + with depndance plots too but turns out we want interpretability, not exploratory data anayliss 
+### Expected Outcomes
+- Clinically interpretable visualisations showing how the model responds to real physiological time-series patterns.  
+- Validation that the TCN model’s temporal attention aligns with known deterioration trajectories (e.g., falling SpO₂ followed by rising RR).
+- Evidence that temporal learning adds explainable value beyond static summarisation.
 
-🎯 Your project’s goal
+---
 
-You’re conducting a comparative ICU deterioration model analysis — comparing LightGBM vs TCN_refined across three prediction targets.
-Phase 6 is focused on interpretability and explainability, not exploratory data analysis.
-
-That means your objective now is:
-
-“To explain what each model relied on most to make its predictions — not to dissect every directional effect.”
-
-So you’re answering:
-	•	✅ Which variables matter most for each target?
-	•	✅ Do both models prioritise similar physiological features?
-	•	✅ Are the learned predictors clinically plausible (e.g., SpO₂, HR, RR)?
-	•	❌ Not: exactly how each variable increases or decreases risk per patient.
-
-Absolute SHAP = stable, comparative, clinically interpretable measure of importance.
+### Summary
+Step 4 extends interpretability from *what matters* to *when it matters*.  
+It completes the interpretability suite for Phase 6, showing that:
+- LightGBM explains **static importance** (feature-level),
+- TCN explains **temporal dynamics** (sequence-level),
+together providing a **comprehensive interpretability framework** for clinical AI evaluation.
 
 
-⸻
-
-Summary statement (for your notes):
-
-In this phase, SHAP analysis focuses on global feature importance rather than local directional interpretation. We use mean absolute SHAP values to quantify the overall influence of each feature on model predictions. This provides a stable and clinically interpretable comparison of which inputs drive LightGBM’s predictive behaviour across targets, complementing the quantitative and visual comparisons established in Steps 1–2.
