@@ -118,7 +118,13 @@ print("[INFO] Loaded TCN model and moved to device.")
 # -----------------------------
 # 2. Define Targets & Saliency Function
 # -----------------------------
-
+"""
+Target heads to explain
+- Each target corresponds to one model output head.
+    - "logit_max" and "logit_median" → classification heads (BCEWithLogitsLoss)
+    - "regression" → continuous regression head (MSELoss)
+- We compute saliency separately for each head to understand which features (and when in time) drove each type of prediction.
+"""
 # --- Target heads to explain ---
 TARGETS = [
     ("max_risk", "logit_max"),       # classification
@@ -129,14 +135,21 @@ TARGETS = [
 # --- Saliency Computation Helper ---
 def compute_saliency_for_batch(model, x_batch, mask_batch, head_key):
     """
-    Compute |grad * input| saliency for a mini-batch.
+    Compute |grad * input| saliency for a mini-batch of test patients.
+
+    Concept:
+    - "Saliency" = gradient of model output wrt each input feature × the input value itself.
+    - The gradient shows *sensitivity*: how much a small change in the feature would change the output.
+    - Multiplying by input magnitude weights it by how active that feature was.
+    - Taking absolute value removes directionality (we care about *strength* of influence).
     Args:
-        model: trained TCN model
-        x_batch: tensor (B, T, F)
-        mask_batch: tensor (B, T)
-        head_key: output head to explain ('logit_max', 'logit_median', 'regression')
+    - model: trained TCN model
+    - x_batch: tensor (B, T, F) → batch of patient sequences
+    - mask_batch: tensor (B, T) → binary mask (1 = real timestep, 0 = padding)
+    - head_key: string ('logit_max', 'logit_median', 'regression') → which output to explain
     Returns:
-        np.ndarray of shape (B, T, F) = |gradient * input|
+    - np.ndarray of shape (B, T, F) = |gradient * input|
+    → saliency for each feature at each timestep for each patient
     """
     x = x_batch.clone().detach().to(device)
     x.requires_grad = True
