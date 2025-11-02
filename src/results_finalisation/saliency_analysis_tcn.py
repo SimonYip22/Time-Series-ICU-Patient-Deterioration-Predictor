@@ -170,8 +170,6 @@ def compute_saliency_for_batch(model, x_batch, mask_batch, head_key):
     saliency = grads * x.detach().cpu().numpy()
     return np.abs(saliency)
 
-
-
 # =============================================================
 # 3. Generate Per-Patient & Global Saliency Outputs
 # =============================================================
