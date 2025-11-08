@@ -9241,6 +9241,124 @@ src/
     -	`per_patient_saliency` → 3D array `(n_test, T, F)`
     -	Contains absolute saliency per patient, timestep, and feature.
     - Forms the basis for feature-level summaries, temporal profiles, and heatmaps.
+
+6. **Step 3B: Feature-Level Mean & Standard Deviation Saliency CSV**
+  - **Purpose:** 
+    - Aggregate per-patient saliency values across all patients and timesteps to quantify overall feature importance for each model target head. 
+    - Produces a CSV that is interpretable for downstream analysis or reporting.
+  - **Logic Overview:**
+    1. **Aggregate over patients and time:**
+      -	`axis=(0, 1)` averages over all patients (`n_test`) and all timesteps (`T`).
+      -	`feature_mean` → mean absolute saliency per feature.
+      -	`feature_std` → standard deviation per feature, providing variability measure.
+    2. **Create DataFrame (`df_features`):**
+      -	Columns:
+        -	`feature` → feature names
+        -	`mean_abs_saliency` → average importance
+        -	`std_abs_saliency` → variation across patients/timesteps
+      -	Sorted descending by mean importance for easy interpretability.
+    3. **Save CSV:**
+      -	**File path:** `interpretability_tcn/{target_name}_feature_saliency.csv`
+      -	Provides a concise, fully interpretable numeric summary of feature relevance across the dataset.
+  - **Outputs:**
+    -	3x CSV files of shape `(F, 3)` where `F` = number of features; one for each target.
+    -	Contains mean and standard deviation of saliency per feature for the target head.
+
+7. **Step 3C: Temporal Mean Profile CSV**
+  - **Purpose:**  
+    - Summarise saliency across all features to determine when during the sequence the model is most sensitive. 
+    - Instead of per-feature detail, this focuses on the temporal pattern of feature importance.
+  - **Logic Overview:**
+    1. **Aggregate over patients and features:**
+      -	`axis=(0, 2)` → average across:
+        -	`0` = patients (`n_test`)
+        -	`2` = features (`F`)
+      -	Result: `temporal_mean` of shape (`T,`) → one value per timestep.
+    2. **Create DataFrame (`df_temporal`):**
+      -	Columns:
+        -	`timestep` → sequential index from 0 → `MAX_SEQ_LEN` - 1
+        -	`mean_abs_saliency` → average saliency across all features and patients at that timestep.
+    3. **Save CSV:**
+      -	Path: `interpretability_tcn/{target_name}_temporal_saliency.csv`
+      -	Provides an interpretable, numerical summary showing temporal sensitivity of the model.
+  - **Output:**
+    -	3x CSV's of shape `(T, 2)` where:
+    -	`T` = number of timesteps
+    -	Each row contains:
+      -	`timestep` index
+      -	`mean_abs_saliency` (average `|grad × input|` across features and patients)
+
+8. **Step 3D: Top-5 features temporal profile CSV**
+  - **Purpose:**  
+    - Identify the most important features for a given model head and track their saliency over time. 
+    - This creates an interpretable temporal profile of key features rather than overwhelming the user with all 171 features.
+  - **Logic Overview:**
+    1. **Select Top 5 Features:**
+      -	`feature_mean.argsort()[::-1][:5]` → sorts features by descending mean absolute saliency.
+      -	Selects indices of the top 5 most influential features (`top_features_idx`).
+    2. **Retrieve Feature Names:** Maps indices to actual feature column names (`feature_cols`) for CSV readability.
+    3. **Compute Temporal Profile:**
+      -	`per_patient_saliency[:, :, top_features_idx]` → subset saliency for top 5 features across all patients and timesteps `(n_test, T, 5)`.
+      -	`.mean(axis=0)` → average over patients → shape `(T, 5)`, one value per timestep per feature.
+    4. **Create DataFrame:**
+      -	Columns = top feature names.
+      -	Insert `timestep` column from `0` to `MAX_SEQ_LEN` - 1.
+    5. **Save CSV:**
+      -	Path: `interpretability_tcn/{target_name}_top_features_temporal.csv`.
+      -	Output is interpretable, numeric, and concise.
+      -	Provides temporal patterns of key features for each model head.
+  - **Output:**
+    -	3x CSV's of shape: `(T, 6)`
+      -	Column 0: `timestep`
+      -	Columns 1–5: mean saliency of top 5 features at each timestep
+    -	Helps visualise when key features drive predictions during a patient’s timeline.
+
+9. **Step 3E: Global Mean Heatmap PNG (Top 10 Features)**
+  - **Purpose:**  
+    - Generate a visual summary of the top 10 features’ saliency over time.  
+    - Designed for interpretability and inspection, not quantitative analysis.  
+    - Highlights temporal patterns of key features across all patients.
+  - **Logic Overview:**
+    1. **Select Top 10 Features:** Sort features by descending mean absolute saliency (`feature_mean.argsort()[::-1][:10]`).
+    2. **Compute Mean Across Patients:** 
+      - `per_patient_saliency[:, :, top10_idx].mean(axis=0)` → average saliency over all patients → shape `(T, 10)`.
+      - Captures general temporal importance patterns rather than patient-level noise.
+    3. **Log Transform:** `np.log1p` applied to enhance visibility of small differences and handle zeros safely.
+    4. **Color Scaling:** Use 5th and 95th percentiles to reduce influence of outliers on colormap.
+    5. **Plot Heatmap:**
+      - `imshow` plots features (rows) vs timesteps (columns).
+      -	Labels = feature names and timesteps.
+      -	Colormap = `plasma` (perceptually uniform).
+    6. **Save PNG:**
+      -	File path: `interpretability_tcn/{target_name}_mean_heatmap.png`
+      -	Provides a quick visual overview of which features dominate the model predictions over time.
+  - **Rationale:**
+    - **Plot the 10 features with the highest overall mean absolute saliency:** Reduces the visual complexity from 171 to 10; avoids overcrowding, improving interpretability.
+    - **Log Transform (np.log1p):** Expands low-magnitude differences so smaller saliency values remain visible while preventing large values from dominating.
+    - **Percentile-Based Color Scaling (vmin, vmax = 5th–95th):** Suppresses outlier influence, normalising visual intensity across features → heatmap better reflects the true variation in saliency across features and timesteps, rather than being skewed by a few extreme points.
+    - **Perceptually Uniform Colormap (cmap='plasma'):** Ensures equal perceptual contrast across intensity levels, accurate visual mapping of saliency magnitude to colour intensity → improving readability for clinicians.
+  - **Output:**
+    - 3x Mean heatmap PNGs
+    - Heatmap dimensions: (`10 features × T timesteps`)
+    -	Log-scaled color intensity = mean |grad × input|
+    - Intended for inspection and presentation, complementing numeric CSV outputs.
+
+10. **Step 3F: Diagnostic Terminal Prints**
+  - **Purpose:** 
+    - Ensures no computational or logical errors in the saliency outputs.
+    - Validates model interpretability integrity across all three target heads.
+    - Provides confidence that downstream visual and quantitative analyses are built on reliable data.
+  - **Logic Overview:**
+    1. **Saliency Statistics:**
+      - NaN count: `np.isnan(per_patient_saliency).sum()` → Detects any invalid or missing values from the saliency computation (should be zero).
+      - Mean and Max: Provide a quick overview of the magnitude and scale of computed saliency values across all patients, features, and timesteps.
+      - Confirms that gradient × input operations produced stable and realistic magnitudes.
+    2. **Model Head Correlations:**
+      - Each model head (max_risk, median_risk, pct_time_high) predicts a different outcome.
+      - Correlation checks ensure that heads are learning distinct but related patterns:
+        - High correlation → possible redundancy between prediction heads.
+        - Low correlation → confirms each head captures different aspects of patient risk.
+
 ---
 
 
