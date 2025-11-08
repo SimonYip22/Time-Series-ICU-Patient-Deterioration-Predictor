@@ -207,19 +207,25 @@ def compute_saliency_for_batch(model, x_batch, mask_batch, head_key):
                             # Final saliency array: (B, T, F), Each row = one patient, Each column (within that) = one timepoint × feature pair.
 
 # -----------------------------
-# 3. Generate Per-Patient & Global Saliency Outputs
+# 3. Compute Interpretable Saliency Outputs
 # -----------------------------
 """
 Purpose:
-- This section produces all interpretability outputs from the temporal saliency analysis.
-- For each model head (max_risk, median_risk, pct_time_high):
-  1. Compute per-patient |grad * input| saliency maps → (T × F) arrays per patient.
-  2. Save individual heatmaps visualising temporal importance per patient.
-  3. Aggregate across patients to create a global mean saliency heatmap.
-  4. Compute and export Top-10 most influential features across time and patients.
+- Compute fully interpretable, quantitative saliency outputs for each model target head.
+- Avoid per-patient heatmaps because 171 features × 96 timesteps is not interpretable.
+- Focus on CSV outputs and concise heatmaps for the top features.
+- For each target head (max_risk, median_risk, pct_time_high):
+    1. Compute per-patient |grad * input| saliency (shape: n_test × T × F)
+    2. Generate feature-level mean + std CSVs → overall importance per feature
+    3. Generate temporal mean profile CSV → how feature importance changes over time
+    4. Generate top-5 features temporal profile CSV → interpretable temporal patterns of key features
+    5. Generate global mean heatmap PNG for top 10 features → visual summary only
+    6. Perform diagnostics → sanity checks, correlations between heads, NaNs, min/max
 Rationale:
-- This mirrors the LightGBM SHAP analysis (feature-level importance) but for the TCN, capturing when each feature mattered over time.
+- Per-patient heatmaps are removed because 171 features × 96 timesteps is not interpretable.
+- CSV outputs provide numerical, fully interpretable data for analysis.
 """
+
 # Batch size for gradient computation
 batch_size = 4
 
@@ -228,11 +234,15 @@ for target_name, head_key in TARGETS:
     print(f"\n[INFO] ===== Saliency for target: {target_name} ({head_key}) =====")
 
     # -----------------------------
-    # 3A. Compute per-patient saliency maps
+    # 3A. Compute per-patient saliency for all batches
     # -----------------------------
     """
-    - Each saliency map = |∂y/∂x * x| for one patient
-    - A 2D array [time × feature], indicating how strongly each feature at each timepoint influenced the model’s output for that specific prediction.
+    - Compute |∂y/∂x * x| for each patient sequence
+    - Result: 3D array (n_test, T, F)
+      - n_test = number of patients in test set
+      - T = timesteps (max sequence length)
+      - F = number of input features
+    - This is the fundamental data from which all interpretable summaries are derived.
     """
     per_patient_saliency = []
 
@@ -242,128 +252,121 @@ for target_name, head_key in TARGETS:
         sal_b = compute_saliency_for_batch(model, xb, mb, head_key) 
         per_patient_saliency.append(sal_b)
 
-    # Stack all batches → (n_test, T, F)
-    per_patient_saliency = np.concatenate(per_patient_saliency, axis=0)
-    print(f"[INFO] Saliency shape: {per_patient_saliency.shape}")
-
-    # --- Save raw per-patient arrays ---
-    save_npz = RESULTS_DIR / f"patient_saliency_{target_name}.npz"
-    np.savez_compressed(
-        save_npz, 
-        **{f"patient_{i}": per_patient_saliency[i] for i in range(n_test)}
-    )
-    print(f"[INFO] Saved saliency arrays → {save_npz}")
+    per_patient_saliency = np.concatenate(per_patient_saliency, axis=0) # Stack all batches → (n_test, T, F)
+    print(f"[INFO] Full saliency array shape: {per_patient_saliency.shape}")
 
     # -----------------------------
-    # 3B. Generate per-patient saliency heatmaps
+    # 3B. Feature-level mean + std saliency CSV
     # -----------------------------
     """
-    - Each heatmap visualises temporal feature importance for one test patient:
-      - x-axis = time (hours/timesteps)
-      - y-axis = features
-      - colour = |grad * input| magnitude (importance)
-    - Masked (NaN) values are padded regions beyond each patient’s true sequence length.
+    - Aggregates saliency over all patients and timesteps
+    - Computes mean and standard deviation per feature
+    - CSV provides interpretable numerical values for feature importance
     """
-    for i in range(n_test):
-        arr = per_patient_saliency[i] # (T, F)
-        mask_np = mask_test[i].cpu().numpy().astype(bool)
-        arr[~mask_np, :] = np.nan # hide padded timesteps
+    feature_mean = per_patient_saliency.mean(axis=(0, 1))  # (F,)
+    feature_std = per_patient_saliency.std(axis=(0, 1))    # (F,)
+    df_features = pd.DataFrame({
+        "feature": feature_cols,
+        "mean_abs_saliency": feature_mean,
+        "std_abs_saliency": feature_std
+    }).sort_values("mean_abs_saliency", ascending=False)
 
-        plt.figure(figsize=(14, 6))
-        plt.imshow(arr.T, aspect='auto', interpolation='nearest')
-        plt.colorbar(label='|grad * input|')
-        plt.ylabel('Feature')
-        plt.yticks(np.arange(len(feature_cols)), feature_cols, fontsize=6)
-        plt.xlabel('Time (timestep)')
-        plt.title(f"Saliency Heatmap — {target_name} — Patient {i}")
-        plt.tight_layout()
-        plt.savefig(RESULTS_DIR / f"{target_name}_patient_{i:02d}_heatmap.png", dpi=200)
-        plt.close()
-
-    print(f"[INFO] Saved {n_test} patient-level heatmaps for {target_name}")
+    df_features.to_csv(RESULTS_DIR / f"{target_name}_feature_saliency.csv", index=False)
+    print(f"[INFO] Saved feature-level saliency CSV → {target_name}_feature_saliency.csv")
 
     # -----------------------------
-    # 3C. Global Mean Saliency Heatmap
+    # 3C. Temporal mean profile CSV
     # -----------------------------
     """
-    - Averaged across all test patients → shows general temporal patterns of importance.
-    - For example: respiratory features might peak in importance mid-stay before deterioration.
+    - Computes mean saliency across features for each timestep
+    - Reveals when during the sequence the model is most sensitive
+    - CSV: timestep × mean_abs_saliency
     """
-    mean_saliency = np.nanmean(per_patient_saliency, axis=0) # (T, F), average across patients, ignoring NaNs from padding
+    temporal_mean = per_patient_saliency.mean(axis=(0, 2))  # (T,)
+
+    df_temporal = pd.DataFrame({
+        "timestep": np.arange(MAX_SEQ_LEN),
+        "mean_abs_saliency": temporal_mean
+    })
+    df_temporal.to_csv(RESULTS_DIR / f"{target_name}_temporal_saliency.csv", index=False)
+    print(f"[INFO] Saved temporal saliency CSV → {target_name}_temporal_saliency.csv")
+
+    # -----------------------------
+    # 3D. Top-5 features temporal profile CSV
+    # -----------------------------
+    """
+    - Identify the top 5 features by mean absolute saliency
+    - Compute temporal profile (mean over patients) for these features
+    - CSV: timestep × top features → interpretable temporal trends
+    """
+    top_features_idx = feature_mean.argsort()[::-1][:5]  # indices of top 5 features
+    top_features = [feature_cols[i] for i in top_features_idx]
+    temporal_top = per_patient_saliency[:, :, top_features_idx].mean(axis=0)  # (T, 5)
+    df_top_temporal = pd.DataFrame(temporal_top, columns=top_features)
+    df_top_temporal.insert(0, "timestep", np.arange(MAX_SEQ_LEN))
+    df_top_temporal.to_csv(RESULTS_DIR / f"{target_name}_top_features_temporal.csv", index=False)
+    print(f"[INFO] Saved top-5 features temporal CSV → {target_name}_top_features_temporal.csv")
+
+    # -----------------------------
+    # 3E. Global mean heatmap PNG (top 10 features)
+    # -----------------------------
+    """
+    - For visualisation only; shows mean saliency of top 10 features over time
+    - Provides a visual summary but is not needed for quantitative interpretation
+    """
+    top10_idx = feature_mean.argsort()[::-1][:10]
+    top10_features = [feature_cols[i] for i in top10_idx]
+
+    # Compute mean saliency over patients for top 10 features
+    mean_top10 = per_patient_saliency[:, :, top10_idx].mean(axis=0)  # (T, 10)
+
+    # Apply log transform to enhance visibility of small differences
+    plot_data = np.log1p(mean_top10)  # log(1 + x) to handle zeros safely
+
+    # Percentile-based color scaling to reduce influence of outliers
+    vmin, vmax = np.percentile(plot_data, [5, 95])
 
     plt.figure(figsize=(14, 6))
-    plt.imshow(mean_saliency.T, aspect='auto', interpolation='nearest')
-    plt.colorbar(label='mean |grad * input|')
-    plt.ylabel('Feature')
-    plt.yticks(np.arange(len(feature_cols)), feature_cols, fontsize=6)
+    im = plt.imshow(
+        plot_data.T,
+        aspect='auto',
+        interpolation='nearest',
+        cmap='plasma',   # perceptually uniform colormap
+        vmin=vmin,
+        vmax=vmax
+    )
+    plt.colorbar(im, label='mean |grad * input| (log scale)')
+    plt.ylabel('Top 10 Features')
+    plt.yticks(ticks=np.arange(len(top10_features)), labels=top10_features, fontsize=8)
     plt.xlabel('Time (timestep)')
-    plt.title(f"Mean Saliency — {target_name} — Averaged Across Patients")
+    plt.title(f"Mean Saliency Heatmap — {target_name} — Top 10 Features")
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / f"{target_name}_mean_heatmap.png", dpi=200)
     plt.close()
-    print(f"[INFO] Saved global mean heatmap for {target_name}")
+    print(f"[INFO] Saved global mean heatmap → {target_name}_mean_heatmap.png")
 
     # -----------------------------
-    # 3D. Top-10 Feature Ranking by Average Saliency
+    # 3F. Diagnostics
     # -----------------------------
     """
-    Aggregates saliency over all patients and timepoints:
-    - mean(|grad * input|) per feature
-    - ranks by absolute magnitude → top-10 most influential variables overall
-    This provides a concise, feature-level interpretability summary.
+    - Provides sanity checks on the saliency outputs:
+        - NaN count, mean, max values
+        - Correlations between model heads to identify potential redundancy or overlap
+    - Ensures outputs are valid and interpretable numerically
     """
-    feature_mean_sal = per_patient_saliency.mean(axis=(0, 1)) # (F,)
-    df_top = (
-        pd.DataFrame({
-            "feature": feature_cols, 
-            "mean_abs_saliency": feature_mean_sal
-        })
-        .sort_values("mean_abs_saliency", ascending=False)
-        .head(10)
-    )
-    df_top.to_csv(RESULTS_DIR / f"{target_name}_top10_saliency.csv", index=False)
-    print(f"[INFO] Saved Top-10 Features → {RESULTS_DIR / f'{target_name}_top10_saliency.csv'}")
+    print("\n[DIAGNOSTICS] ==============================")
+    print("Saliency stats:")
+    print(" - NaN count:", np.isnan(per_patient_saliency).sum())
+    print(" - Mean value:", np.nanmean(per_patient_saliency))
+    print(" - Max value:", np.nanmax(per_patient_saliency))
+
+    # Head correlations
+    outputs = model(x_test, mask_test)
+    max_out = outputs["logit_max"].detach().cpu().numpy().ravel()
+    med_out = outputs["logit_median"].detach().cpu().numpy().ravel()
+    reg_out = outputs["regression"].detach().cpu().numpy().ravel()
+    print("Correlation between head outputs:")
+    print("max ↔ median:", np.corrcoef(max_out, med_out)[0, 1])
+    print("max ↔ regression:", np.corrcoef(max_out, reg_out)[0, 1])
 
 print("\n[INFO] ✅ TCN saliency computation complete.")
-
-# -----------------------------
-# Diagnostics: Sanity checks on saliency and head correlations
-# -----------------------------
-print("\n[DIAGNOSTICS] ==============================")
-
-# 1. Global saliency stats
-print("Saliency summary:")
-print(" - NaN count:", np.isnan(per_patient_saliency).sum())
-print(" - Mean value:", np.nanmean(per_patient_saliency))
-print(" - Max value:", np.nanmax(per_patient_saliency))
-
-# 2. Display top-10 CSVs (for sanity)
-for t in ["max_risk", "median_risk", "pct_time_high"]:
-    csv_path = RESULTS_DIR / f"{t}_top10_saliency.csv"
-    df = pd.read_csv(csv_path)
-    print(f"\nTop-10 features for {t}:")
-    print(df.head(10))
-
-# 3. Correlation between model heads
-outputs = model(x_test, mask_test)
-max_out = outputs["logit_max"].detach().cpu().numpy().ravel()
-med_out = outputs["logit_median"].detach().cpu().numpy().ravel()
-reg_out = outputs["regression"].detach().cpu().numpy().ravel()
-
-print("\nCorrelation between head outputs:")
-print("max ↔ median:", np.corrcoef(max_out, med_out)[0, 1])
-print("max ↔ regression:", np.corrcoef(max_out, reg_out)[0, 1])
-
-# 4. Gradient magnitude range
-feature_mean_sal = per_patient_saliency.mean(axis=(0, 1))
-print("\nFeature-level mean saliency range:")
-print("min:", feature_mean_sal.min(), "max:", feature_mean_sal.max())
-
-# 5. Check for duplicate saliency arrays across heads
-# (replace "..." with actual filenames)
-npz_max = np.load(RESULTS_DIR / "patient_saliency_max_risk.npz")
-npz_med = np.load(RESULTS_DIR / "patient_saliency_median_risk.npz")
-
-same_arrays = np.allclose(npz_max["patient_0"], npz_med["patient_0"])
-print("\nAre patient_0 saliency maps identical between heads?:", same_arrays)
-print("[DIAGNOSTICS COMPLETE]")
