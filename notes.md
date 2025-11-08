@@ -9123,8 +9123,143 @@ src/
 
 ---
 
-## Day 39 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
+## Day 39-41 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
 
+### Goals
+- Finalise and validate `saliency_analysis_tcn.py` script (Phase 6 Step 4).
+-	Verify all generated outputs in `interpretability_tcn/` for correctness and interpretability.
+- Debug any output anomalies and visualisation issues.
+- Analyse saliency CSVs and heatmaps to interpret key temporal feature patterns.
+- Compare TCN saliency findings with LightGBM SHAP results (Phase 6 Step 3) to assess consistency across models.
+
+### What We Did
+#### Step 4: TCN Temporal Saliency Script `saliency_analysis_tcn.py`
+**Purpose**
+-	Compute gradient × input (|grad × input|) saliency maps for the refined TCN model on the test set.
+-	Quantify how each input feature and timestep influences predictions for all three output heads (`max_risk`, `median_risk`, `pct_time_high`).
+-	Produce reproducible, interpretable outputs (feature-level, temporal, and top-feature summaries).
+-	Provide visual summaries via top-10 feature heatmaps (for qualitative inspection only).
+**Workflow**
+1. **Environment Setup and File Validation**
+  - **Imports and Dependencies**
+    - Loads all required Python libraries: `torch`, `numpy`, `matplotlib`, and `pandas` for deep learning, numerical computation, and plotting.
+    - `tqdm` for visual progress bars during batch processing.
+    - `json` and `pathlib` for reading configuration files and managing directory paths.
+    - Adds the project’s `src/` folder to the Python path so the custom `TCNModel` can be imported from `ml_models_tcn/tcn_model.py`.
+  - **Directory Configuration**
+    - **Model files:** trained model weights (`tcn_best_refined.pt`) and model configuration (`config_refined.json`).
+    - **Preprocessing metadata**: `padding_config.json`, `standard_scaler.pkl`, `patient_splits.json` for consistent data formatting.
+    - **Test tensors:** preprocessed test data (`test.pt`) and sequence masks (`test_mask.pt`).
+    - **Output folder:** creates `interpretability_tcn/` for storing all interpretability results.
+  - **Sanity Checks**
+    - Ensures all required input files exist before proceeding.
+    - Immediately raises descriptive errors if any file is missing, preventing partial or corrupted runs.
+    - Confirms readiness by printing a verification message:
+    ```bash
+    [INFO] All required input files found. Ready to proceed.
+    ```
+2. **Step 1: Load Model, Configuration, and Test Data**
+  - **Device Selection**
+    - Automatically detects whether a GPU is available; otherwise defaults to CPU.
+    - Ensures all subsequent model operations run on the same device.
+  - **Load Model Configuration**
+    - Reads `config_refined.json` to retrieve network architecture → `arch = config["model_architecture"]`
+    - `num_channels`, `kernel_size`, `dropout`, `head_hidden` → model hyperparameters for reconstruction.
+  - **Load Preprocessing Metadata**
+    - Reads `padding_config.json` to extract:
+      - `feature_cols`: ordered list of all input feature names.  
+      - `max_seq_len`: sequence length after padding.  
+      - `target_cols`: model output heads for prediction.  
+    - Ensures that test data dimensions match these definitions.
+  - **Load Test Tensors**
+    - `test.pt`: padded feature tensor `(n_patients, timesteps, features)`.
+    - `test_mask.pt`: binary mask tensor `(n_patients, timesteps)` identifying valid timesteps (1 = real timestep, 0 = padding)
+  - **Shape Validation**
+    - Confirms sequence length matches (`max_seq_len`) and feature count matches (`feature_cols`).
+    - Prevents downstream dimension mismatches.
+  - **Rebuild and Load Model**
+    - Reconstructs the TCN using configuration parameters → `model = TCNModel(...).to(device)`.
+    - Loads pretrained weights from `tcn_best_refined.pt` to PyTorch as `state_dict`, then loaded into model (`model.load_state_dict(state_dict)`)
+    - Switches model to evaluation mode (`model.eval()`) to disable dropout and training behaviors.
+  - **Rationale**: 
+    - This step guarantees reproducibility by rebuilding the exact refined TCN used in prediction. 
+    - It prepares the model and data for precise gradient-based saliency computation, ensuring the interpretability results reflect the final trained system.
+3. **Step 2: Define Targets and Saliency Computation Function**
+  - **Define Model Output Heads (`TARGETS`)**
+    - Each target corresponds to one prediction head in the refined TCN
+    - Saliency will be computed separately for each head to understand which features and at which times influenced each distinct clinical prediction.
+    | Target name | Model key         | Type            | Description |
+    |--------------|------------------|-----------------|--------------|
+    | `max_risk`   | `logit_max`      | Classification  | Binary output for whether the patient reached a critical deterioration. |
+    | `median_risk`| `logit_median`   | Classification  | Binary output for the average deterioration severity. |
+    | `pct_time_high` | `regression`  | Continuous      | Regression output estimating proportion of time spent at high risk. |
+
+  - **Create saliency Computation Function `compute_saliency_for_batch()`**
+    - **Purpose:** Quantifies how much each input feature at each timestep contributed to the model’s output for a small batch of patients.
+    - **Methodology:**
+      1. **Gradient tracking:** Enables PyTorch autograd to record how changes in each input affect the model’s output.
+      2. **Gradient × Input (|grad × input|):**  
+        - Gradient (`∂y/∂x`) shows sensitivity of prediction to feature changes.  
+        - Multiplying by the input value scales this by feature activity.  
+        - Taking the absolute value gives overall magnitude of influence, ignoring direction (positive/negative).
+      3. **Per-patient saliency:**  
+        - Loops through each patient in the batch to compute individual gradients.  
+        - The result is stacked into a 3D array of shape `(B, T, F)`:
+          - **B** = batch size (number of patients)  
+          - **T** = timesteps (sequence length)  
+          - **F** = number of features  
+      4. **Output:**  
+        - Returns a NumPy array representing absolute saliency values (`|∂y/∂x × x|`) for each patient, timestep, and feature.
+        - **Final shape:** `(B, T, F)` → one saliency matrix per patient (rows = timesteps, columns = features).
+
+4. **Step 3: Compute Interpretable Saliency Outputs**
+  - **Purpose:** 
+    - Initialises batch-level computation and iterates through each model output head (target) to compute saliency maps independently.
+    - The loop executes the full interpretability pipeline (saliency computation, aggregation, visualization, and diagnostics) for each target head sequentially
+    - Ensures that all model outputs receive independent saliency analyses.
+  - `batch_size = 4` controls how many patient sequences are processed simultaneously when computing gradients → keeps GPU/CPU memory usage manageable while maintaining computational efficiency.
+  - `for target_name, head_key in TARGETS:` 
+    - Iterates throgh the three model output heads defined earlier.
+    - Each head is analysed separately to understand which features and timepoints drive its predictions.
+
+5. **Step 3A: Compute Per-Patient Saliency Across Batches**
+  - **Purpose:** Compute gradient-based saliency (`|∂y/∂x * x|`) for each patient in the test set in manageable batches, producing a full `(n_test, T, F)` array for downstream interpretability. 
+  - **Logic Overview:**
+    1. **Initialise storage:** List to hold saliency results from each batch (`per_patient_saliency = []`).
+    2. **Process in batches:** 
+      - Loop over the test set using range(`0`, `n_test`, `batch_size`) to avoid memory issues.
+      - Use `tqdm` to monitor progress.
+    3. **Prepare batch tensors:**
+      -	`xb` → batch of input sequences `(B, T, F)`
+      -	`mb` → corresponding mask `(B, T)`
+      -	Both moved to the correct device.
+    4. **Compute batch saliency:** `compute_saliency_for_batch(model, xb, mb, head_key)` returns `(B, T, F)` array of absolute gradient × input values.
+    5. **Accumulate results:** Append each batch’s saliency to `per_patient_saliency`.
+    6. **Combine all batches:** `np.concatenate(per_patient_saliency, axis=0)` → final shape `(n_test, T, F)`.
+    7. **Verify output:** Print shape for debugging and confirmation.
+  - **Output:**
+    -	`per_patient_saliency` → 3D array `(n_test, T, F)`
+    -	Contains absolute saliency per patient, timestep, and feature.
+    - Forms the basis for feature-level summaries, temporal profiles, and heatmaps.
+---
+
+
+
+
+
+
+**Rationale**
+-	Provide clinicians with interpretable, quantitative insight into the model’s temporal reasoning, identifying which features drive deterioration risk and at what times.
+-	Create saliency-based interpretability outputs that directly complement and extend the LightGBM SHAP analysis, adding the temporal dimension absent in SHAP.
+-	Support transparent clinical evaluation by showing how model attention evolves across time and features for each prediction head.
+
+---
+
+### Saliency mapping explained 
+
+---
+
+### Saliency (Step 4) vs SHAP (Step 3)
 
 ### Purpose
 To derive **clinically meaningful temporal insights** into *when* and *why* the Temporal Convolutional Network (TCN) makes certain predictions, complementing Step 3’s LightGBM feature-level SHAP analysis.
@@ -9185,5 +9320,972 @@ It completes the interpretability suite for Phase 6, showing that:
 - LightGBM explains **static importance** (feature-level),
 - TCN explains **temporal dynamics** (sequence-level),
 together providing a **comprehensive interpretability framework** for clinical AI evaluation.
+
+
+Step 
+---
+
+## TCN Saliency Terminal Output Summary
+**Environment & Data:**
+- All required input files found
+- Device: CPU
+- Test data shape: (15 patients, 96 timesteps, 171 features)
+- Mask shape: (15, 96)
+- TCN model loaded successfully and moved to device
+**Outputs saved:**
+All files saved in: `src/results_finalisation/interpretability_tcn/`
+- Feature-level saliency CSVs: `{target}_feature_saliency.csv`
+- Temporal mean saliency CSVs: `{target}_temporal_saliency.csv`
+- Top-5 features temporal profile CSVs: `{target}_top_features_temporal.csv`
+- Global mean heatmaps (top 10 features) PNGs: `{target}_mean_heatmap.png`  
+
+**Saliency Outputs & Diagnostics:**
+
+| Target           | Saliency shape       | NaN count | Mean saliency       | Max saliency       | Head correlations (max ↔ median / max ↔ regression) |
+|-----------------|--------------------|-----------|------------------|------------------|----------------------------------------------------|
+| max_risk         | (15, 96, 171)      | 0         | 1.716e-05         | 0.002402         | 0.956 / 0.958                                      |
+| median_risk      | (15, 96, 171)      | 0         | 2.681e-05         | 0.005771         | 0.956 / 0.958                                      |
+| pct_time_high    | (15, 96, 171)      | 0         | 7.897e-06         | 0.001682         | 0.956 / 0.958                                      |
+
+
+**Notes:**
+- Confirms the model and data loaded correctly.
+- No NaNs present in the saliency arrays.
+- Mean, max saliency checks numeric sanity.
+- Array shapes and dimensions verified against input data.
+- Outputs provide fully quantitative, interpretable information; heatmaps are only for visualization purposes.
+- Head output correlations indicate high consistency between related targets.
+
+---
+
+### Saliency Computation Function Logic `compute_saliency_for_batch()`
+**Background**
+- Core function that performs the actual gradient-based saliency calculation for one batch of test patients.  
+- Defines the mathematical logic for computing how much each input feature at each timestep influenced the model’s prediction for each patient.
+- Outputs these values as interpretable saliency maps used later for CSVs and heatmaps.
+**Code Logic**
+1. **Define Function and Arguments**
+  ```python
+  def compute_saliency_for_batch(model, x_batch, mask_batch, head_key)
+  ```
+  - `model`: the trained TCN model already loaded and in evaluation mode.
+	-	`x_batch`: tensor of shape `(B, T, F)` = a mini-batch of test patient sequences
+    -	`B` = number of patients in the batch
+    -	`T` = number of timesteps (96)
+    -	`F` = number of input features (171)
+	-	`mask_batch`: binary tensor `(B, T)` marking valid timesteps (1) and padding (0).
+	-	`head_key`: specifies which output head to compute saliency for (`"logit_max"`, `"logit_median"`, or `"regression"`).
+
+2. **Prepare Input Tensors**
+  ```python
+  x = x_batch.clone().detach().to(device)
+  x.requires_grad = True
+  mask = mask_batch.to(device)
+  ```
+  - `clone().detach()` creates a new copy of the batch to avoid modifying the original data.
+	- `requires_grad=True` tells PyTorch to track how the model output changes with respect to every input feature value, this is essential for computing gradients.
+	- The mask tensor is transferred to the same compute device (CPU or GPU).
+
+3. **Forward Pass Through the Model**
+  ```python
+  outputs = model(x, mask)
+  out = outputs[head_key].squeeze()
+  ```
+  - The model produces predictions for all output heads (`logit_max`, `logit_median`, `regression`).
+  -	We select the target output head being explained (e.g., `"logit_max"`).
+  -	`squeeze()` removes singleton dimensions, leaving a 1D tensor of shape `(B,)` → one scalar prediction per patient in the batch.
+
+4. **Initialise Gradient Storage**
+  ```python
+  grads = []
+  ```
+  - Empty list to store gradients for each patient separately.
+
+5. **Compute Gradients per Patient**
+  ```python
+  for i in range(out.shape[0]):
+      if x.grad is not None:
+          x.grad.zero_()
+      scalar = out[i]
+      scalar.backward(retain_graph=True)
+      grads.append(x.grad[i].detach().cpu().numpy())
+  ```
+  -	The loop iterates over each patient (`i`) where `out.shape[0]` = number of patients in the batch `(B)`:
+    -	`x.grad.zero_()` clears previous gradients before computing new ones.
+    -	`scalar = out[i]` isolates a single scalar output (the model prediction for that patient).
+    -	`scalar.backward()` computes the derivative of the patient's scalar prediction `(y_i)` with respect to all input features  (`x`) in the batch tensor. After this, `x.grad` has the same shape as `x` → `(B, T, F)`; gradients for every feature at every timestep.
+    - `x.grad[i]` extracts the gradient map for this specific patient `(T, F)`.
+    -	`.detach().cpu().numpy()` removes it from the PyTorch graph and converts to NumPy for later aggregation.
+    - `grads.append` appends the extracted matrix to the list
+
+6. **Combine all Per-Patient Gradients**
+  ```python
+  grads = np.stack(grads, axis=0)
+  ```
+	-	Produces a single unified 3D array of shape `(B, T, F)`; gradients for every patient, timestep, and feature.
+
+7. **Compute Gradient × Input (Saliency Map)**
+  ```python
+  saliency = grads * x.detach().cpu().numpy()
+  ```
+	-	Element-wise multiplication combines sensitivity (`grad`) with the input magnitude (`x`).
+  - **Mathematical equation:** `S[b, t, f] = | (∂y_b / ∂x[b, t, f]) × x[b, t, f] |`
+    - `S[b, t, f]` = saliency value for patient `b`, timestep `t`, feature `f`
+    -	`y_b` = model output (scalar prediction) for patient `b`
+    -	`x[b, t, f]` = input value for feature `f` at time `t` for patient `b`
+    -	`∂y_b / ∂x[b, t, f]` = gradient (sensitivity of the output to that input)
+	-	This highlights where high input values strongly influenced the model’s output.
+
+8. **Return Absolute Saliency**
+  ```python
+  return np.abs(saliency)
+  ```
+  - The absolute value removes direction (positive/negative influence) and keeps only magnitude → representing the strength of contribution.
+	- **Final shape:** (`B, T, F`) → one saliency map per patient showing importance of each feature over time.
+
+**Summary**
+-	Computes gradients of the model’s predictions with respect to all input features.
+-	Multiplies gradients by actual input magnitudes to derive |grad × input| saliency to measure contribution strength.
+-	Returns |grad × input| saliency maps (3D array) showing how strongly each feature at each timestep influenced each patient’s risk prediction.
+
+---
+
+🧩 1. Can we still do saliency if the TCN trained on timestamp-level data?
+
+✅ Yes — and it’s actually the correct setup.
+	•	Your TCN was trained on timestamp-level sequences (e.g., shape [batch, timesteps, features]), learning temporal dependencies over time.
+	•	Even though evaluation produced patient-level aggregated outputs (e.g., mean/max risk per patient, for comparison with LightGBM), the underlying model operates at timestamp level.
+	•	That means saliency can be computed directly on the temporal input sequences — to show which timesteps and features most influenced the model’s patient-level prediction.
+
+  Should we use the 70 training patients or the 15 test patients?
+
+Best practice depends on your interpretability goal:
+
+Goal
+Dataset to use
+Rationale
+Global interpretability (what the model learned)
+Training set (70)
+Stable, representative gradients; avoids small-sample noise; shows what the model learned.
+Local interpretability (why certain predictions occur)
+Test set (15)
+Illustrates real, unseen examples; good for case-by-case clinical interpretability.
+
+🎯 Your project’s goal in Phase 6 Step 4 = final interpretability tied to evaluation results.
+You already did LightGBM SHAP on training patients (70) for global interpretability.
+To complement that, here you want to show temporal reasoning for the model’s evaluated predictions.
+
+✅ Therefore: we compute saliency on the 15 test patients.
+Reasoning:
+	•	It aligns with model evaluation (same patients as the comparative results).
+	•	It shows how the model produced the risk scores that were compared to LightGBM.
+	•	It produces interpretable examples, not training artefacts.
+
+So:
+
+🔹 SHAP (LightGBM): 70 patients → global feature importance
+🔹 Saliency (TCN): 15 patients → local temporal interpretability
+
+
+What visualisation and aggregation should we produce?
+
+To fully satisfy both scientific rigour and clinical interpretability, we do both:
+
+Output Type
+Purpose
+Why we include it
+Per-patient heatmaps (Feature × Time)
+Local interpretability
+Shows when and which vitals drove each patient’s risk spike — ideal for illustrating temporal reasoning.
+Aggregate mean saliency per feature
+Global interpretability
+Allows comparison of feature-level importance (e.g., “TCN also focuses mostly on RR and SpO₂”). This directly complements LightGBM SHAP.
+
+So:
+✅ We generate both per-patient heatmaps and aggregated saliency summaries.
+
+4. Should we use Integrated Gradients or simple Gradients?
+
+Decisive answer:
+✅ Use Integrated Gradients (IG).
+
+Reasoning:
+	•	Simple gradients are noisy and can fluctuate sharply with activation saturation or ReLU dead zones.
+	•	IG averages gradients over many interpolation steps from a baseline input (e.g., all zeros or patient mean), yielding smoother and more meaningful saliency maps.
+	•	IG is the gold standard for temporal model interpretability in clinical and sequence AI literature (used in most published ICU deterioration or ECG/time-series explainability work).
+
+So:
+
+🔹 We use Captum’s IntegratedGradients implementation.
+🔹 Baseline = zero-tensor (no signal).
+🔹 Integration steps = 50 (default good balance between precision and runtime).
+
+
+. Rationale Summary
+
+Component
+Rationale
+Integrated Gradients
+Stable, well-validated saliency method; captures cumulative feature influence.
+Test-set patients (15)
+Directly interprets the model’s evaluated predictions — ties to comparative performance results.
+Per-patient + aggregated outputs
+Local interpretability (temporal heatmaps) + global comparability with LightGBM SHAP.
+Goal alignment
+Explains when and why TCN predicts risk — complementing LightGBM’s what features matter.
+
+The apparent contradiction
+
+You’re absolutely right to notice this tension:
+	•	LightGBM SHAP → on training set (70 patients)
+	•	TCN saliency → on test set (15 patients)
+
+At first glance, that seems inconsistent — if the goal is to compare interpretability, shouldn’t they be computed on the same patient set?
+
+⸻
+
+🔹 The key: Two distinct interpretability goals
+
+Interpretability has two complementary modes — and each of your models is used in one of them.
+
+Mode
+Goal
+Dataset
+Explanation Type
+Analogy
+Global interpretability
+Explain what the model learned overall.
+Training set
+SHAP feature importance
+“What patterns did the model internalise?”
+Local interpretability
+Explain why the model predicted what it did on specific unseen patients.
+Test set
+Saliency / Integrated Gradients
+“Why did this prediction occur?”
+
+⚙️ How this maps to your two models
+
+Model
+Data type
+Interpretability method
+Purpose
+Dataset used
+LightGBM
+Static, tabular
+SHAP (TreeExplainer)
+Global feature-level importance (what matters most overall)
+Training (70)
+TCN
+Temporal sequence
+Integrated Gradients (saliency)
+Local temporal attribution (when and why things matter)
+Test (15)
+
+So they aren’t meant to be directly compared numerically (like AUROC).
+They are complementary explanations describing different dimensions of interpretability.
+
+Why LightGBM SHAP is on the training set
+	1.	Purpose: Identify what the model learned.
+SHAP explains the mapping the model learned from input → prediction.
+	2.	Rationale:
+	•	Model learns relationships from training data, so SHAP on that set gives the most representative explanation of those learned patterns.
+	•	Test-set SHAP would be too noisy (only 15 samples), unstable for global ranking.
+	•	You’re not trying to explain individual test cases, you’re summarising feature importance across the cohort.
+	3.	Analogy: Explaining what a student knows, not how they performed on one test.
+
+⸻
+
+🔹 Why TCN saliency is on the test set
+	1.	Purpose: Explain how the model made predictions in evaluation.
+	•	Saliency maps are inherently local explanations — per sequence, per timestep.
+	•	They’re meant to show which time periods and features drove each prediction in evaluated patients.
+	2.	Rationale:
+	•	You want to show temporal reasoning on unseen patients, not what the model memorised during training.
+	•	It directly ties to the comparative performance results from Phase 6 Steps 1–2.
+	•	It produces clinically interpretable visualisations (“this is what the TCN saw when it predicted deterioration”).
+	3.	Analogy: Explaining how the student applied their knowledge on an exam problem.
+
+
+So are we comparing LightGBM and TCN interpretability?
+
+Yes — but conceptually, not numerically.
+
+Aspect compared
+LightGBM (static)
+TCN (temporal)
+Comparative takeaway
+What features matter
+SHAP → top-ranked variables (SpO₂, RR, O₂ support)
+IG mean saliency → top features averaged over time
+Consistency check: same physiological drivers
+When features matter
+N/A (static model)
+Saliency heatmaps → show critical time windows
+Adds temporal interpretability unique to TCN
+Interpretation type
+Global, stable
+Local, dynamic
+Together provide a complete interpretability layer
+
+So:
+	•	You don’t compare SHAP vs saliency on identical patients.
+	•	You compare the nature and consistency of the learned physiological signals between models.
+
+🔹 Could we compute both on the same patients?
+
+Technically yes, but:
+	•	LightGBM SHAP on test (15 patients):
+	•	Possible, but not meaningful — the model hasn’t seen these patients, so SHAP is less stable and less representative globally.
+	•	TCN saliency on train (70 patients):
+	•	Possible, but misleading — we’d be explaining memorised behaviour, not evaluated predictions.
+
+So each method’s dataset choice is deliberate:
+	•	SHAP: stable global interpretability
+	•	Saliency: local interpretability tied to evaluation
+
+They serve different interpretability layers — not mirror images.
+
+summary of logic
+
+Step
+Model
+Interpretability type
+Dataset
+Why
+Phase 6 Step 3
+LightGBM
+Global SHAP (what the model learned)
+Training (70)
+Stable, representative global ranking
+Phase 6 Step 4
+TCN
+Local temporal saliency (how predictions are made)
+Test (15)
+Clinically interpretable, evaluation-aligned explanations
+
+✅ This is the standard and optimal setup for your pipeline:
+	•	It matches interpretability theory and clinical AI practice.
+	•	It provides both what the model knows (LightGBM) and how it reasons over time (TCN).
+	•	It perfectly complements Steps 1–2, which already compared what and how well the models predict.
+
+---
+
+Does the saliency script have to account for the fact that we tuned median_risk threshold, and that we also did the log transform for pct time high? 
+
+🧠 1. What saliency actually measures
+
+Saliency mapping (gradient × input) explains the model’s internal forward mapping —
+that is, how the trained weights transform input features → raw output activations.
+
+So in your TCN:
+outputs = {
+    "logit_max": ...,       # before sigmoid
+    "logit_median": ...,    # before sigmoid
+    "regression": ...       # log1p(pct_time_high)
+}
+
+Saliency derives from the raw head outputs (logits or log-transformed regression values), not from any post-hoc operations you did later (like sigmoid thresholds or expm1 inverse transforms).
+That’s by design — saliency must show which features the model itself found influential at the point of decision.
+
+⸻
+
+⚙️ 2. Median-risk threshold tuning
+	•	In evaluation, you tuned the classification threshold for the median-risk head to improve F1.
+	•	But saliency doesn’t use any thresholds — it looks at logit_median directly (the continuous output before sigmoid).
+
+✅ Therefore:
+No change needed in the saliency script.
+The threshold only affects post-evaluation classification metrics, not the learned decision boundary surface that saliency visualises.
+
+⸻
+
+📈 3. Log-transform of pct_time_high
+
+During training you log-transformed the regression target (log1p(y)), so the model actually predicts:
+
+\hat{y}{log} = \log(1 + y{true})
+
+Then, at evaluation, you converted it back via expm1.
+
+For saliency:
+	•	The model’s learned regression head operates in log-space.
+	•	So the gradients you compute are with respect to log1p(pct_time_high).
+
+✅ That’s correct and intended — you are explaining how features drive the internal log-scale prediction, which is what the model actually learned to output.
+
+If you wanted to “interpret in raw space” (after expm1), the transformation is non-linear and would distort gradient values in arbitrary ways — that’s neither standard nor meaningful.
+
+⸻
+
+✅ 4. Summary of what the saliency script should (and shouldn’t) account for
+Factor
+Affect saliency?
+Reason
+Median-risk threshold tuning
+❌ No
+Threshold applied post-hoc; doesn’t alter model weights or decision surface.
+Log-transform of regression
+✅ Already handled
+Saliency works on the trained log-space output; this is the true learned mapping.
+Calibration (Phase 5)
+❌ No
+Linear correction of outputs only; doesn’t affect internal feature attribution.
+Sigmoid / expm1 inverse transforms
+❌ No
+Saliency operates on pre-activation outputs, not post-transforms.
+
+Your current saliency script is already correct and does not need to incorporate threshold tuning or inverse log transforms.
+It is explaining the model as trained — that’s the scientific goal of interpretability.
+
+---
+
+
+1️⃣ What is x?
+
+x is your batch of test patients, each represented by a sequence of features over time:
+x.shape = (B, T, F)
+Think of this like a 3D cube:
+Patient 0 → [ timestep_0 [feat1 feat2 feat3 ...]
+              timestep_1 [feat1 feat2 feat3 ...]
+              ...
+              timestep_T [feat1 feat2 feat3 ...] ]
+
+Patient 1 → [ timestep_0 [feat1 feat2 feat3 ...]
+              ...
+              timestep_T [feat1 feat2 feat3 ...] ]
+
+	•	B (batch size) = number of patients in that batch.
+	•	T (timesteps) = how many hourly records per patient (e.g. 96 hours).
+	•	F (features) = number of physiological/lab variables (e.g. HR, RR, SpO₂, etc.).
+
+  2️⃣ What happens when we call scalar.backward()?
+
+Let’s take just one patient’s prediction (a single scalar):
+
+scalar = out[i]
+scalar.backward(retain_graph=True)
+
+This computes:
+\nabla_x f_i(x) = \frac{\partial f_i}{\partial x}
+— the gradient of that single patient’s scalar prediction
+with respect to every input element that went into it.
+
+🧠 What this means intuitively
+
+That one output (e.g. “risk = 0.82”) depends on all values in that patient’s input sequence —
+all timesteps, all features.
+
+So we want:
+
+“How much would the risk prediction change if I slightly increased HR at hour 10? RR at hour 3? SpO₂ at hour 8?”
+
+That’s what the gradient gives:
+	•	a derivative for every element of the input.
+
+⸻
+
+🔢 So the gradient must have the same shape as the input
+
+Since each element in x[i] (a patient’s sequence) contributed to the scalar,
+its gradient also has one number per input element:
+
+x[i]         → shape (T, F)
+x.grad[i]    → shape (T, F)
+
+	•	each row = one timestep
+	•	each column = one physiological feature
+	•	each cell = “how much this feature at this timestep influenced the output”
+
+3️⃣ Why x.grad has shape (B, T, F)
+
+PyTorch keeps gradients for all patients in the batch.
+So across all B patients, you have a gradient tensor of:
+x.grad.shape = (B, T, F)
+Then when we extract for patient i, we take:
+g = x.grad[i]    # shape (T, F)
+
+→ one 2D map of gradients for that single patient.
+
+⸻
+
+4️⃣ What is “each row = one patient” vs “each column = one timepoint × feature pair”?
+
+That part just describes how the 3D array can be visualised:
+	•	Dimension 0 (rows) → patient index
+	•	Dimension 1 (timesteps) → time within that patient’s stay
+	•	Dimension 2 (features) → physiological variables
+
+If you look at one patient’s saliency map (arr = saliency[i]):
+	•	it’s 2D: (T × F)
+	•	each cell corresponds to one timepoint-feature pair, like “SpO₂ at hour 8”.
+
+That’s why we sometimes write “timepoint × feature pair” — it’s the 2D grid cells.
+
+⸻
+
+5️⃣ What happens next
+
+When we multiply:
+saliency = grads * x.detach().cpu().numpy()
+
+We weight each gradient by the actual input magnitude (feature value).
+Then take absolute value to get:
+| \text{gradient} \times \text{input} |
+This becomes a saliency heatmap showing how strongly each feature at each hour affected the prediction.
+
+Symbol
+Shape
+Meaning
+x
+(B, T, F)
+Inputs: patient sequences
+out
+(B,)
+Scalar prediction per patient
+x.grad
+(B, T, F)
+Sensitivity of output to each input value
+x.grad[i]
+(T, F)
+Gradient map for a single patient
+saliency[i, t, f]
+scalar
+Importance of feature f at time t for patient i
+
+So the phrase “timepoint × feature pair” means one cell in that 2D map (one timestep, one feature).
+
+---
+
+# TCN Saliency Analysis Script Issues and Fixes
+### 1. Objective
+Explain temporal feature importance for each TCN output head.
+
+### 2. Initial Implementation
+Describe original method (|grad * input| per patient, per feature, per timepoint).
+
+orinally computed 3 types of outputs: 1. csvs of top 10 features and mean absolute saliency, 2. per-patient heatmaps, 3. mean heatmaps
+
+Issues Identified
+	•	Empty CSVs:
+	•	The mean_abs_saliency column was NaN because per_patient_saliency contained NaNs.
+	•	NaNs propagated from padded regions or zero gradients where outputs had no variance.
+	•	Diagnosed via:
+	1.	NaN count (nonzero → confirmed invalid arrays).
+	2.	CSV inspection (missing numbers).
+	3.	Identical per-head arrays (np.allclose → True → computation reused identical gradients).
+	•	Heatmaps Uninterpretable:
+	•	171 features × 96 timesteps → extreme visual density.
+	•	Feature names overlapped; patterns invisible even with colorbars.
+	•	Gradient magnitudes were very small (≈1e−6 to 1e−3), compressing color range.
+	•	These are visualization and scaling issues, not numerical bugs.
+
+diagnostics for the csvs due to all 3 csvs being empty with numbers and also the top 10 features are all the same in the same order:
+
+[DIAGNOSTICS] ==============================
+Saliency summary:
+ - NaN count: 40869
+ - Mean value: 9.468709e-06
+ - Max value: 0.0016815776
+
+Top-10 features for max_risk:
+                                feature  mean_abs_saliency
+0                       ART BP Systolic                NaN
+1                     GCS - Eye Opening                NaN
+2                  GCS - Motor Response                NaN
+3                 GCS - Verbal Response                NaN
+4  Non Invasive Blood Pressure systolic                NaN
+5                            heart_rate                NaN
+6                      respiratory_rate                NaN
+7                                  spo2                NaN
+8                       supplemental_o2                NaN
+9                           systolic_bp                NaN
+
+Top-10 features for median_risk:
+                                feature  mean_abs_saliency
+0                       ART BP Systolic                NaN
+1                     GCS - Eye Opening                NaN
+2                  GCS - Motor Response                NaN
+3                 GCS - Verbal Response                NaN
+4  Non Invasive Blood Pressure systolic                NaN
+5                            heart_rate                NaN
+6                      respiratory_rate                NaN
+7                                  spo2                NaN
+8                       supplemental_o2                NaN
+9                           systolic_bp                NaN
+
+Top-10 features for pct_time_high:
+                                feature  mean_abs_saliency
+0                       ART BP Systolic                NaN
+1                     GCS - Eye Opening                NaN
+2                  GCS - Motor Response                NaN
+3                 GCS - Verbal Response                NaN
+4  Non Invasive Blood Pressure systolic                NaN
+5                            heart_rate                NaN
+6                      respiratory_rate                NaN
+7                                  spo2                NaN
+8                       supplemental_o2                NaN
+9                           systolic_bp                NaN
+
+Correlation between head outputs:
+max ↔ median: 0.9557705554563857
+max ↔ regression: 0.9577254391550588
+
+Feature-level mean saliency range:
+min: nan max: nan
+
+Are patient_0 saliency maps identical between heads?: True
+[DIAGNOSTICS COMPLETE]
+
+	1.	Global saliency stats → checks if the saliency tensor itself is valid (non-empty, non-NaN, reasonable magnitude).
+	2.	Top-10 CSVs → ensures the CSV writing logic works and that numeric values were actually saved (detects the NaN aggregation bug).
+	3.	Correlation between heads → confirms model outputs are meaningfully distinct (not identical predictions across heads).
+	4.	Gradient magnitude range → confirms gradients were nonzero (i.e. model actually responded to input variation).
+	5.	Duplicate saliency arrays check → catches logic errors where multiple heads might have been passed the same output tensor.
+
+
+Check
+Purpose
+Outcome
+1
+Global saliency stats
+Confirm saliency magnitudes are nonzero and finite
+Found many NaNs and extremely small values
+2
+CSV inspection
+Verify output saved correctly and matches expected columns
+CSVs empty → confirmed data propagation issue
+3
+Head correlations
+Ensure model heads differ semantically (e.g. max vs median risk)
+High correlation (~0.95) → outputs near-identical, reducing gradient diversity
+4
+Gradient magnitude range
+Check range of
+grad × input
+5
+Duplicate arrays check
+Detect identical saliency between heads (should differ)
+True → revealed saliency reuse or degenerate gradient flow
+
+Conclusion:
+The diagnostic block verified the saliency computation was numerically invalid (NaNs, duplicates, degenerate gradients), even though plots appeared to run.
+
+inal Specification — Correct & Complete
+
+Redesign Strategy
+
+You will compute five deliverables per target head (max_risk, median_risk, pct_time_high).
+Each is meaningful, interpretable, and numerically robust.
+No redundant per-patient heatmaps.
+
+⸻
+
+1. Recompute valid saliency values
+
+Fix the computation bug first:
+	•	Replace the gradient loop with proper per-sample gradient calculation using retain_graph=True only once.
+	•	Ensure mask application and numerical stability (set padded regions to np.nan after saliency computation, not before aggregation).
+	•	Confirm no NaN propagation before saving arrays.
+
+Outputs → valid per_patient_saliency array (N, T, F) per head.
+
+⸻
+
+2. Compute and save these five interpretable outputs
+
+(1) Feature-Level Mean Saliency Table — core quantitative result
+File: {target}_feature_saliency.csv
+Shape: F × 3
+Columns:
+	•	feature
+	•	mean_abs_saliency
+	•	std_abs_saliency
+
+Purpose:
+Gives numeric ranking and dispersion of feature importance.
+This replaces the broken “Top-10 CSV” logic.
+You will still sort descending by mean saliency.
+
+⸻
+
+(2) Temporal Mean Profile (Global)
+File: {target}_temporal_saliency.csv
+Shape: T × 2
+Columns:
+	•	timestep
+	•	mean_abs_saliency_over_features
+
+Purpose:
+Quantifies when in the sequence the model is most sensitive.
+This captures temporal dynamics numerically without PNGs.
+
+⸻
+
+(3) Top-Feature Temporal Profiles
+File: {target}_top_features_temporal.csv
+Shape: T × K (K=5)
+Columns:
+time, feature_1, feature_2, …, feature_5
+
+Purpose:
+For top 5 features, show how their importance changes over time.
+Useful to show if SpO₂ importance spikes before deterioration, etc.
+
+⸻
+
+(4) Aggregated Global Heatmap (optional but required here for completeness)
+File: {target}_mean_heatmap.png
+Input: same as before, but only for top 10 features.
+Fixes:
+	•	Reduce F from 171 → 10.
+	•	Scale colors logarithmically (e.g. plt.imshow(..., norm=LogNorm(vmin=1e-6, vmax=1e-2))).
+	•	Increase font size, only label top features.
+	•	Mask NaNs.
+
+Purpose:
+Visual cross-check of temporal structure, not quantitative source.
+originals created 15 heatmaps × 171 features × 3 targets as well as 3 heatmaps of the mean with the saem number of features → impossible to visually interpret.
+
+⸻
+
+(5) Diagnostic Report Block
+Keep and refine diagnostic prints:
+	1.	NaN counts (should be zero).
+	2.	Gradient magnitude range (check non-degenerate values).
+	3.	Head correlations (confirm heads differ).
+	4.	Feature ranking variance across heads (confirm diversity).
+
+Purpose:
+Validate interpretability pipeline automatically on rerun.
+
+3. Files generated per target
+
+Output Type
+File pattern
+Description
+Feature summary
+{target}_feature_saliency.csv
+Ranked numeric importance
+Temporal global
+{target}_temporal_saliency.csv
+Mean importance vs time
+Top-5 temporal
+{target}_top_features_temporal.csv
+Time-varying saliency for top features
+Heatmap (visual)
+{target}_mean_heatmap.png
+Averaged visualisation for top features
+Diagnostic summary
+console printout
+Ensures correctness
+
+4. Deprecated / Removed Outputs
+
+Remove:
+	•	All per-patient heatmaps (patient_X_heatmap.png)
+	•	All .npz individual patient saliency saves
+These add computational noise and are not interpretable or clinically valuable.
+
+5. Why this structure is “perfect and complete”
+Criterion
+Addressed by
+Quantitative interpretability
+Feature and temporal CSVs
+Temporal reasoning
+Temporal CSVs + top-5 temporal
+Comparability across heads
+Same summary metrics across 3 targets
+Visual validation
+Reduced mean heatmap (top-10 only)
+Numerical transparency
+Diagnostics and full CSV outputs
+Publication-readiness
+CSVs allow direct statistical or correlation analysis; heatmaps limited to top signals only
+
+---
+
+# -----------------------------
+# Diagnostics: Sanity checks on saliency and head correlations
+# -----------------------------
+print("\n[DIAGNOSTICS] ==============================")
+
+# 1. Global saliency stats
+print("Saliency summary:")
+print(" - NaN count:", np.isnan(per_patient_saliency).sum())
+print(" - Mean value:", np.nanmean(per_patient_saliency))
+print(" - Max value:", np.nanmax(per_patient_saliency))
+
+# 2. Display top-10 CSVs (for sanity)
+for t in ["max_risk", "median_risk", "pct_time_high"]:
+    csv_path = RESULTS_DIR / f"{t}_top10_saliency.csv"
+    df = pd.read_csv(csv_path)
+    print(f"\nTop-10 features for {t}:")
+    print(df.head(10))
+
+# 3. Correlation between model heads
+outputs = model(x_test, mask_test)
+max_out = outputs["logit_max"].detach().cpu().numpy().ravel()
+med_out = outputs["logit_median"].detach().cpu().numpy().ravel()
+reg_out = outputs["regression"].detach().cpu().numpy().ravel()
+
+print("\nCorrelation between head outputs:")
+print("max ↔ median:", np.corrcoef(max_out, med_out)[0, 1])
+print("max ↔ regression:", np.corrcoef(max_out, reg_out)[0, 1])
+
+# 4. Gradient magnitude range
+feature_mean_sal = per_patient_saliency.mean(axis=(0, 1))
+print("\nFeature-level mean saliency range:")
+print("min:", feature_mean_sal.min(), "max:", feature_mean_sal.max())
+
+# 5. Check for duplicate saliency arrays across heads
+# (replace "..." with actual filenames)
+npz_max = np.load(RESULTS_DIR / "patient_saliency_max_risk.npz")
+npz_med = np.load(RESULTS_DIR / "patient_saliency_median_risk.npz")
+
+same_arrays = np.allclose(npz_max["patient_0"], npz_med["patient_0"])
+print("\nAre patient_0 saliency maps identical between heads?:", same_arrays)
+print("[DIAGNOSTICS COMPLETE]")
+
+
+---
+
+1️⃣ Remove per-patient heatmaps & .npz saves
+	•	Do not save per-patient heatmaps or .npz arrays.
+	•	Instead, only compute aggregated, interpretable outputs 
+
+  2️⃣ Compute the new interpretable outputs per target
+	1.	Feature-level mean saliency CSV ({target}_feature_saliency.csv):
+	•	Columns: feature, mean_abs_saliency, std_abs_saliency
+	•	Mean and standard deviation over all patients and timesteps.
+	•	Sorted descending by mean_abs_saliency.
+	2.	Temporal mean profile CSV ({target}_temporal_saliency.csv):
+	•	Columns: timestep, mean_abs_saliency_over_features
+	•	Shows how feature importance changes over time, averaged across all features and patients.
+	3.	Top-5 features temporal profile CSV ({target}_top_features_temporal.csv):
+	•	Columns: time, feature_1, feature_2, … feature_5
+	•	Tracks time-varying importance of the top 5 features.
+	4.	Global mean heatmap PNG ({target}_mean_heatmap.png):
+	•	Only top 10 features for visual clarity.
+	•	Use color scaling/log normalization if needed to highlight differences.
+	5.	Diagnostics (console prints):
+	•	NaN counts.
+	•	Mean/max saliency ranges.
+	•	Head correlations.
+	•	Confirms no degenerate values and validates outputs.
+
+  3️⃣ Update the code logic
+
+Remove
+	•	All loops over patients for plotting heatmaps.
+	•	.npz saving.
+	•	Anything that produces uninformative per-patient outputs.
+
+Add
+	•	Aggregation across all patients and timesteps for numerical CSVs.
+	•	Top-feature selection for temporal plotting and visual heatmap.
+	•	Proper logging/diagnostics to catch NaNs or degenerate gradients.
+
+	1.	Feature-level saliency CSV (feature_saliency.csv) → tells you which features were most influential overall (magnitude and variability), ignoring time. Useful for ranking and selecting key drivers.
+	2.	Temporal mean saliency CSV (temporal_saliency.csv) → tells you when the model is most sensitive in general, averaged across features. Good for spotting periods of high overall importance.
+	3.	Top features temporal CSV (top_features_temporal.csv) → tells you which top features contributed at which timesteps. Critical for understanding the temporal dynamics of individual important features.
+
+⸻
+
+4️⃣ Why this is necessary
+	•	CSV values previously empty/NaN: bug in gradient * input calculation + per-patient saving.
+	•	Heatmaps hard to interpret: too many features (171) and timestamps (96), visually meaningless.
+	•	Interpretability requirement: numerical outputs (feature mean, temporal evolution) are the actual interpretable data, not the PNGs.
+	•	Diagnostics: confirms calculations are correct.
+
+✅ Summary
+
+You only need to update this section (#3. Generate Per-Patient & Global Saliency Outputs).
+	•	Remove per-patient plots and .npz saves.
+	•	Replace with feature-level CSVs, temporal profiles, top-feature temporal CSVs, and aggregated mean heatmap for top features.
+	•	Keep the diagnostics block with NaNs, mean/max, and correlations.
+
+Everything else in the script (loading model, test tensors, computing saliency) stays the same.
+
+Correct — you no longer need to save the per-patient .npz arrays.
+
+Why:
+	•	The per-patient arrays for 171 features × 96 timesteps were too large and un-interpretable.
+	•	They were generating NaNs and almost-zero numbers, which made the CSVs and visualizations meaningless.
+	•	For interpretability, the numerical summaries (feature-level mean ± std, temporal averages, top features over time) are sufficient. These give you actionable, interpretable numbers without relying on raw arrays or messy heatmaps.
+
+The only output you now keep for visual inspection is the global mean heatmap for the top 10 features, which is just a visual summary — the actual interpretation should come from the CSVs.
+
+You can safely remove the np.savez_compressed block.
+
+---
+PNGs were fixed but still hard to interpret the differences werent easily visualised:
+
+this is because
+1. Color scaling is automatic
+	•	plt.imshow() automatically scales colors from the min to max of mean_top10.
+	•	Your saliency values are extremely small (~1e-5 to 1e-3).
+	•	As a result, almost the entire matrix is mapped to the lowest color in the colormap (blue in viridis), with very few pixels reaching green/yellow.
+	•	Human perception can’t distinguish subtle differences when the values are tiny relative to the range.
+
+⸻
+
+2. No dynamic clipping or normalization
+	•	You don’t currently adjust vmin/vmax or use percentiles.
+	•	Outlier values (even tiny ones) can stretch the color scale, flattening the visual differences across most data.
+
+⸻
+
+3. Colormap choice
+	•	Default viridis is perceptually uniform, but when your data has a tiny dynamic range, differences are hard to see.
+	•	Alternative colormaps (plasma, cividis, or even diverging like coolwarm) can enhance contrast for small differences.
+
+⸻
+
+4. Too many features and small font
+	•	Even though you only take the top 10 features, font size 8 is tiny. If features have long names, labels are hard to read.
+
+⸻
+
+5. No optional transformations for visualization
+	•	Log or percentile transforms can make very small differences visible without changing the underlying data.
+	•	Currently, mean_top10 is plotted raw, so subtle but meaningful variations are invisible.
+
+⸻
+
+✅ Summary
+	•	Main issue: Most saliency values are very small → almost all mapped to one color → visually “flat” heatmap.
+	•	Secondary issues: No scaling, poor colormap for tiny range, small labels.
+
+applying all four improvements together will make a dramatic visual difference while keeping the underlying saliency values untouched:
+	1.	Percentile-based color scaling (vmin, vmax)
+	•	Maps the colors to the meaningful range of the data, ignoring extreme outliers.
+	•	Ensures that most differences in saliency are visible, rather than being squashed to blue.
+	2.	Optional log transformation (np.log1p)
+	•	Expands small differences in very low values so they’re perceptible.
+	•	Especially helpful when your saliency values are ~1e-5 to 1e-3.
+	•	Doesn’t affect the actual data for numeric interpretation; just for plotting.
+	3.	Better colormap
+	•	Using plasma or cividis increases perceptual contrast for small differences.
+	•	Diverging colormaps can also highlight relative increases and decreases clearly.
+	4.	Improved labels and figure size
+	•	Increases readability for feature names.
+	•	Makes it easier to interpret which features correspond to which row.
+
+The heatmap will no longer look mostly blue — subtle differences will become visible as greens, yellows, or oranges depending on your colormap. 
+
+The PNGs are visual summaries of the data, not the primary quantitative outputs. In the notes, you can explain:
+	1.	What the heatmaps represent:
+	•	Each row = a feature (top 10 by mean saliency).
+	•	Each column = a timestep in the patient sequence.
+	•	Cell color = the log-scaled mean |grad × input| across all patients.
+	2.	How to interpret them:
+	•	Brighter colors → higher importance at that feature and timestep.
+	•	Patterns over time show when certain physiological signals were most influential.
+	•	Use them to visually validate and illustrate trends found in the CSV outputs.
+	3.	Limitations:
+	•	Only top features are shown; full feature set isn’t visualized.
+	•	Heatmaps are for intuition and presentation; all quantitative analyses should rely on the CSVs (feature-level mean, temporal profiles, top-feature temporal data).
+
 
 
