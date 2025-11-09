@@ -9350,97 +9350,311 @@ src/
     - Provides confidence that downstream visual and quantitative analyses are built on reliable data.
   - **Logic Overview:**
     1. **Saliency Statistics:**
-      - NaN count: `np.isnan(per_patient_saliency).sum()` → Detects any invalid or missing values from the saliency computation (should be zero).
+      ```python
+      print(" - NaN count:", np.isnan(per_patient_saliency).sum())
+      print(" - Mean value:", np.nanmean(per_patient_saliency))
+      print(" - Max value:", np.nanmax(per_patient_saliency))
+      ```
+      - NaN count: Detects any invalid or missing values from the saliency computation (should be zero).
       - Mean and Max: Provide a quick overview of the magnitude and scale of computed saliency values across all patients, features, and timesteps.
       - Confirms that gradient × input operations produced stable and realistic magnitudes.
     2. **Model Head Correlations:**
+      ```python
+      print("Correlation between head outputs:")
+      print("max ↔ median:", np.corrcoef(max_out, med_out)[0, 1])
+      print("max ↔ regression:", np.corrcoef(max_out, reg_out)[0, 1])
+      ```
       - Each model head (max_risk, median_risk, pct_time_high) predicts a different outcome.
       - Correlation checks ensure that heads are learning distinct but related patterns:
         - High correlation → possible redundancy between prediction heads.
         - Low correlation → confirms each head captures different aspects of patient risk.
-
----
-
-
-
-
-
-
+**Outputs**
+- All results saved under: `src/results_finalisation/interpretability_tcn/`
+- For each target head (`max_risk`, `median_risk`, `pct_time_high`), four files are created:
+  1. `{target}_feature_saliency.csv` 
+     - Columns: `feature`, `mean_abs_saliency`, `std_abs_saliency`  
+     - Mean and variability of saliency per feature across all patients and timesteps (overall feature importance).
+  2. `{target}_temporal_saliency.csv` 
+     - Columns: `timestep`, `mean_abs_saliency`  
+     - Mean saliency across all features per timestep (when the model is most sensitive).
+  3. `{target}_top_features_temporal.csv`  
+     - Columns: `timestep` + top 5 most salient features  
+     - Shows temporal evolution of key feature importances (interpretable time patterns).
+  4. `{target}_mean_heatmap.png`
+     - Heatmap of top 10 features averaged across all patients (log-scaled for visibility).  
+     - Visual summary only, complements quantitative CSV outputs.
 **Rationale**
 -	Provide clinicians with interpretable, quantitative insight into the model’s temporal reasoning, identifying which features drive deterioration risk and at what times.
 -	Create saliency-based interpretability outputs that directly complement and extend the LightGBM SHAP analysis, adding the temporal dimension absent in SHAP.
 -	Support transparent clinical evaluation by showing how model attention evolves across time and features for each prediction head.
+**Summary**
+- Implemented a complete interpretability pipeline for the refined TCN, computing gradient × input (|∂y/∂x × x|) saliency maps on the test set.
+- Quantified both feature importance and temporal sensitivity across all three model heads.
+- Produced four reproducible outputs per head: feature-level saliency, temporal mean profile, top-feature temporal trends, and log-scaled mean heatmaps for qualitative inspection.
+- Introduced log transform and percentile-based color scaling to make heatmaps visually interpretable, highlighting meaningful gradients without distortion from outliers.
+- Ensured robustness through diagnostic checks (NaN counts, value ranges, and head correlations) verifying saliency stability and model distinctiveness.
+- Created a modular, reproducible script that can be rerun on any model checkpoint or dataset without modification.
+- Provides clinicians and researchers with transparent temporal interpretability that complements SHAP feature attribution (phase 6 step 3), revealing when, how, and which features drive model predictions.
 
 ---
 
-### Saliency mapping explained 
+### Folder Structure 
+project_root/
+└── src/
+    ├── ml_models_tcn/
+    │   ├── prepared_datasets/
+    │   │   ├── test.pt
+    │   │   └── test_mask.pt
+    │   │
+    │   └── deployment_models/
+    │       └── preprocessing/
+    │           ├── patient_splits.json
+    │           ├── padding_config.json
+    │           └── standard_scaler.pkl
+    │
+    ├── prediction_diagnostics/
+    │   └── trained_models_refined/
+    │       ├── tcn_best_refined.pt
+    │       └── config_refined.json
+    │
+    └── results_finalisation/
+        ├── saliency_analysis_tcn.py           # main script
+        │
+        └── interpretability_tcn/              # all generated outputs
+            ├── max_risk_feature_saliency.csv
+            ├── max_risk_temporal_saliency.csv
+            ├── max_risk_top_features_temporal.csv
+            ├── max_risk_mean_heatmap.png
+            │
+            ├── median_risk_feature_saliency.csv
+            ├── median_risk_temporal_saliency.csv
+            ├── median_risk_top_features_temporal.csv
+            ├── median_risk_mean_heatmap.png
+            │
+            ├── pct_time_high_feature_saliency.csv
+            ├── pct_time_high_temporal_saliency.csv
+            ├── pct_time_high_top_features_temporal.csv
+            └── pct_time_high_mean_heatmap.png
+---
+
+### Theoretical Background: Saliency Mapping in Deep Learning
+1. **Overview**
+  - Saliency mapping is a gradient-based interpretability technique used to understand which input features most influence a model’s prediction.  
+  - It was first introduced in computer vision (Simonyan et al., 2014) and has since been adapted to time-series and clinical models to provide transparency about why a model made a given prediction.  
+  - Saliency maps show how sensitive the model’s output is to small changes in each input feature, helping identify what matters most and when it matters in a temporal sequence.
+2. **Core Mathematical Concept**
+  - Given a model output `y` (scalar prediction) and an input tensor `x` with dimensions `(T, F)` where:  
+    - `T`: timesteps  
+    - `F`: features  
+  - The saliency for each element `x_{t,f}` is computed as `S_{t,f} = | (∂y / ∂x_{t,f}) × x_{t,f} |` where:
+    - `(∂y / ∂x_{t,f})` measures how sensitive the output `y` is to small changes in feature `f` at time `t`.  
+    - Multiplying by `x_{t,f}` weights this sensitivity by the actual input value → importance weighted by feature activation.  
+    - Taking the absolute value removes directionality, leaving only the magnitude of influence.  
+  - The resulting saliency tensor has shape `(T, F)` for a single sample and `(N, T, F)` across a dataset, where `N` = number of patients or sequences.
+3. **Purpose and Rationale**
+  - Saliency maps answer the question: Which features and time points most strongly influenced the model’s prediction?
+  - They are especially valuable for:
+    - **Clinical transparency:** explaining which physiological variables drive deterioration risk.  
+    - **Temporal reasoning:** understanding how importance shifts through time (something static SHAP or permutation methods cannot show).  
+    - **Model validation:** confirming whether learned attention aligns with known medical patterns (e.g., rising respiratory rate before deterioration).  
+  - We selected this method for the TCN because it provides fine-grained, time-resolved feature attribution, aligning with our goal of understanding how temporal convolution layers integrate signals over time.
+4. **Why Saliency Mapping for a TCN**
+  - Temporal Convolutional Networks (TCNs) process sequential data, learning temporal dependencies across timesteps.  
+  - Saliency mapping complements this architecture because it:
+    - Attributes influence to both time and feature dimensions.
+    - Can be directly derived from gradients without modifying model architecture.
+    - Works on any differentiable model (unlike attention weights, which require explicit attention mechanisms).  
+  - For our refined TCN:
+    - The model produces multiple output heads (`max_risk`, `median_risk`, `pct_time_high`), each capturing different aspects of clinical deterioration.  
+    - Saliency allows per-head interpretability, understanding which features drive each type of prediction.
+5. **Typical Applications**
+  | Domain | Model Type | Saliency Purpose |
+  |---------|-------------|------------------|
+  | **Computer Vision** | CNNs | Identify important pixels in an image. |
+  | **Natural Language Processing** | RNNs / Transformers | Attribute importance to input tokens or words. |
+  | **Time-Series / Clinical AI** | RNNs, LSTMs, TCNs | Identify critical physiological variables and time windows. |
+  | **Reinforcement Learning** | Policy Networks | Reveal which states or features drive action decisions. |
+6. **Common Saliency Outputs**
+  | Output Type | Description | Interpretability |
+  |--------------|-------------|------------------|
+  | **Per-sample saliency map** | Feature importance matrix `(T × F)` for one patient or example. | Fine-grained, individual-level. |
+  | **Feature-level mean CSV** | Average saliency per feature across patients and timesteps. | Global feature importance ranking. |
+  | **Temporal profile CSV** | Mean saliency over features per timestep. | When the model is most sensitive. |
+  | **Top-feature temporal CSV** | Saliency curves for top features through time. | Explains evolving patterns. |
+  | **Mean heatmap PNG** | Visual summary of top 10 features over time (log-scaled). | Human-readable visualisation. |
+7. **Alternative Interpretability Methods**
+  | Method | Description | Pros | Cons | Reason for Exclusion |
+  |---------|-------------|------|------|----------------------|
+  | **Integrated Gradients** | Accumulates gradients along a path from baseline to input. | Reduces noise, better theoretical grounding. | Requires multiple forward passes per input, computationally heavy for long sequences. | Too computationally expensive for 96×171 input tensors. |
+  | **DeepLIFT** | Tracks contribution of each neuron relative to reference activation. | Handles sign and saturation better than raw gradients. | Needs a reference baseline, less intuitive for continuous physiological data. | Baseline definition unclear for clinical signals. |
+  | **Grad-CAM** | Localises regions of interest in convolutional maps. | Popular in vision tasks. | Not suitable for 1D temporal data or multi-head outputs. | Designed for image feature maps, not sequential data. |
+  | **SHAP / KernelSHAP** | Model-agnostic, feature-level attribution. | Works for any model, provides global feature importance. | Ignores temporal structure, computationally expensive. | Already implemented for LightGBM, not suitable for per-timestep interpretation. |
+  | **Attention Weights** | Use built-in attention mechanisms to infer feature importance. | Direct interpretability when model includes attention. | Not a true gradient-based sensitivity measure; depends on model design. | TCN has no attention layer; unsuitable. |
+8. **Considerations and Design Choices**  
+  - **(a) Gradient × Input over Plain Gradient:**  
+    - A plain gradient (∂y/∂x) only measures how much the output changes if an input feature changes slightly → shows sensitivity only, not importance, thus can highlight inactive features.
+    - But a feature can have a high gradient even when its actual value is near zero (i.e., it’s sensitive but not active in this patient).
+	  - By multiplying the gradient with the input value (x), we weight each feature’s sensitivity by how much that feature was actually contributing at that moment.
+    - This produces Gradient × Input, which reflects both how strongly and how actively each feature influenced the model’s prediction.
+  - **(b) Absolute Values:**  
+    - Removes directionality (positive or negative influence).  
+    - Focuses on strength of effect rather than its polarity → appropriate for risk prediction tasks.
+  - **(c) Log Transform in Heatmaps:**  
+    - Raw saliency magnitudes can span several orders of magnitude.  
+    - Applying `log(1+x)` enhances contrast among low-magnitude values without overemphasising outliers.
+  - **(d) Percentile-Based Color Scaling (5th–95th):**  
+    - Excludes extreme saliency values that distort colormap interpretation.  
+    - Allows balanced visual representation across moderate intensity ranges.
+  - **(e) Perceptually Uniform Colormap (`plasma`):**  
+    - Maintains consistent perceptual brightness differences across intensity levels.  
+    - Ensures that color changes correspond linearly to saliency magnitude → vital for interpretability by clinicians.
+  - **(f) No Per-Patient PNGs:**  
+    - Individual 171×96 matrices are not visually interpretable.  
+    - Aggregated results (mean, top features) offer better readability and reproducibility.
+9. **Strengths and Limitations**
+  | Strengths | Limitations |
+  |------------|-------------|
+  | Simple, fast, and directly interpretable. | Sensitive to model noise; gradients can fluctuate sharply. |
+  | Works for any differentiable model, including TCNs. | Only captures first-order effects (no feature interactions). |
+  | Produces temporally and feature-resolved attributions. | Can produce sparse (near 0) or unstable maps for highly nonlinear models (which is why averaging gradients is needed). |
+  | Complements global methods like SHAP by adding temporal dimension. | Not causal; high saliency ≠ causative importance. |
+
+10. **Rationale for Our Final Implementation**
+- We selected **gradient × input saliency mapping** for the TCN interpretability module because it provides:
+  - Temporal and feature-level transparency for clinicians.  
+  - Computational efficiency (single backward pass per patient).  
+  - Compatibility with multi-head architectures.  
+  - Reproducibility and simplicity without parameter tuning.  
+- Enhancements like integrated gradients or DeepLIFT were excluded due to computational cost, unclear baselines, and minimal added interpretive value for our structured temporal dataset.
+- Our final design choices → log-scaling, percentile normalization, and top-feature aggregation → ensure that outputs are stable, interpretable, and visually meaningful without sacrificing mathematical rigor. 
 
 ---
 
-### Saliency (Step 4) vs SHAP (Step 3)
+# Step 3 vs Step 4 Interpretability Comparison — SHAP (Static) vs Saliency (Temporal)
 
-### Purpose
-To derive **clinically meaningful temporal insights** into *when* and *why* the Temporal Convolutional Network (TCN) makes certain predictions, complementing Step 3’s LightGBM feature-level SHAP analysis.
+## Purpose
+This section explains why **two separate interpretability methods** were used:
+- **SHAP (Step 3)** for the **LightGBM** model.  
+- **Saliency Mapping (Step 4)** for the **Temporal Convolutional Network (TCN)**.
 
-Whereas Step 3 explained **what features** mattered (static feature contributions),  
-Step 4 explains **when and how those features over time** influenced the model’s decision — turning the temporal model from a black box into a clinically interpretable system.
+Each targets a different type of reasoning:
+- **LightGBM → "What features matter most overall?"**
+- **TCN → "When and how do those features over time influence predictions?"**
 
----
-
-### Conceptual Framework
-
-| Model | Nature | Interpretability Method | Explains | Output Type |
-|--------|---------|-------------------------|-----------|--------------|
-| **LightGBM** | Static, feature-level | SHAP (TreeExplainer) | *What features* drive prediction | Mean feature importances |
-| **TCN** | Dynamic, time-series | Saliency mapping (e.g., Integrated Gradients or Grad-CAM) | *When and why* risk changes | Temporal saliency heatmaps |
+Together, they provide a complete interpretability framework linking **static feature contribution** with **temporal sequence sensitivity**.
 
 ---
 
-### Analytical Goals
-- **Temporal attribution:** Identify *which time periods* in each patient’s sequence most strongly influenced predicted risk.
-- **Feature-level dynamics:** Determine *which physiological variables* (e.g., SpO₂, RR, HR) drive risk peaks at different timesteps.
-- **Contrast static vs temporal learning:** Compare LightGBM’s “static summary features” vs. TCN’s “temporal sequence attention.”
+## Conceptual Framework
+
+| Model | Data Type | Interpretability Method | Answers | Output Type |
+|--------|------------|-------------------------|----------|--------------|
+| **LightGBM** | Static, aggregated patient-level data | **SHAP (TreeExplainer)** | *What features* drive risk | Mean feature importance values, summary plots |
+| **TCN** | Temporal, sequential physiological data | **Saliency Mapping (∣grad × input∣)** | *When and how* features affect risk | Temporal saliency maps, feature–time profiles |
 
 ---
 
-### Planned Outputs
-- **Saliency maps** for representative patients:
-  - Visual overlays showing *temporal importance weights* (e.g., which hours contributed most to high-risk prediction).
-- **Aggregated temporal feature importance plots:**
-  - Average saliency per variable over time, summarising typical deterioration patterns.
-- **Summary CSVs:**
-  - Quantitative tables capturing mean/peak saliency per variable per target.
+## Analytical Goals
+- **Feature importance context:** Compare static SHAP importance with temporal saliency dynamics.  
+- **Temporal attribution:** Identify *which time windows* most strongly influence model predictions.  
+- **Feature dynamics:** Observe *how physiological trends* (e.g., HR ↑, SpO₂ ↓) drive changes in predicted risk.  
+- **Cross-model validation:** Verify whether LightGBM’s static importance aligns with TCN’s dynamic attention patterns.
 
 ---
 
-### Rationale
-- The TCN model captures **temporal dependencies** that LightGBM cannot — e.g., trends, spikes, or recovery patterns.
-- Saliency-based interpretability answers the **“when and why”** question:
-  - *When* risk signals emerge (temporal localisation).
-  - *Why* the network attended to those signals (feature-level saliency).
-- This bridges the gap between:
-  - **Quantitative evaluation (Steps 1–2)** → performance and calibration,
-  - **Static interpretability (Step 3)** → feature importance,
-  - **Temporal interpretability (Step 4)** → dynamic reasoning over time.
+## Why Separate Methods Were Needed
+
+| Reason | SHAP (LightGBM) | Saliency (TCN) |
+|---------|------------------|----------------|
+| Model architecture | Tree-based, non-differentiable | Neural network, gradient-based |
+| Interpretability basis | Shapley values (coalitional feature attributions) | Gradients (local sensitivity of output to inputs) |
+| Nature of insight | Global, feature-level contribution | Local and temporal, timestep-level contribution |
+| Use case | Static clinical summaries | Continuous physiological time-series |
+| Output | CSVs, bar charts, summary plots | Temporal CSVs, heatmaps, per-feature time trends |
 
 ---
 
-### Expected Outcomes
-- Clinically interpretable visualisations showing how the model responds to real physiological time-series patterns.  
-- Validation that the TCN model’s temporal attention aligns with known deterioration trajectories (e.g., falling SpO₂ followed by rising RR).
-- Evidence that temporal learning adds explainable value beyond static summarisation.
+## How They Complement Each Other
+- **SHAP** quantifies *what variables* most influence deterioration risk.  
+- **Saliency** shows *when those variables* exert the greatest influence across a patient’s timeline.  
+- Together they yield a **two-dimensional interpretability view:**
+  - **Feature dimension** (importance ranking across variables)  
+  - **Temporal dimension** (importance evolution across time)
 
 ---
 
-### Summary
-Step 4 extends interpretability from *what matters* to *when it matters*.  
-It completes the interpretability suite for Phase 6, showing that:
-- LightGBM explains **static importance** (feature-level),
-- TCN explains **temporal dynamics** (sequence-level),
-together providing a **comprehensive interpretability framework** for clinical AI evaluation.
+## Methodological Integration — How Step 3 and Step 4 Complete Phase 6
+1. **Step 3 (SHAP Analysis):**
+   - Applied to the LightGBM baseline trained on static summary features.
+   - Provided global feature importance rankings and clinical interpretability at the aggregated level.
 
+2. **Step 4 (Saliency Mapping):**
+   - Applied to the refined TCN model trained on full temporal sequences.
+   - Added temporal localisation of model attention.
 
-Step 
+3. **Integration Across Steps:**
+   - Both steps use the same underlying feature set and preprocessing pipeline.
+   - Phase 6 interpretability is complete only when static (Step 3) and dynamic (Step 4) insights are compared.
+   - This combined analysis supports:
+     - *Validation:* whether temporal dependencies discovered by TCN align with features identified by SHAP.  
+     - *Interpretation:* whether model focus (saliency peaks) occurs at clinically plausible times.
+
+---
+
+## Comparative Analysis Strategy
+When analysing final outputs:
+- Compare **mean feature rankings** (SHAP) with **mean saliency magnitudes** (TCN).  
+- Examine whether features with high static SHAP importance (e.g., SpO₂, RR) also show high average temporal saliency.  
+- Inspect **temporal saliency heatmaps** for known deterioration trajectories (e.g., SpO₂ drop preceding RR rise).  
+- Evaluate **alignment vs divergence**:
+  - Alignment → validates TCN attention as clinically meaningful.  
+  - Divergence → suggests temporal or interaction effects missed by LightGBM.
+
+---
+
+## Alternative Interpretability Methods Considered
+| Method | Description | Rationale for Exclusion |
+|--------|--------------|--------------------------|
+| **Integrated Gradients** | Path-integrated version of Grad×Input, smooths noise | Added computational cost with minimal interpretive gain for our dataset size |
+| **Grad-CAM** | Visual localisation via gradient-weighted activations | Designed for CNN image models, less suitable for 1D TCN sequences |
+| **Layer-wise Relevance Propagation (LRP)** | Backpropagation-based attribution | Requires architecture modification and custom backward hooks |
+| **Occlusion / Perturbation tests** | Measure prediction change when masking inputs | Computationally expensive for long sequences |
+| **DeepSHAP** | Hybrid SHAP + DeepLIFT | Overkill for this lightweight TCN and hard to calibrate on temporal inputs |
+
+→ **Chosen approach:** Grad×Input saliency was the most direct, model-agnostic, and computationally feasible for explaining a 1D temporal model while aligning conceptually with SHAP’s feature-level reasoning.
+
+---
+
+## Strengths and Limitations
+
+### Strengths
+- Compatible with any differentiable neural network (e.g., TCN, RNN).  
+- Simple to compute, aligns with gradient-based interpretability theory.  
+- Produces **temporal maps** showing “when” the model attends to key signals.  
+- Complements SHAP’s **static feature importance** with dynamic insight.  
+
+### Limitations
+- Sensitive to model nonlinearity and gradient noise (can yield unstable saliency maps).  
+- Lacks absolute interpretability — highlights *relative* importance, not causal effect.  
+- Requires log scaling and percentile clipping for visual stability.  
+- Cannot directly handle non-differentiable models (why SHAP used for LightGBM).
+
+---
+
+## Summary
+
+- **SHAP (Step 3)** → Explains *what matters most overall* (static feature contribution).  
+- **Saliency (Step 4)** → Explains *when and how it matters* (temporal reasoning).  
+- Both are essential components of **Phase 6: Model Interpretability**.  
+- Together, they provide a **complete multi-dimensional interpretability suite**:
+  1. **Feature-level attribution** (SHAP)  
+  2. **Temporal attribution** (Saliency)  
+  3. **Cross-model comparison** confirming that deep temporal patterns align with static clinical reasoning.
+
+This unified analysis enables clinicians to see not only *what variables* drive deterioration risk but also *when those signals become critical* — a full temporal-feature interpretability framework.
+
+---
+
 ---
 
 ## TCN Saliency Terminal Output Summary
