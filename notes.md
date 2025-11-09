@@ -9895,14 +9895,50 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
 - To systematically interpret the TCN’s behaviour across four complementary outputs across three different targets (`max_risk`, `median_risk`, `pct_time_high`).
 - To identify consistent feature importance patterns, temporal dependencies, and clinically plausible risk trajectories.
 - These analyses together form the quantitative interpretability core of Step 4, providing temporal explainability to complement SHAP’s static feature-level insights.
-**Analysis Components per target**
+**Analysis Components per Target**
 1. **Feature-Level Interpretation (*_feature_saliency.csv)**: Quantifies overall feature importance by averaging saliency across all patients and timesteps.
 2. **Temporal Sensitivity (*_temporal_saliency.csv)**: Shows how model sensitivity varies over the sequence.
 3. **Top Feature Temporal Profiles (*_top_features_temporal.csv)** Tracks the evolution of the top 5 features’ saliency over time.
 4. **Visualisation — Mean Heatmap (*_mean_heatmap.png)** Displays saliency intensity for the top 10 features across all timesteps (log-scaled).
+**Scope of Analysis**
+- **Goal:** extract interpretable clinical or temporal trends, not micro-level numeric commentary.
+- For 12 outputs, the analysis should stay at the trend and pattern level, not per-timestep detail:
+  - **Feature-level CSVs:** summarise top 5–10 features by mean and variability; highlight broad stability or volatility patterns.
+  - **Temporal saliency:** describe general regions of high vs low attention (early, middle, late sequence).
+  - **Top feature temporal CSVs:** note recurring peaks or synchronized trends across key variables.
+  - **Mean heatmaps:** interpret overall structure (broad horizontal/vertical patterns) rather than pixel-level variation.
+- Only expand when a pattern directly supports or contradicts earlier SHAP findings.
 
 #### Saliency Analysis (`max_risk`)
-**Feature Saliency (`max_risk_feature_saliency`)**
+**Feature-Level Mean & Standard Deviation (`max_risk_feature_saliency.csv`)**
+1. **Context**
+  - This analysis corresponds to the maximum patient-level deterioration risk predicted during admission.  
+  - It captures which features most strongly and consistently influence the model when estimating each patient’s peak risk episode.
+2. **Key Findings (General-Trend Scope)**
+  | **Rank** | **Feature** | **Mean** | **Std** | **Interpretation** |
+  |-----------|--------------|----------|----------|--------------------|
+  | 1 | `heart_rate_roll24h_min` | 7.69e-05 | 1.87e-04 | Highest mean with high variance → strong but inconsistent influence. Model relies heavily on prolonged heart rate suppression (possible bradycardic or hypodynamic states) in some patients but not all, indicating subgroup-dependent importance. |
+  | 2 | `news2_score` | 5.01e-05 | 1.15e-04 | Moderate mean, moderately variable → reliable global marker capturing multi-parameter deterioration risk; model consistently uses it but not as dominant as specific vitals. |
+  | 3 | `temperature_max` | 4.77e-05 | 9.36e-05 | Mid–high mean, moderate variance → model identifies episodic temperature spikes (fever responses) as moderately influential; variability suggests influence only in febrile cases. |
+  | 4 | `level_of_consciousness_carried` | 4.61e-05 | 9.17e-05 | Moderate mean, moderate variance → carried-forward consciousness values preserve deterioration context; consistently important where altered mental state persists, less so otherwise. |
+  | 5 | `respiratory_rate_roll4h_min` | 4.37e-05 | 1.11e-04 | Moderate mean with high variance → model detects respiratory instability patterns (acute dips or fatigue) variably across patients, aligning with short-term deterioration episodes. |
+
+3. **Interpretation Summary**
+  - **Overall summary:** Mean quantifies global importance; Std reflects stability. Here, heart rate and respiratory patterns show high mean + high Std (episodic importance), while NEWS2 and temperature are moderate mean + lower Std (steady baseline predictors).
+  - **Dominant predictors:** Rolling-window minima of **heart rate** and **respiratory rate** indicate the model prioritises **sustained physiological depression** rather than transient abnormalities when estimating maximum deterioration risk.  
+  - **Summary indicators:** Variables such as **NEWS2 score** and **risk_numeric** act as clinically validated proxies, confirming internal consistency between learned and rule-based signals.  
+  - **Moderate variability (std):** Most top predictors have **mid–high standard deviations**, showing that while generally influential, their impact fluctuates across patient trajectories.  
+  - **Low-mean features:** Inputs below roughly `2×10⁻⁵` contribute marginally, likely encoding contextual or redundancy signals (e.g., time gaps, missingness, auxiliary stats).  
+  - **Zero-saliency variables:** Static or unused inputs (e.g., CO₂ retainer fields) indicate non-representation in this risk regime, consistent with limited relevance to acute deterioration.
+
+---
+
+#### **Overall Summary**
+
+For the **max-risk** output, the model emphasises **vital sign minima and composite early warning features** that reflect *sustained physiological decline*.  
+This aligns with clinical intuition for maximum deterioration prediction:  
+periods of **prolonged abnormality** are more predictive of peak risk than brief fluctuations.  
+Observed variability across features reflects **heterogeneous deterioration patterns** across the cohort, consistent with individualised risk dynamics.
 
 
 
