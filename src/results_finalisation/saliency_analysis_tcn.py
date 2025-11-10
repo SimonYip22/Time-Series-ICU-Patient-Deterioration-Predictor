@@ -6,33 +6,39 @@ Title: Compute temporal saliency maps for the refined TCN model on test set.
 
 Summary
 Purpose:
-- Computes temporal saliency maps for the refined TCN model on the held-out test set (15 patients)  
-- This provides model interpretability by quantifying when and which input features most strongly influenced each prediction target.
-- This step (Phase 6 Step 4) extends interpretability beyond feature-level influence (SHAP in LightGBM) to temporal reasoning in the TCN.  
-- It enables clinically meaningful visualisation of when deterioration-relevant signals (e.g. SpO₂, respiratory rate) drive predictions.
-- Strengthens model transparency and trustworthiness for clinical AI evaluation.
+- Computes |grad × input| saliency maps for the refined TCN model on the held-out test set (15 patients).
+- Quantifies which features and time periods most influenced each output head (max_risk, median_risk, pct_time_high).
+- Extends interpretability beyond LightGBM SHAP (Phase 6 Step 3) to temporal reasoning in the sequence model.
+- Enhances clinical transparency by identifying when deterioration-related signals most strongly drive predictions.
 Concept:
 - Uses gradient × input (|grad * input|) saliency mapping:
-  - For each patient sequence, computes the gradient of the model output with respect to every input feature at every timestep.
-  - The magnitude of this value represents feature importance over time.
-- Complements the LightGBM SHAP analysis (Phase 6 Step 3) by adding temporal interpretability for the sequence model.
+  - For each patient sequence, computes the gradient of model output with respect to each feature and timestep.
+  - The magnitude (absolute value) indicates relative feature importance through time.
+- Produces fully quantitative and reproducible interpretability outputs for every prediction head.
 Inputs:
 - Trained model checkpoint: `tcn_best_refined.pt`
 - Model configuration: `config_refined.json`
-- Preprocessed test tensors: `test.pt`, `test_mask.pt`
+- Test tensors: `test.pt`, `test_mask.pt`
 - Preprocessing metadata: `padding_config.json`, `standard_scaler.pkl`, `patient_splits.json`
 Outputs:
-- All outputs saved to: `src/results_finalisation/interpretability_tcn/`
-- Per Target (max_risk, median_risk, pct_time_high):
-    1. Per-patient saliency arrays (.npz) → `patient_saliency_{target}.npz`  
-        - Keys: `"patient_{id}"`  
-        - Values: saliency matrix (max_seq_len × n_features)
-    2. Per-patient saliency heatmaps (.png) → `{target}_patient_{i:02d}_heatmap.png`  
-        - Shows feature importance over time for each test patient.
-    3. Global mean saliency heatmap (.png) → `{target}_mean_heatmap.png`  
-        - Average |grad × input| importance across all patients.
-    4. Top-10 feature ranking (.csv) → `{target}_top10_saliency.csv`  
-        - Mean absolute saliency aggregated across all timepoints and patients.
+- All results saved under: `src/results_finalisation/interpretability_tcn/`
+- For each target head (`max_risk`, `median_risk`, `pct_time_high`), four files are created:
+  1. `{target}_feature_saliency.csv` 
+     - Columns: `feature`, `mean_abs_saliency`, `std_abs_saliency`  
+     - Mean and variability of saliency per feature across all patients and timesteps (overall feature importance).
+  2. `{target}_temporal_saliency.csv` 
+     - Columns: `timestep`, `mean_abs_saliency`  
+     - Mean saliency across all features per timestep (when the model is most sensitive).
+  3. `{target}_top_features_temporal.csv`  
+     - Columns: `timestep` + top 5 most salient features  
+     - Shows temporal evolution of key feature importances (interpretable time patterns).
+  4. `{target}_mean_heatmap.png`
+     - Heatmap of top 10 features averaged across all patients (log-scaled for visibility).  
+     - Visual summary only, complements quantitative CSV outputs.
+Notes:
+- Per-patient arrays and individual heatmaps are removed for interpretability and efficiency.  
+- Script performs full diagnostic validation (NaN checks, output head correlations, saliency statistics).  
+- Outputs together provide a complete temporal interpretability package for the TCN model.
 """
 # -----------------------
 # Imports
