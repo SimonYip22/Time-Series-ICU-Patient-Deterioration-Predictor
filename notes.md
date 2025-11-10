@@ -9123,7 +9123,7 @@ src/
 
 ---
 
-## Day 39-41 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
+## Day 39-42 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
 
 ### Goals
 - Finalise and validate `saliency_analysis_tcn.py` script (Phase 6 Step 4).
@@ -9399,42 +9399,43 @@ src/
 ---
 
 ### Folder Structure 
-project_root/
-└── src/
-    ├── ml_models_tcn/
-    │   ├── prepared_datasets/
-    │   │   ├── test.pt
-    │   │   └── test_mask.pt
-    │   │
-    │   └── deployment_models/
-    │       └── preprocessing/
-    │           ├── patient_splits.json
-    │           ├── padding_config.json
-    │           └── standard_scaler.pkl
-    │
-    ├── prediction_diagnostics/
-    │   └── trained_models_refined/
-    │       ├── tcn_best_refined.pt
-    │       └── config_refined.json
-    │
-    └── results_finalisation/
-        ├── saliency_analysis_tcn.py           # main script
-        │
-        └── interpretability_tcn/              # all generated outputs
-            ├── max_risk_feature_saliency.csv
-            ├── max_risk_temporal_saliency.csv
-            ├── max_risk_top_features_temporal.csv
-            ├── max_risk_mean_heatmap.png
-            │
-            ├── median_risk_feature_saliency.csv
-            ├── median_risk_temporal_saliency.csv
-            ├── median_risk_top_features_temporal.csv
-            ├── median_risk_mean_heatmap.png
-            │
-            ├── pct_time_high_feature_saliency.csv
-            ├── pct_time_high_temporal_saliency.csv
-            ├── pct_time_high_top_features_temporal.csv
-            └── pct_time_high_mean_heatmap.png
+```text
+ src/
+  ├── ml_models_tcn/
+  │   ├── prepared_datasets/
+  │   │   ├── test.pt
+  │   │   └── test_mask.pt
+  │   │
+  │   └── deployment_models/
+  │       └── preprocessing/
+  │           ├── patient_splits.json
+  │           ├── padding_config.json
+  │           └── standard_scaler.pkl
+  │
+  ├── prediction_diagnostics/
+  │   └── trained_models_refined/
+  │       ├── tcn_best_refined.pt
+  │       └── config_refined.json
+  │
+  └── results_finalisation/
+      ├── saliency_analysis_tcn.py           # main script
+      │
+      └── interpretability_tcn/              # all generated outputs
+          ├── max_risk_feature_saliency.csv
+          ├── max_risk_temporal_saliency.csv
+          ├── max_risk_top_features_temporal.csv
+          ├── max_risk_mean_heatmap.png
+          │
+          ├── median_risk_feature_saliency.csv
+          ├── median_risk_temporal_saliency.csv
+          ├── median_risk_top_features_temporal.csv
+          ├── median_risk_mean_heatmap.png
+          │
+          ├── pct_time_high_feature_saliency.csv
+          ├── pct_time_high_temporal_saliency.csv
+          ├── pct_time_high_top_features_temporal.csv
+          └── pct_time_high_mean_heatmap.png
+```
 ---
 
 ### Theoretical Background: Saliency Mapping in Deep Learning
@@ -9889,7 +9890,7 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
 
 ---
 
-### Saliency Quantitative Analysis 
+### Full Saliency Quantitative Analysis 
 #### Overview
 **Objective**
 - To systematically interpret the TCN’s behaviour across four complementary outputs across three different targets (`max_risk`, `median_risk`, `pct_time_high`).
@@ -9922,7 +9923,6 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   | 3 | `temperature_max` | 4.77e-05 | 9.36e-05 | Mid–high mean, moderate variance → model identifies episodic temperature spikes (fever responses) as moderately influential; variability suggests influence only in febrile cases. |
   | 4 | `level_of_consciousness_carried` | 4.61e-05 | 9.17e-05 | Moderate mean, moderate variance → carried-forward consciousness values preserve deterioration context; consistently important where altered mental state persists, less so otherwise. |
   | 5 | `respiratory_rate_roll4h_min` | 4.37e-05 | 1.11e-04 | Moderate mean with high variance → model detects respiratory instability patterns (acute dips or fatigue) variably across patients, aligning with short-term deterioration episodes. |
-
 3. **Interpretation Summary**
   - **Overall summary:** Mean quantifies global importance; Std reflects stability. Here, heart rate and respiratory patterns show high mean + high Std (episodic importance), while NEWS2 and temperature are moderate mean + lower Std (steady baseline predictors).
   - **Dominant predictors:** Rolling-window minima of **heart rate** and **respiratory rate** indicate the model prioritises **sustained physiological depression** rather than transient abnormalities when estimating maximum deterioration risk.  
@@ -9930,19 +9930,34 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   - **Moderate variability (std):** Most top predictors have **mid–high standard deviations**, showing that while generally influential, their impact fluctuates across patient trajectories.  
   - **Low-mean features:** Inputs below roughly `2×10⁻⁵` contribute marginally, likely encoding contextual or redundancy signals (e.g., time gaps, missingness, auxiliary stats).  
   - **Zero-saliency variables:** Static or unused inputs (e.g., CO₂ retainer fields) indicate non-representation in this risk regime, consistent with limited relevance to acute deterioration.
+4. **Overall Summary**
+	-	The `max-risk` output is primarily influenced by minimum values of key vital signs (e.g., heart rate, respiratory rate) and aggregate early-warning scores (e.g., NEWS2).
+	-	These features capture sustained physiological deterioration (rolling time windows) rather than transient abnormalities, indicating that the model focuses on periods where a patient’s condition is persistently abnormal.
+	-	Clinically, this makes sense: longer-lasting deviations from normal physiology are more predictive of a patient reaching their peak risk than short-term fluctuations.
+	-	The variability (high standard deviation) in saliency across patients and timestamps highlights episodic or context-specific importance (importance is not uniform), reflecting that different patients reach peak risk through different combinations of physiological changes.
 
----
+**Temporal Mean Saliency (`max_risk_temporal_saliency.csv`)**
+1. **Context**
+  - This represents the **average absolute saliency** per timestep, aggregated across all features and patients.  
+  - It identifies **when in the sequence** the model is most sensitive when predicting **maximum deterioration risk**, i.e., which parts of the patient timeline contribute most to peak-risk estimation.
+2. **Key Findings (General-Trend Scope)**
+  | **Pattern Region** | **Approx. Timesteps** | **Trend** | **Interpretation** |
+  |--------------------|------------------------|------------|--------------------|
+  | Early sequence | 0–10 | Rapid decline from ~3.8×10⁻⁵ to ~1.2×10⁻⁵ | Model shows minimal reliance on earliest observations, suggesting low predictive relevance of baseline vitals. |
+  | Mid sequence | 10–40 | Stable low plateau (~1.5–1.6×10⁻⁵) | Indicates that mid-trajectory states provide steady but limited incremental information for determining max risk. |
+  | Late sequence | 40–70 | Gradual rise to ~2.2×10⁻⁵ | Reflects increasing model sensitivity to recent physiological patterns as deterioration approaches. |
+  | End of sequence | 70–95 | Fluctuating peaks then decline (max ≈2.3×10⁻⁵ → 0.6×10⁻⁵) | The saliency spike before final decline suggests model focus on **late-stage instability**, followed by tapering when inputs become less informative or truncated. |
+3. **Interpretation Summary**
+  - **Temporal focus:** The model is **most attentive between timesteps ~55–75**, aligning with periods that likely correspond to **late deterioration onset** in patient sequences.  
+  - **Early low saliency:** Minimal early saliency implies that initial stable conditions carry little weight when estimating maximum risk — consistent with deterioration being a dynamic rather than baseline phenomenon.  
+  - **Late rise and fall:** The mid-to-late escalation indicates that **progressive physiological stress** drives peak-risk prediction, with declining saliency near the end possibly due to reduced input signal (e.g., short remaining sequences).  
+  - **Interpretive pattern:** The smooth progression (rather than abrupt peaks) suggests the model captures **gradual worsening** rather than isolated episodic spikes.
 
-#### **Overall Summary**
-
-For the **max-risk** output, the model emphasises **vital sign minima and composite early warning features** that reflect *sustained physiological decline*.  
-This aligns with clinical intuition for maximum deterioration prediction:  
-periods of **prolonged abnormality** are more predictive of peak risk than brief fluctuations.  
-Observed variability across features reflects **heterogeneous deterioration patterns** across the cohort, consistent with individualised risk dynamics.
-
-
-
-
+4. **Overall Summary**
+   - The temporal saliency trend shows that the TCN model’s **attention intensifies over time**, culminating around later timesteps before tapering off.  
+   - This reflects a **recency bias**, where recent physiological signals (heart rate, respiratory rate, consciousness, NEWS2) exert stronger influence on predicted maximum risk than older data.  
+   - Clinically, this aligns with the understanding that **deterioration leading to peak risk is typically preceded by a sustained and progressive change**, rather than early or transient deviations.  
+   - The observed late saliency rise supports the model’s ability to **detect evolving instability trajectories**, consistent with its goal of identifying **maximum deterioration points** across the admission.
 ---
 
 ### SHAP-Saliency Comparative Synthesis 
