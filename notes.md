@@ -10030,6 +10030,49 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   - Core signals and their temporal evolution align with clinical expectations: prolonged deviations in heart rate, respiration, and composite early warning scores precede peak risk events.  
   - Model behaviour captures both persistent underlying decline and event-specific surges, consistent with real-world deterioration trajectories.
 
+#### Saliency Analysis (`median_risk`)
+
+**Mean Saliency Heatmap (`median_risk_mean_heatmap.png`)**
+1. **Context**
+  - Visualises **temporal top-10 feature importance** for predicting the median (typical) deterioration risk during admission.  
+  - Color intensity (log-scaled mean absolute saliency) reflects how strongly the model relies on each feature at each timestep across patients.  
+  - Bright (yellow) = higher influence; darker (blue) = lower importance.  
+  - Captures how the model recognises **sustained baseline risk patterns** rather than peak events.
+
+---
+
+### 2. Key Patterns
+
+#### **Overall Temporal Pattern**
+- Brightness is **distributed evenly across time**, with no strong late-stage concentration.  
+- **Early-to-mid sequence (0–40 hrs)** shows meaningful activation in several features, indicating importance of **initial and baseline physiology**.  
+- **Mid–late timesteps (40–80 hrs)** maintain consistent brightness across key vitals, confirming that **ongoing stability or instability** shapes average risk.
+- No major vertical "crisis" bands appear, distinguishing `median_risk` from `max_risk`.
+
+| **Pattern** | **Description** | **Interpretation** |
+|--------------|----------------|--------------------|
+| **Persistent horizontal bands** | `news2_score` and `risk_numeric` stay bright from **0–96 hrs** | Model anchors predictions on **continuous global risk indicators** (rule-based + prior model score). |
+| **Sustained vital-sign importance** | `heart_rate_roll24h_min`, `heart_rate_mean`, and `heart_rate_median` remain bright from **20–96 hrs**, especially **60–80 hrs** | Reflects **stable reliance on cardiovascular parameters** as markers of chronic or baseline risk. |
+| **Early respiratory prominence** | `respiratory_rate_roll24h_std` bright near **0–20 hrs**, fading mid-stay | Suggests that **early respiratory variability** signals baseline instability that defines typical risk exposure. |
+| **Moderate steady activity** | `heart_rate_missing_pct`, `systolic_bp`, `respiratory_rate_median` show mild but continuous activation | Indicates **data quality and sustained physiology** inform background risk rather than acute change. |
+| **Minimal vertical spikes** | Few transient bright cells (~60 hrs) | Confirms **absence of discrete deterioration moments** — model tracks consistent patterns, not crises. |
+
+---
+
+### 3. Interpretation Summary
+- The model distributes attention broadly, showing **no recency bias**.  
+- **Persistent predictors** (`news2_score`, `risk_numeric`, rolling/mean heart rate) dominate, indicating reliance on **stable and cumulative indicators** of ongoing condition rather than short-term spikes.  
+- **Respiratory and blood pressure variability** provide **contextual background** but are secondary.  
+- **Early brightness** implies that **initial presentation and baseline physiology** shape a patient’s overall risk profile across the stay.  
+- Saliency patterns remain smooth and continuous — fitting for a target representing **median (sustained) risk** rather than episodic deterioration.
+
+---
+
+### 4. Overall Summary
+- The heatmap confirms that `median_risk` captures **chronic physiological state** rather than crisis response.  
+- The model’s reliance on **continuous measures (NEWS2, risk_numeric, heart rate means)** shows it generalises patient stability over time.  
+- Unlike `max_risk`, which peaks late, `median_risk` saliency is **evenly spread** — reflecting a model that **summarises overall condition** rather than reacting to acute events.  
+- Clinically, this aligns with sustained “typical” risk exposure throughout an admission, where **persistent mild abnormalities** and **baseline characteristics** dominate predictive importance.
 
 ---
 
