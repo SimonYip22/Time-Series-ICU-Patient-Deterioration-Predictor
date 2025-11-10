@@ -9946,18 +9946,91 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   | Early sequence | 0–10 | Rapid decline from ~3.8×10⁻⁵ to ~1.2×10⁻⁵ | Model shows minimal reliance on earliest observations, suggesting low predictive relevance of baseline vitals. |
   | Mid sequence | 10–40 | Stable low plateau (~1.5–1.6×10⁻⁵) | Indicates that mid-trajectory states provide steady but limited incremental information for determining max risk. |
   | Late sequence | 40–70 | Gradual rise to ~2.2×10⁻⁵ | Reflects increasing model sensitivity to recent physiological patterns as deterioration approaches. |
-  | End of sequence | 70–95 | Fluctuating peaks then decline (max ≈2.3×10⁻⁵ → 0.6×10⁻⁵) | The saliency spike before final decline suggests model focus on **late-stage instability**, followed by tapering when inputs become less informative or truncated. |
+  | End of sequence | 70–95 | Fluctuating peaks then decline (max ≈2.3×10⁻⁵ → 0.6×10⁻⁵) | The saliency spike before final decline suggests model focus on **late-stage instability**, followed by tapering when inputs become less informative. |
 3. **Interpretation Summary**
   - **Temporal focus:** The model is **most attentive between timesteps ~55–75**, aligning with periods that likely correspond to **late deterioration onset** in patient sequences.  
-  - **Early low saliency:** Minimal early saliency implies that initial stable conditions carry little weight when estimating maximum risk — consistent with deterioration being a dynamic rather than baseline phenomenon.  
+  - **Early low saliency:** Minimal early saliency implies that initial stable conditions carry little weight when estimating maximum risk → consistent with deterioration being a dynamic rather than baseline phenomenon.  
   - **Late rise and fall:** The mid-to-late escalation indicates that **progressive physiological stress** drives peak-risk prediction, with declining saliency near the end possibly due to reduced input signal (e.g., short remaining sequences).  
   - **Interpretive pattern:** The smooth progression (rather than abrupt peaks) suggests the model captures **gradual worsening** rather than isolated episodic spikes.
-
 4. **Overall Summary**
-   - The temporal saliency trend shows that the TCN model’s **attention intensifies over time**, culminating around later timesteps before tapering off.  
-   - This reflects a **recency bias**, where recent physiological signals (heart rate, respiratory rate, consciousness, NEWS2) exert stronger influence on predicted maximum risk than older data.  
-   - Clinically, this aligns with the understanding that **deterioration leading to peak risk is typically preceded by a sustained and progressive change**, rather than early or transient deviations.  
-   - The observed late saliency rise supports the model’s ability to **detect evolving instability trajectories**, consistent with its goal of identifying **maximum deterioration points** across the admission.
+	-	The model’s attention increases toward the end of each patient’s sequence, showing a clear recency bias — recent physiological changes have the greatest effect on predicting maximum risk.
+	-	Clinically, this means the model recognises that peak deterioration is usually preceded by sustained worsening near the end of a patient’s trajectory, not by early or isolated abnormalities.
+	-	The late rise in saliency indicates effective detection of emerging instability patterns, consistent with identifying moments of highest clinical risk.
+   
+
+**Top-Feature Temporal Profiles (`max_risk_top_features_temporal.csv`)**
+1. **Context**
+  - Tracks how the saliency of the **top 5 features** changes across time (`timestep` = 0–95).  
+  - Each column represents the mean absolute saliency for a feature at a specific timestep, averaged across all patients.  
+  - It reveals when each physiological signal most influences the model’s estimation of a patient’s **maximum deterioration risk**.
+2. **Key Findings (General-Trend Scope)**
+   | **Feature** | **Temporal Pattern** | **Interpretation** |
+   |--------------|----------------------|--------------------|
+   | `heart_rate_roll24h_min` | Moderate baseline, sharp rise after timestep ~55, peaking between 60–75 | Late-sequence dominance reflects sensitivity to sustained low heart rate before deterioration; the model identifies cardiovascular depression near the deterioration point. |
+   | `news2_score` | Steady influence throughout, mild increase mid-to-late (40–70) | Reflects continuous integration of multi-parameter risk signals; maintains stable contextual weight. |
+   | `temperature_max` | Mild early activity, then stable midsection with occasional late bumps | Suggests episodic temperature relevance → important in subsets with febrile response but not universal. |
+   | `level_of_consciousness_carried` | Fluctuating mid-to-late sequence (40–75) | Indicates model focus on persistent altered consciousness during evolving deterioration episodes, not transient episodes. |
+   | `respiratory_rate_roll4h_min` | Low baseline, rising steeply from timestep ~65 onward | Signals mounting respiratory instability or fatigue close to deterioration onset; strong late contribution. |
+3. **Interpretation Summary**
+  - **Overall dynamics:** Most top features show **increasing saliency toward later timesteps**, confirming that the model places more weight on recent physiological changes when estimating maximum risk.  
+  - **Temporal differentiation:**  
+    - Heart rate and respiratory rate minima show clear late peaks, implying attention to **sustained declines** rather than short-term spikes.  
+    - NEWS2 provides a **steady baseline signal**, anchoring the model’s interpretation across the timeline.  
+    - Consciousness and temperature show **intermittent importance**, supporting their role as conditional or secondary cues rather than continuous drivers.  
+  - **Pattern interpretation:** Saliency peaks cluster in the **final third (timesteps 60–80)**, coinciding with typical pre-deterioration phases.
+4. **Overall Summary**
+  - The TCN’s temporal saliency pattern for `max_risk` shows a **progressive rise in importance across time**, culminating shortly before the end of the sequence.  
+  - This indicates that the model recognises **accumulating instability** across vital signs and integrates multi-system deterioration cues as the patient approaches their highest predicted risk.  
+  - Clinically, this mirrors how maximum deterioration tends to emerge from **gradual physiological decline**, where sustained abnormalities in **heart rate, respiratory effort, and consciousness** signal worsening condition more reliably than isolated or early anomalies.
+
+**Mean Saliency Heatmap (`max_risk_mean_heatmap.png`)**
+1. **Context**
+  - Visualises **temporal top-10 feature importance** for the model predicting **maximum patient deterioration risk** during admission.  
+  - Color intensity (log-scaled mean absolute saliency) reflects **average model sensitivity** to each feature at each timestep across all patients.  
+  - Bright (yellow) regions = high influence; darker (blue) = less importance.  
+  - Captures where and when the model focuses most strongly across the admission timeline.
+2. **Key Patterns**
+  - **Overall Temporal Pattern:**
+    - Saliency begins noticabley rising from **~40 hours onward**, indicating the model starts detecting mid-stay deterioration patterns.  
+    - Attention **builds progressively**, peaking around **55-85 hours**, followed by a moderate plateau to 90–96 hours with almost no activation in the last few hours.
+    - Early hours (0–10 h) show minimal activation, suggesting low predictive relevance of admission values alone. However in a few top features, admission values were bright. 
+  | **Pattern** | **Description** | **Interpretation** |
+  |--------------|----------------|--------------------|
+  | **Late brightening (≈55–90hrs)** | Broad increase in brightness across most features in the final 30 hours. | Indicates **recency bias** → the model relies most on **recent physiological signals** when estimating maximum risk. |
+  | **Singular persistent band** | `heart_rate_roll24h_min` is the brightest and most persistent feature; sustained saliency from ~15 h onward, especially intense around 15-45 and 50-80 h | Indicates prolonged low or unstable heart rate is a major risk signal that is used throughout the entirety of stay. |
+  | **Sustained horizontal bands** | Scattered bright regions seen in `news2_score`, and `respiratory_rate` from roughly **40–96 hrs**. | Reflects **persistently important predictors**, capturing **sustained physiological decline** rather than isolated events. |
+  | **Moderate horizontal presence** | `temperature_max`,`level_of_consciousness_carried` and `supplemental_o2_max` show moderate but steady activation throughout, `respiratory_rate_max` show moderate steady activation between 60-90hrs. | Suggests that **temperature spikes**, **prolonged altered consciousness**, **O2 requirments** contribute moderately meaningfully throughout, with tachypnoea contributing later on. |
+  | **Bright patches** | Features such as `respiratory_rate_roll4h_min` (40-45, 70-80h), `systolic_bp_roll1h_max` (55-75h) and `respiratory_rate` (55-65, 75-85h) show bright sections between **40-80 hrs**. | Reflects **event-specific activation**, likely transient interventions or brief physiological responses. |
+3. **Interpretation Summary**
+  - The model’s focus increases gradually over time, peaking around **55-85 hrs**, showing that it relies more on **recent trends** to predict a patient’s maximum deterioration risk.  
+  - **Rolling heart rate trends (`heart_rate_roll24h_min`)** dominate throughout as the most important feature in determining maximum risk.
+  - **Respiratory metrics (`respiratory_rate`, `respiratory_rate_roll4h_min`)**, and **NEWS2 score** dominate across the later stages, suggesting that **prolonged abnormalities** in these systems are central to identifying deterioration.  
+  - Features with isolated saliency bursts contribute briefly during likely **acute escalation points**, but they are secondary to sustained vital trends.
+4. **Overall Summary**
+  - The heatmap demonstrates a **clear late-stage concentration of saliency**, where most top features show maximal importance between **55-85 hrs**.  
+  - This indicates that the model captures **progressive deterioration trajectories**, relying on **persistent physiological changes** rather than transient fluctuations.  
+  - Clinically, this aligns with the pattern of patients gradually deteriorating toward their highest risk period, rather than risk being driven by early isolated abnormalities.  
+  - Core signals (heart rate, respiratory rate, temperature, and consciousness level) remain key determinants of maximum risk across time, confirming model consistency with known clinical indicators.
+
+**Max-Risk Overall Saliency Summary**
+- **Primary Drivers:** 
+  - Across all analyses, the model consistently prioritises **rolling heart rate minima (`heart_rate_roll24h_min`)**, **respiratory rate metrics (`respiratory_rate`, `respiratory_rate_roll4h_min`)**, and **NEWS2 score**. 
+  - These features dominate both feature-level and temporal importance.
+- **Temporal Focus:** 
+  - Saliency rises gradually from **~40 hours**, peaks **55–85 hours**, and tapers slightly toward the end of the sequence.  
+  - Indicates **recency bias**: the model relies more on recent physiological changes when estimating a patient’s maximum risk.
+- **Sustained vs Episodic Signals:**  
+  - `heart_rate_roll24h_min` shows **persistent high importance** throughout early-to-late sequence, reflecting cumulative cardiovascular suppression.  
+  - Respiratory metrics and NEWS2 show **moderate-to-high sustained influence**, occasionally punctuated by **short-lived spikes** (likely representing acute deterioration episodes).  
+  - Secondary features (temperature, consciousness, supplemental O₂) contribute steadily but less strongly.
+- **Interpretation of Variability:**  
+  - Feature-level **high standard deviation** indicates that some features’ influence varies across patients or over time; the model does not treat all patients identically.  
+  - Temporal patterns confirm that maximum risk is driven by **progressive physiological deterioration** rather than isolated early anomalies.
+- **Clinical Alignment:**  
+  - Core signals and their temporal evolution align with clinical expectations: prolonged deviations in heart rate, respiration, and composite early warning scores precede peak risk events.  
+  - Model behaviour captures both persistent underlying decline and event-specific surges, consistent with real-world deterioration trajectories.
+
+
 ---
 
 ### SHAP-Saliency Comparative Synthesis 
