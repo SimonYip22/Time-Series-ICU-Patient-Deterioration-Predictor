@@ -206,7 +206,7 @@ def compute_saliency_for_batch(model, x_batch, mask_batch, head_key):
         scalar = out[i] # Select scalar output for patient i
         scalar.backward(retain_graph=True) # Backprop to compute gradients wrt inputs, so x.grad gets shape (B, T, F), one gradient for every input value of every patient.
         grads.append(x.grad[i].detach().cpu().numpy()) # Shape (T, F)
-    grads = np.stack(grads, axis=0) # Shape (B, T, F), stack all per-pateint gradients of output wrt each input feature and timestep.
+    grads = np.stack(grads, axis=0) # Shape (B, T, F), stack all per-patient gradients of output wrt each input feature and timestep.
 
     saliency = grads * x.detach().cpu().numpy() # Combine gradients with input values (both shapes are the same so multiplication is valid)
     return np.abs(saliency) # Return absolute value of saliency (we care about magnitude only)
