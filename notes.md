@@ -10276,38 +10276,91 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
     - Secondary contributors include **heart rate** and **respiratory missingness** (`respiratory_rate_missing_pct`), which introduce episodic or context-dependent signals extending total high-risk time.
     - High mean saliency combined with moderate-to-high standard deviation across these features indicates that **different patients accumulate high-risk time through varied physiological pathways**, reflecting subgroup-specific vulnerability patterns.
 - **Temporal Focus:**
-    - **Saliency exhibits a dual-phase pattern:** an early period (0–50 hrs) reflecting baseline vulnerability, and a late period (60–85 hrs) corresponding to recurrent or persistent physiological instability.
-    - Early activation anchors the prediction in **initial BP, consciousness, and vital signs**, setting a baseline for expected cumulative high-risk duration.
-    - The mid-phase (10–50 hrs) maintains moderate, fluctuating saliency, indicating **continuous integration of intermittent physiological changes** rather than acute events.
-    - Late resurgence (55–80 hrs) aligns with **multi-system deterioration**, capturing patients who experience sustained or renewed instability.
-    - Saliency declines sharply after ~90 hrs, consistent with **end-of-stay stabilisation** or completed integration of cumulative risk information.
+  - **Saliency exhibits a dual-phase pattern:** an early period (0–50 hrs) reflecting baseline vulnerability, and a late period (60–85 hrs) corresponding to recurrent or persistent physiological instability.
+  - Early activation anchors the prediction in **initial BP, consciousness, and vital signs**, setting a baseline for expected cumulative high-risk duration.
+  - The mid-phase (10–50 hrs) maintains moderate, fluctuating saliency, indicating **continuous integration of intermittent physiological changes** rather than acute events.
+  - Late resurgence (55–80 hrs) aligns with **multi-system deterioration**, capturing patients who experience sustained or renewed instability.
+  - Saliency declines sharply after ~90 hrs, consistent with **end-of-stay stabilisation** or completed integration of cumulative risk information.
 - **Early vs Late Contributions:**
-    - `systolic_bp_roll24h_min` and `level_of_consciousness` dominate early phases, marking patients with **baseline chronic hypotension and neurological compromise**.
-    - `heart_rate` and late-phase BP features contribute mid-to-late, reflecting **episodic tachycardia and recurrent blood pressure instability**.
-    - `respiratory_rate_missing_pct` provides context-dependent weight, showing that **monitoring gaps** or evolving respiratory compromise inform cumulative risk.
-    - Other vitals (e.g., SpO₂, minor BP measures) add background information without discrete “crisis” spikes.
+  - `systolic_bp_roll24h_min` and `level_of_consciousness` dominate early phases, marking patients with **baseline chronic hypotension and neurological compromise**.
+  - `heart_rate` and late-phase BP features contribute mid-to-late, reflecting **episodic tachycardia and recurrent blood pressure instability**.
+  - `respiratory_rate_missing_pct` provides context-dependent weight, showing that **monitoring gaps** or evolving respiratory compromise inform cumulative risk.
+  - Other vitals (e.g., SpO₂, minor BP measures) add background information without discrete “crisis” spikes.
 - **Interpretation of Variability:**
-    - Feature-level high mean and moderate-to-high standard deviation reflect **both consistent importance and patient-specific variation** in how physiological features drive cumulative high-risk time.
-    - Temporal patterns confirm that the model integrates **initial patient state plus ongoing and recurrent physiological instability**, rather than responding to single, isolated deterioration events.
-    - The dual-phase reliance—early baseline plus late resurgence—illustrates **how initial vulnerability and later multi-system compromise combine to determine total high-risk exposure**.
+  - Feature-level high mean and moderate-to-high standard deviation reflect **both consistent importance and patient-specific variation** in how physiological features drive cumulative high-risk time.
+  - Temporal patterns confirm that the model integrates **initial patient state plus ongoing and recurrent physiological instability**, rather than responding to single, isolated deterioration events.
+  - The dual-phase reliance—early baseline plus late resurgence—illustrates **how initial vulnerability and later multi-system compromise combine to determine total high-risk exposure**.
 - **Clinical Alignment:**
-    - Early hypotension and impaired consciousness mark patients likely to remain at high risk for prolonged periods.
-    - Late-phase increases in heart rate, BP, and respiratory missingness correspond to **renewed or persistent systemic instability**, clinically reflecting recurrent deterioration or protracted illness.
-    - Overall, the model interprets `pct_time_high` as **cumulative physiological instability**, capturing both baseline vulnerability and later-stage multi-system compromise rather than isolated acute deterioration events.
+  - Early hypotension and impaired consciousness mark patients likely to remain at high risk for prolonged periods.
+  - Late-phase increases in heart rate, BP, and respiratory missingness correspond to **renewed or persistent systemic instability**, clinically reflecting recurrent deterioration or protracted illness.
+  - Overall, the model interprets `pct_time_high` as **cumulative physiological instability**, capturing both baseline vulnerability and later-stage multi-system compromise rather than isolated acute deterioration events.
+
+#### Overall Saliency Summary
+**Overall Outcomes**
+- The analyses successfully identified the key physiological drivers, temporal patterns, and feature-level importance for each outcome, providing clinically interpretable insights into patient deterioration trajectories. 
+- Overall, the saliency analysis demonstrates that the models:
+  - Capture both **baseline vulnerability** and **dynamic trends** in patient vitals.
+  - Highlight **target-specific primary drivers** (cardiovascular, respiratory, neurological, or composite scores).
+  - Show **temporal dual-phase patterns** where early indicators anchor predictions and late trends refine risk estimates.
+  - Provide **patient-specific variability**, reflecting heterogeneous physiological pathways leading to high-risk events or sustained instability.
+**Comparative Saliency Table**
+| **Aspect** | **`max_risk`** | **`median_risk`** | **`pct_time_high`** | **Clinical Alignment / Interpretation** |
+|------------|--------------|----------------|-----------------|----------------------------------------|
+| **Primary Drivers** | `heart_rate_roll24h_min`, respiratory rate metrics (`respiratory_rate`, `respiratory_rate_roll4h_min`), `news2_score` | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric`, `heart_rate_missing_pct` | `systolic_bp_roll24h_min`, `systolic_bp`, `level_of_consciousness`; secondary: `heart_rate`, `respiratory_rate_missing_pct` | `max_risk` captures acute deterioration surges; `median_risk` reflects typical baseline + ongoing cardiovascular trends; `pct_time_high` captures cumulative, multi-system instability (neurological + cardiovascular + respiratory). |
+| **Temporal Focus** | Gradual rise ~40h, peak 55–85h, slight taper | Bi-phasic: early peak 0–5h, moderate mid 15–50h, broad late 55–80h, decline after 85h | Dual-phase: early 0–50h (baseline vulnerability), mid 10–50h (moderate fluctuations), late 55–80h (recurrent multi-system instability), decline ~90h | All models incorporate temporal structure: `max_risk` emphasizes recent deterioration; `median_risk` and `pct_time_high` integrate both baseline and later trends, showing progressive accumulation of risk. |
+| **Early vs Late Contributions** | Early: minor; Late: heart rate minima, respiratory rate, NEWS2 spikes | Early: `heart_rate_roll24h_min`; Late: `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric` | Early: `systolic_bp_roll24h_min`, `level_of_consciousness`; Mid-to-late: `heart_rate`, BP, `respiratory_rate_missing_pct` | Early signals reflect baseline vulnerability; late signals reflect sustained or recurrent instability, aligning with clinical expectations of deterioration trajectories. |
+| **Sustained vs Episodic Signals** | Persistent heart rate influence, intermittent respiratory/NEWS2 spikes | Persistent rolling heart rate and global risk scores, moderate background vitals | Persistent baseline features (BP, consciousness), episodic or context-dependent secondary features (HR, respiratory missingness) | `max_risk` emphasizes acute events; `median_risk` reflects cumulative typical trends; `pct_time_high` integrates continuous physiological burden with intermittent worsening events. |
+| **Feature Variability** | High SD across patients; influence varies by case | Moderate-to-high SD; dual-phase reliance | High mean + moderate-to-high SD; patient-specific pathways influence cumulative high-risk time | All targets show patient-specific heterogeneity; `max_risk` captures peak-specific variation; `median_risk` and `pct_time_high` emphasize continuous and cumulative risk integration. |
+| **Clinical Takeaways** | Prolonged deviations in HR, RR, and NEWS2 precede peak events; captures both chronic decline and acute surges | Baseline cardiovascular vulnerability + sustained trends; cumulative risk without acute spikes dominates | Early hypotension & impaired consciousness set baseline risk; late-phase HR, BP, and missing respiratory data reflect recurrent or persistent multi-system instability | Provides complementary perspectives: `max_risk` → acute peak risk; `median_risk` → typical ongoing risk; `pct_time_high` → total cumulative exposure. Supports real-world interpretation of patient deterioration trajectories. |
+
 ---
 
-### SHAP-Saliency Comparative Synthesis 
-- cross-model compariosn 
-- integrated reasoning 
-- we will be comparing findgings to the shap findings to see whether they align or misalign, we ideally want to see overlap as matching analysis will show that both interpretability analysis both came to similar conclusions about feature importance, and then salinecy is able to expand on this with the temporal analsyiss 
+### SHAP vs Saliency Interpretability: Comparative Analysis
+#### Objective
+- This cross-model interpretability analysis evaluates whether **feature importance identified by SHAP (LightGBM)** aligns with **temporal saliency patterns (TCN)** across three clinical risk targets (`max_risk`, `median_risk`, `pct_time_high`).  
+- **Note:** This is **not a one-to-one comparison**, as the two models are trained on different architectures and **distinct feature sets**, so exact feature-level correspondence cannot be assumed. The analysis focuses on convergence of insights rather than direct numerical alignment.
+- Goals:
+  - Confirm whether both interpretability methods converge on the same or similar **key predictors**.
+  - Identify **temporal patterns, dual-phase dynamics, and patient-specific variability** that SHAP cannot reveal.
+  - Integrate findings for **clinically meaningful insights** into patient deterioration trajectories.
+- **Rationale:** Alignment across models strengthens confidence in feature relevance, while **temporal saliency adds context** about when and how predictors influence risk, providing richer interpretability than static feature importance alone.
+#### Top Feature Overlap
+| **Target** | **Top SHAP Features** | **Top Saliency Features** | **Alignment / Observations** |
+|------------|---------------------|--------------------------|------------------------------|
+| **Max Risk** | `spo2_min`, `supplemental_o2_mean`, `respiratory_rate_max`, `temperature_missing_pct`, `heart_rate_mean` | `heart_rate_roll24h_min`, `respiratory_rate`, `respiratory_rate_roll4h_min`, `news2_score`, `temperature_max`, `level_of_consciousness_carried` | Partial overlap: Both highlight **respiratory and cardiovascular metrics**. Saliency adds **temporal context**, showing heart rate minima and respiratory trends rising late in sequence, capturing cumulative deterioration leading to peak risk. SHAP confirms feature relevance without temporal resolution. |
+| **Median Risk** | `respiratory_rate_mean`, `spo2_mean`, `heart_rate_max`, `systolic_bp_missing_pct`, `level_of_consciousness_missing_pct` | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric`, `heart_rate_missing_pct` | Strong conceptual alignment: Both emphasize **heart rate and respiratory features**. Saliency reveals **bi-phasic temporal pattern** (early baseline, late sustained trends), unseen in SHAP. Missingness metrics appear in both, confirming clinical proxy for instability. |
+| **Pct Time High** | `respiratory_rate_mean`, `heart_rate_max`, `supplemental_o2_mean`, `spo2_mean`, `temperature_median` | `systolic_bp_roll24h_min`, `systolic_bp`, `level_of_consciousness`; secondary: `heart_rate`, `respiratory_rate_missing_pct` | Partial alignment: SHAP identifies **respiratory and cardiovascular contributors**, while saliency highlights **cumulative, multi-system instability**. Dual-phase temporal pattern (early baseline + late resurgence) is unique to saliency, showing prolonged risk dynamics. |
 
-1.	Objective: explain why this cross-analysis matters.
-	2.	Table of overlap: top 10 SHAP vs top 10 saliency features.
-	3.	Narrative:
-	•	Alignment → features consistently important across models.
-	•	Divergence → TCN reveals temporal or interaction effects unseen by SHAP.
-	4.	Interpretation: how static and temporal insights complement each other for clinical understanding.
+#### Narrative Analysis
+**Alignment**
+- Across all targets, **major physiological domains** are consistently important in both methods:
+  - **Max Risk:** Acute respiratory and cardiovascular indicators dominate.
+  - **Median Risk:** Sustained cardiovascular trends and oxygenation.
+  - **Pct Time High:** Multi-system cumulative burden (neurological, cardiovascular, respiratory).  
+- **Missingness metrics** (temperature, BP, LOC) appear in both, reflecting the model’s recognition of data gaps as clinical instability proxies.
+**Divergence**
+- Saliency captures **temporal dynamics** that SHAP cannot:
+  - **`max_risk`:** Late-sequence escalation in heart rate minima and respiratory rate indicates **dynamic detection of peak deterioration**.
+  - **`median_risk`:** Bi-phasic pattern—early baseline importance followed by late sustained trends.
+  - **`pct_time_high`:** Dual-phase emphasis; early baseline sets initial high-risk potential, late resurgence reflects **prolonged or recurrent instability**.  
+- Saliency also highlights **episodic vs sustained contributions**, showing which features are transient vs persistent drivers of risk.
 
+#### Integrated Clinical Interpretation
+- **Static SHAP insights:** Provide feature-level importance, confirming which physiological measures (HR, RR, SpO₂, BP, consciousness) the models consider predictive.  
+- **Temporal saliency insights:** Reveal what features matter and specifically when, capturing progressive deterioration, dual-phase effects (early and late), transient spikes and sustained periods of increased model sensitivity.  
+- **Complementarity:**  
+  - SHAP validates **feature relevance**.  
+  - Saliency provides **dynamic understanding**, critical for clinical interpretation of risk evolution.  
+- **Clinical takeaway:**  
+  - `max_risk` → acute deterioration prediction, sensitive to **late-stage physiological trends**.  
+  - `median_risk` → typical risk state, integrates **baseline, late-stage and sustained signals**.  
+  - `pct_time_high` → total cumulative exposure, capturing **recurrent, persistent and widespread scattered instability**.  
+
+#### Conclusion
+1. **Alignment:** SHAP and saliency largely agree on top contributors, strengthening confidence in model reasoning.  
+2. **Temporal enrichment:** Saliency adds insight into **timing, dual-phase patterns, and episodic vs sustained signals**.  
+3. **Clinical coherence:** The combined SHAP and saliency analysis links model-predicted risk to physiologically meaningful events, showing which features drive risk and when, supporting transparent and interpretable predictions.
+4. **Recommendation:** Both methods should be used jointly; SHAP for static feature confirmation, saliency for **dynamic temporal interpretability**.
 
 ---
 
