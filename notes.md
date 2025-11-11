@@ -9818,6 +9818,11 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
     | `mean_abs_saliency` | Average magnitude of absolute saliency across all patients and timesteps → “how strongly the model relies on this feature overall” |
     | `std_abs_saliency` | Standard deviation of absolute saliency → “how consistently that feature mattered across patients and timesteps” |
 	-	Interpretation:
+    - `Relative variability = std / mean` → how unstable a feature's importance is compared to its average contribution.
+      - Ratios ≈ 1–1.5 → consistent importance.
+      - Ratios ≈ 2–3 → moderate variation across samples.
+      - Ratios > 3–4 → highly inconsistent across patients (context-dependent saliency).
+    - 
     | **Mean** | **Std** | **Interpretation** |
     |-----------|----------|--------------------|
     | High | Low | Strong, stable driver → universally important feature |
@@ -9957,7 +9962,6 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
 	-	Clinically, this means the model recognises that peak deterioration is usually preceded by sustained worsening near the end of a patient’s trajectory, not by early or isolated abnormalities.
 	-	The late rise in saliency indicates effective detection of emerging instability patterns, consistent with identifying moments of highest clinical risk.
    
-
 **Top-Feature Temporal Profiles (`max_risk_top_features_temporal.csv`)**
 1. **Context**
   - Tracks how the saliency of the **top 5 features** changes across time (`timestep` = 0–95).  
@@ -10031,48 +10035,197 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   - Model behaviour captures both persistent underlying decline and event-specific surges, consistent with real-world deterioration trajectories.
 
 #### Saliency Analysis (`median_risk`)
+**Feature-Level Mean & Standard Deviation (`median_risk_feature_saliency.csv`)**
+1. **Context**
+  - This analysis corresponds to the model predicting **median (average sustained) deterioration risk** during admission.  
+  - It quantifies which features the model consistently relied upon across all patients and timestamps to estimate **ongoing baseline risk** rather than transient deterioration events.  
+  - Mean saliency indicates **overall feature importance**, while standard deviation (std) reflects **stability or variability** of that importance across patients and timesteps.
+2. **Key Findings (General-Trend Scope)**
+  | **Rank** | **Feature** | **Mean** | **Std** | **Interpretation** |
+  |-----------|--------------|----------|----------|--------------------|
+  | 1 | `heart_rate_roll24h_min` | 8.67×10⁻⁵ | 2.43×10⁻⁴ | Most influential and variable feature → model relies heavily on sustained low heart rate over 24 h as a stable indicator of chronic physiological stress. High variance shows it’s dominant in some patients but not all. |
+  | 2 | `news2_score` | 8.17×10⁻⁵ | 1.93×10⁻⁴ | Consistently strong signal across patients → global deterioration metric integrated continuously into risk estimation. Moderate variability reflects consistent baseline importance. |
+  | 3 | `heart_rate_missing_pct` | 7.45×10⁻⁵ | 1.58×10⁻⁴ | High mean and moderate variance → model interprets monitoring gaps as proxy indicators of patient instability or data sparsity linked to sustained risk. |
+  | 4 | `risk_numeric` | 7.43×10⁻⁵ | 1.65×10⁻⁴ | Derived risk value measure acts as a contextual anchor; moderate mean + variance imply steady contribution without dominance. |
+  | 5 | `heart_rate_roll24h_mean` | 7.17×10⁻⁵ | 1.71×10⁻⁴ | Average rolling heart rate maintains high importance → indicates that long-term cardiovascular measure (not extremes) defines typical sustained risk level. |
+3. **Interpretation Summary**
+  - **Dominant cardiovascular weighting:** The model’s most influential features are all heart rate–derived (rolling mean/min, missingness), showing reliance on chronic heart rate trends to infer sustained physiological stability.  
+  - **Consistent integrators:** `news2_score` and `risk_numeric` provide continuous, context-aware risk input, aligning with the model’s goal of predicting average condition rather than episodic events.  
+  - **Moderate variability across features:** The relatively high standard deviations imply that while the same key predictors are used, their relative strength varies between patients, reflecting personalised weighting of sustained physiology.  
+  - **Low-importance features:** Most lower-ranked vitals and derived features (< 5×10⁻⁵ mean) contribute marginally, suggesting redundancy or minor contextual effects.
+4. **Overall Summary**
+  - The `median_risk` output is shaped primarily by **persistent physiological indicators** → especially long-term heart rate behaviour, continuous global scores (NEWS2), and data completeness metrics (missingness).  
+  - This combination reflects a focus on **baseline physiological tone and monitoring continuity**, fitting the definition of **average sustained risk** across a stay.  
+  - Clinically, this pattern suggests the model captures **chronic physiological burden** and **ongoing stability**, rather than acute or transient deterioration.  
+  - Variability in feature influence indicates patient-specific pathways to sustained risk but consistent dependence on cardiovascular and systemic signals across the cohort.
+
+**Temporal Mean Saliency (`median_risk_temporal_saliency.csv`)**
+1. **Context**
+  - Represents the **average absolute saliency per timestep**, aggregated across all features and patients, for predicting median (sustained) deterioration risk.  
+  - This identifies when in the patient timeline the model is most sensitive to input signals when estimating the overall (typical) risk state rather than a peak event.  
+2. **Key Findings (General-Trend Scope)**
+  | **Pattern Region** | **Approx. Timesteps** | **Trend** | **Interpretation** |
+  |--------------------|------------------------|------------|--------------------|
+  | **Initial window** | 0–5 | High early peak (~7.5×10⁻⁵) followed by a rapid drop to ~2.0×10⁻⁵ | Early strong activation shows that **initial physiological presentation** heavily influences the model’s baseline understanding of sustained risk. |
+  | **Early–mid sequence** | 5–15 | Flat low saliency (~2.0–2.5×10⁻⁵) | The model briefly de-emphasises inputs after the initial baseline, suggesting stability or limited new information. |
+  | **Mid sequence** | 15–50 | Gradual, low-to-moderate plateau (~2.4–2.7×10⁻⁵) | Reflects steady model sensitivity to ongoing physiology; consistent monitoring but no major signal spikes. |
+  | **Late sequence** | 55–80 | Broad, sustained elevation (peak ≈4.0×10⁻⁵ at ~timestep 62) | Indicates the **most influential phase**, where the model integrates long-term physiological signals to refine average risk estimates. |
+  | **Final window** | 80–96 | Gradual decline from ~3.0×10⁻⁵ to <1.0×10⁻⁵ | Suggests diminishing relevance of final hours, possibly due to end-of-stay observations contributing little new information. |
+3. **Interpretation Summary**
+  - The model exhibits **two main saliency peaks** → a **brief early activation** reflecting the impact of admission and baseline status, and a **broader late activation** between ~55–80 hrs driven by sustained physiological context.  
+  - The **midsection (15–50 hrs)** shows continuous moderate attention, supporting a pattern of **stable monitoring** rather than episodic focus.  
+  - The **absence of sharp spikes** implies that the model interprets risk as a function of long-term trends, not sudden deviations.  
+  - The **late broad peak** aligns with gradual refinement of predicted median risk as physiological data accumulate over time.
+4. **Overall Summary**
+  - Temporal saliency for `median_risk` shows a **bi-phasic pattern**: strong sensitivity at the start (baseline definition) and again during the later mid-to-end window (~55–80 hrs).  
+  - The stable, continuous trend between these peaks confirms the model’s design to capture **sustained physiological consistency** rather than short-lived instability.  
+  - Clinically, this means the model defines a patient’s **typical risk state** through both **initial condition** and **prolonged stability or decline**, not acute deterioration episodes.  
+  - The declining saliency after 85 hrs indicates the model has already integrated key risk information earlier in the trajectory, consistent with prediction of a steady-state risk measure.
+
+**Top-Feature Temporal Profiles (`median_risk_top_features_temporal.csv`)**
+1. **Context**
+  - Tracks how the saliency of the **top 5 features** changes across time (`timestep` = 0–95).  
+  - Each column represents the **mean absolute saliency** for a feature at a specific timestep, averaged across all patients.  
+  - This reveals when each feature most influences the model’s estimation of a patient’s median (sustained) deterioration risk across the hospital stay.
+2. **Key Findings (General-Trend Scope)**
+   | **Feature** | **Temporal Pattern** | **Interpretation** |
+   |--------------|----------------------|--------------------|
+   | `heart_rate_roll24h_min` | Very high at timestep 0 (~0.00028), drops sharply after ~1–5, then moderate steady baseline; gradual increase from ~50, peaks 55–65, declines after 80 | Initial low heart rate strongly predicts overall sustained risk; later sustained low HR contributes to typical risk profile. |
+   | `news2_score` | Moderate initial saliency (~0.00021), mild oscillations mid-sequence; continuous moderate from ~10–85 | Acts as a **persistent global risk indicator**, reflecting cumulative multi-parameter deterioration signals. |
+   | `heart_rate_missing_pct` | Moderate early (~0.00019), fluctuates throughout; peaks mid-late sequence (~55–65) | Highlights that **data gaps** or missing heart rate measurements contribute to sustained risk assessment. |
+   | `risk_numeric` | Moderate initial (~0.00019), generally stable with small mid-to-late increases; peaks 55–70 | Prior risk score contributes steadily, serving as a **baseline predictor** of typical risk. |
+   | `heart_rate_roll24h_mean` | Low early (0–55), sharp rise 55–75, highest around 60–70 | Late-sequence average heart rate indicates **ongoing cardiovascular status** driving median risk prediction. |
+3. **Interpretation Summary**
+  - **Temporal dynamics:** Unlike `max_risk`, the top features show **broadly distributed attention** across the stay, with early importance (timestep 0) for HR minima, then a late-sequence emphasis for average and cumulative indicators.  
+  - **Steady baseline signals:** `news2_score` and `risk_numeric` provide continuous saliency, reflecting the model’s reliance on **persistent global indicators** for sustained risk.  
+  - **Heart rate patterns:** Both minima and rolling mean contribute, but in **different phases** → minima dominate early, mean dominates later, capturing **initial condition plus ongoing cardiovascular trends**.  
+  - **Moderate variability:** Features such as `heart_rate_missing_pct` add context-dependent information, indicating that missing data or variability in measurement subtly informs median risk.  
+  - **Pattern implication:** Peaks are less sharp and less synchronised than `max_risk`, consistent with a target representing **average rather than acute risk**.
+4. **Overall Summary**
+  - The TCN’s temporal saliency pattern for `median_risk` emphasises **persistent, cumulative features** rather than acute peaks.  
+  - Early heart rate minima indicate **baseline risk susceptibility**, while mid-to-late average heart rate, NEWS2 score, and risk_numeric reflect **ongoing physiological stability or instability**.  
+  - Clinically, this aligns with **typical risk states**, where sustained deviations and cumulative physiological trends define a patient’s overall deterioration exposure, rather than single crisis events.
 
 **Mean Saliency Heatmap (`median_risk_mean_heatmap.png`)**
 1. **Context**
   - Visualises **temporal top-10 feature importance** for predicting the median (typical) deterioration risk during admission.  
   - Color intensity (log-scaled mean absolute saliency) reflects how strongly the model relies on each feature at each timestep across patients.  
   - Bright (yellow) = higher influence; darker (blue) = lower importance.  
-  - Captures how the model recognises **sustained baseline risk patterns** rather than peak events.
+	-	Reflects how the model captures sustained baseline and ongoing risk rather than transient peaks.
+2. **Key Patterns**
+  - **Overall Temporal Pattern:**
+    - Brightness is distributed relatively evenly across the full sequence, though the most concentrated activation occurs between ≈55–80 hrs, where multiple features display sustained high saliency.
+    - Early timesteps (0–5 hrs) show marked brightness in almost all features, indicating that initial physiological state contributes meaningfully to overall (median) risk estimation.
+    - 5-15 hrs has almost zero activation throughout, suggesting other than initial activation (0-5 hrs), early timesteps provided almost no insight.
+    -	The mid-period (15–50 hrs) maintains steady moderate activation, reflecting the model’s attention to ongoing physiological stability or mild variation.
+    -	The late window (55–80 hrs) displays broad horizontal bands across key features, suggesting that persistent physiological signals remain influential through the later stages of admission.
+    -	After ≈85 hrs, sharp taper, implying the model’s reduced reliance on final-sequence data, possibly due to diminishing available observations.
 
----
+  | **Pattern** | **Description** | **Interpretation** |
+  |--------------|----------------|--------------------|
+  | **Continuous global indicators** | `news2_score` and `risk_numeric` stay bright from **0–96 hrs**, also with peaks throughout. | Model anchors predictions on **continuous global risk indicators**. |
+  | **Sustained vital-sign importance** | `heart_rate_roll24h_min`, `heart_rate_mean` and `heart_rate_missing_pct` remain bright from **15–85 hrs**, especially **55–80 hrs** | Reflects **stable reliance on cardiovascular parameters** as markers of chronic or baseline risk. |
+  | **Persistent band** | `heart_rate_roll24h_min` is the brightest and most persistent feature; sustained saliency from ~15 h onward, especially intense from 55-80 h | Indicates prolonged low or unstable heart rate is a major risk signal that is used throughout the entirety of stay. |
+  | **Early respiratory prominence** | `respiratory_rate_roll24h_std` bright near **0–20 hrs**, fading to almost no activation for the rest of the timestamps | Suggests that **early respiratory variability** signals baseline instability that defines typical risk exposure. |
+  | **Late prominent activation** | `heart_rate_roll24h_mean` is the only feature to have almost no activation from 5-55 hrs before having the second most prominent saliency bands from 55-85 hrs. | Signals that average rolling heart rate was a key late stage predictor of average risk. |
+  | **Moderate steady activity** | `heart_rate_missing_pct`, `heart_rate_mean`, `systolic_bp`, `respiratory_rate_median` show mild but continuous activation | Indicates contextual physiological signals supporting general risk state. |
+  | **Minimal vertical spikes** | Few transient bright cells (15-40 hrs) | Confirms **absence of discrete deterioration moments**, model tracks consistent patterns, not crises. |
+3. **Interpretation Summary**
+	-	Saliency is evenly distributed across time, showing the model maintains consistent attention rather than focusing on sharp peaks.
+	-	Composite scores (`news2_score`, `risk_numeric`) and cardiovascular/respiratory trends dominate, reflecting reliance on stable, cumulative indicators of overall condition rather than short-term spikes.
+	-	Early activation highlights the influence of initial physiological state, shaping the patient’s sustained risk profile.
+	-	The smooth, continuous saliency evolution matches a target representing median (sustained) risk, not episodic deterioration.
+4. **Overall Summary**
+	-	The `median_risk` heatmap demonstrates that predictions are driven by persistent, system-wide physiological stability patterns, not discrete deterioration events.
+	-	The model consistently integrates global indicators (NEWS2 score, risk value) with sustained vital trends (heart rate, respiration) throughout the admission timeline.
+	-	Although attention is broadly spread, saliency peaks greatly in the later phase (≈55–80 hrs), suggesting that recent values still refine overall risk estimation.
+	-	Clinically, this implies that typical patient risk is shaped by baseline state and long-term physiological behaviour, aligning with how average stability reflects ongoing health trajectory.
 
-### 2. Key Patterns
+**Median-Risk Overall Saliency Summary**
+-	**Primary Drivers:**
+	-	Across all outputs, the model consistently emphasises rolling heart rate minima and mean (`heart_rate_roll24h_min`, `heart_rate_roll24h_mean`), global risk indicators (`news2_score`, `risk_numeric`), and heart rate missingness (`heart_rate_missing_pct`).
+	-	Early-time heart rate minima highlight baseline susceptibility, while late-time mean heart rate captures ongoing cardiovascular trends contributing to sustained risk.
+	-	Composite and derived scores provide continuous contextual information, anchoring predictions of typical patient risk rather than acute spikes.
+-	**Temporal Focus:**
+	-	**Saliency shows a bi-phasic pattern:** a brief early peak (0–5 hrs) reflecting initial physiological presentation, followed by broad late-to-mid activation (~55–80 hrs).
+	-	The mid-period (15–50 hrs) maintains moderate, steady attention, supporting continuous integration of physiological stability rather than episodic events.
+	-	Saliency declines after ~85 hrs, indicating minimal influence of final observations on median risk predictions.
+- **Early vs Late Contributions:**
+	-	`heart_rate_roll24h_min` maintains persistent high saliency early, reflecting initial patient baseline risk.
+	-	`heart_rate_roll24h_mean` becomes dominant later, showing sustained cardiovascular trends drive the ongoing average risk assessment.
+	-	`news2_score` and `risk_numeric` remain consistently bright throughout, supporting cumulative assessment.
+	-	Other vitals (respiratory rate variability, systolic BP, missingness indicators) contribute moderate background information, without discrete “crisis” spikes.
+-	**Interpretation of Variability:**
+	-	Feature-level moderate-to-high standard deviations reflect variability in how strongly the model weighs these predictors across patients.
+	-	Temporal patterns indicate the model treats median risk as a stable, cumulative property, rather than responding to isolated deterioration events.
+	-	**Early activation vs late sustained signals illustrates dual-phase reliance:** initial condition sets baseline susceptibility, and later trends refine the predicted average risk.
+- **Clinical Alignment:**
+	-	Early heart rate minima reflect baseline cardiovascular vulnerability; later rolling mean trends and global scores capture ongoing physiological stability.
+	-	The model’s sustained attention to rolling vital signs and integrated risk indicators aligns with typical patient trajectories, where median risk is shaped by cumulative physiological patterns rather than isolated acute deterioration.
+	-	Absence of strong vertical spikes supports that median risk captures overall exposure to physiological instability rather than crisis events.
 
-#### **Overall Temporal Pattern**
-- Brightness is **distributed evenly across time**, with no strong late-stage concentration.  
-- **Early-to-mid sequence (0–40 hrs)** shows meaningful activation in several features, indicating importance of **initial and baseline physiology**.  
-- **Mid–late timesteps (40–80 hrs)** maintain consistent brightness across key vitals, confirming that **ongoing stability or instability** shapes average risk.
-- No major vertical "crisis" bands appear, distinguishing `median_risk` from `max_risk`.
+#### Saliency Analysis (`pct_time_high`)
+**Feature-Level Mean & Standard Deviation (`pct_time_high_feature_saliency.csv`)**
+1. **Context**
+  - Quantifies **average and variability of saliency** for each input feature when predicting the percentage of time spent in a high-risk state (`pct_time_high`).  
+  - The **mean** represents the average contribution of each feature across all patients and timesteps.  
+  - The **standard deviation (std)** reflects how variable that contribution is between cases, indicating whether the model’s reliance on a feature is consistent or patient-specific.  
+2. **Key Findings (General-Trend Scope)**
+  | **Rank** | **Feature** | **Mean** | **Std** | **Interpretation** |
+  |-----------|--------------|----------|----------|--------------------|
+  | 1 | `systolic_bp_roll24h_min` | 1.98×10⁻⁵ | 4.56×10⁻⁵ | Strongest predictor with highest variability. Chronic low blood pressure drives extended high-risk exposure in many patients, but influence is uneven, reflecting subgroup-specific cardiovascular instability. |
+  | 2 | `level_of_consciousness` | 1.93×10⁻⁵ | 4.32×10⁻⁵ | Consistent neurological signal. Persistent altered consciousness reliably indicates prolonged physiological stress and sustained risk. |
+  | 3 | `respiratory_rate_missing_pct` | 1.76×10⁻⁵ | 4.09×10⁻⁵ | Missing respiratory readings correlate with poor monitoring or unstable respiration, adding consistent weight to cumulative risk estimation. |
+  | 4 | `heart_rate` | 1.68×10⁻⁵ | 4.11×10⁻⁵ | Variable influence. Episodic tachycardia and heart rate volatility contribute to prolonged instability but not uniformly across cases. |
+  | 5 | `systolic_bp` | 1.63×10⁻⁵ | 3.67×10⁻⁵ | Baseline systolic BP maintains moderate, steady influence; lower variability suggests broad, background relevance across most patients. |
 
-| **Pattern** | **Description** | **Interpretation** |
-|--------------|----------------|--------------------|
-| **Persistent horizontal bands** | `news2_score` and `risk_numeric` stay bright from **0–96 hrs** | Model anchors predictions on **continuous global risk indicators** (rule-based + prior model score). |
-| **Sustained vital-sign importance** | `heart_rate_roll24h_min`, `heart_rate_mean`, and `heart_rate_median` remain bright from **20–96 hrs**, especially **60–80 hrs** | Reflects **stable reliance on cardiovascular parameters** as markers of chronic or baseline risk. |
-| **Early respiratory prominence** | `respiratory_rate_roll24h_std` bright near **0–20 hrs**, fading mid-stay | Suggests that **early respiratory variability** signals baseline instability that defines typical risk exposure. |
-| **Moderate steady activity** | `heart_rate_missing_pct`, `systolic_bp`, `respiratory_rate_median` show mild but continuous activation | Indicates **data quality and sustained physiology** inform background risk rather than acute change. |
-| **Minimal vertical spikes** | Few transient bright cells (~60 hrs) | Confirms **absence of discrete deterioration moments** — model tracks consistent patterns, not crises. |
+3. **Interpretation Summary**
+  - **Dominant domains:** Neurological (`level_of_consciousness`) and cardiovascular (`systolic_bp_roll24h_min`, `systolic_bp`) features lead the prediction, representing **persistent systemic compromise**.  
+  - **Secondary contributors:** Respiratory missingness and heart rate signals add to risk duration, marking periods of **incomplete monitoring or intermittent instability**.  
+  - **Variability pattern:** Most top features show **high standard deviations (≈4×10⁻⁵)**, implying that while the model consistently considers them important, their relative impact varies by patient trajectory.  
+  - **Cross-system weighting:** The mixture of neurological, cardiovascular, and respiratory features demonstrates that cumulative deterioration reflects **multi-system strain over time**, not dominance of a single vital parameter.  
+  - **Low-impact features:** Metrics below ≈1.0×10⁻⁵ (e.g., derived rolling slopes, temperature) show weak or context-limited contributions, aligning with their limited temporal saliency in heatmaps.
 
----
+4. **Overall Summary**
+  - The `pct_time_high` output is driven by features that encode **sustained or recurrent physiological instability**, particularly in blood pressure and consciousness.  
+  - Respiratory and heart rate variables contribute intermittently, capturing fluctuations that lengthen total time in a high-risk state.  
+  - The combination of high mean and high variability among leading predictors suggests **heterogeneous deterioration pathways**, where different physiological systems dominate in different patients.  
+  - Clinically, this reflects the model’s interpretation of prolonged risk as **cumulative instability** across neurological, cardiovascular, and respiratory axes — a pattern typical of patients who remain unwell for extended periods rather than experiencing discrete acute events.
 
-### 3. Interpretation Summary
-- The model distributes attention broadly, showing **no recency bias**.  
-- **Persistent predictors** (`news2_score`, `risk_numeric`, rolling/mean heart rate) dominate, indicating reliance on **stable and cumulative indicators** of ongoing condition rather than short-term spikes.  
-- **Respiratory and blood pressure variability** provide **contextual background** but are secondary.  
-- **Early brightness** implies that **initial presentation and baseline physiology** shape a patient’s overall risk profile across the stay.  
-- Saliency patterns remain smooth and continuous — fitting for a target representing **median (sustained) risk** rather than episodic deterioration.
+**Mean Saliency Heatmap (`pct_time_high_mean_heatmap.png`)**
+1. **Context**
+  - Visualises **temporal top-10 feature importance** for predicting the **percentage of time a patient spent in a high-risk state** (`pct_time_high`).  
+  - Color intensity (log-scaled mean absolute saliency) represents the relative influence of each feature across 96 timesteps for all patients.  
+  - Bright (yellow) = stronger contribution; dark (blue) = weaker influence.  
+  - This target measures **cumulative exposure** to deterioration risk, reflecting how long a patient remained unstable, rather than the presence of a single deterioration event.
+2. **Key Patterns**
+  - **Overall Temporal Pattern:**
+    - The heatmap shows **widespread bright activation** across the full sequence, far denser than in other targets.  
+    - There is **no single dominant phase** — instead, activity clusters early–mid (0–50 hrs) and again late (60–85 hrs), with short gaps of low activation between.  
+    - Early activation (0–5 hrs) across almost all features reflects the model’s use of **baseline physiological state** to set the foundation for cumulative high-risk exposure.  
+    - Mid-period (10–50 hrs) shows alternating low and high saliency, suggesting intermittent instability rather than steady decline, though **consciousness** remains persistently bright throughout this phase.  
+    - Late sequence (60–85 hrs) displays broad, intense activation across nearly all top features, indicating **system-wide recurrence or persistence of instability**.  
+    - Activation drops sharply after ≈90 hrs, consistent with end-of-stay stabilisation or lack of further signal.
+  | **Pattern** | **Description** | **Interpretation** |
+  |--------------|----------------|--------------------|
+  | **Early multi-feature activation** | Near-universal brightness at 0–5 hrs | The model anchors on baseline vital and consciousness levels to define each patient’s overall high-risk exposure. |
+  | **Persistent neurological dominance** | `level_of_consciousness` remains bright through 0–55 hrs | Continuous altered consciousness signals prolonged physiological stress, a key marker of sustained risk. |
+  | **Chronic cardiovascular weighting** | Systolic BP features (`roll24h_min`, `bp`, `bp_max`, `bp_missing_pct`) remain active across early and late windows | Ongoing hypotension and BP variability define both early and recurrent instability phases. |
+  | **Intermittent respiratory influence** | Respiratory rate and missingness show scattered peaks 30–90 hrs | Periods of missing or unstable respiration reinforce high-risk duration, especially late in stay. |
+  | **Late multi-system convergence** | Heart rate, SpO₂, and BP peaks coincide 60–80 hrs | Reflects a late, system-wide instability phase contributing to extended high-risk exposure. |
+3. **Interpretation Summary**
+  - The model distributes attention broadly across the timeline, reflecting the **continuous and cumulative nature** of the `pct_time_high` target.  
+  - Unlike `max_risk` or `median_risk`, saliency remains high throughout, indicating that **risk exposure is shaped by long-term physiological burden**, not isolated deterioration periods.  
+  - Persistent activation in `level_of_consciousness` and systolic BP features shows that **neurological state and hypotension** are consistent anchors of cumulative instability.  
+  - Intermittent respiratory and oxygenation signals contribute episodically, aligning with **recurrent hypoxia or ventilatory compromise** as additive factors in prolonged high-risk states.  
+  - The late clustering of brightness across multiple vital signs suggests that **recurring, multi-system strain** drives the length of time a patient remains at high risk rather than single-organ failure.
+4. **Overall Summary**
+  - The `pct_time_high` heatmap demonstrates a model that integrates **persistent and recurring physiological signals** over time to estimate cumulative high-risk exposure.  
+  - Saliency is **densely and widely distributed**, showing the model treats prolonged deterioration as a **multi-phase process**—early vulnerability followed by sustained or re-emerging instability.  
+  - Key drivers include **altered consciousness** and **chronic hypotension**, supported by episodic contributions from **respiratory and oxygenation markers**.  
+  - Clinically, this suggests the model recognises that patients who remain in a high-risk state do so due to **enduring systemic compromise** with recurrent decompensation, rather than discrete acute events.
 
----
 
-### 4. Overall Summary
-- The heatmap confirms that `median_risk` captures **chronic physiological state** rather than crisis response.  
-- The model’s reliance on **continuous measures (NEWS2, risk_numeric, heart rate means)** shows it generalises patient stability over time.  
-- Unlike `max_risk`, which peaks late, `median_risk` saliency is **evenly spread** — reflecting a model that **summarises overall condition** rather than reacting to acute events.  
-- Clinically, this aligns with sustained “typical” risk exposure throughout an admission, where **persistent mild abnormalities** and **baseline characteristics** dominate predictive importance.
 
 ---
 
