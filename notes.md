@@ -9123,7 +9123,7 @@ src/
 
 ---
 
-## Day 39-42 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
+## Day 39-43 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
 
 ### Goals
 - Finalise and validate `saliency_analysis_tcn.py` script (Phase 6 Step 4).
@@ -10120,7 +10120,6 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
     -	The mid-period (15–50 hrs) maintains steady moderate activation, reflecting the model’s attention to ongoing physiological stability or mild variation.
     -	The late window (55–80 hrs) displays broad horizontal bands across key features, suggesting that persistent physiological signals remain influential through the later stages of admission.
     -	After ≈85 hrs, sharp taper, implying the model’s reduced reliance on final-sequence data, possibly due to diminishing available observations.
-
   | **Pattern** | **Description** | **Interpretation** |
   |--------------|----------------|--------------------|
   | **Continuous global indicators** | `news2_score` and `risk_numeric` stay bright from **0–96 hrs**, also with peaks throughout. | Model anchors predictions on **continuous global risk indicators**. |
@@ -10178,19 +10177,65 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   | 3 | `respiratory_rate_missing_pct` | 1.76×10⁻⁵ | 4.09×10⁻⁵ | Missing respiratory readings correlate with poor monitoring or unstable respiration, adding consistent weight to cumulative risk estimation. |
   | 4 | `heart_rate` | 1.68×10⁻⁵ | 4.11×10⁻⁵ | Variable influence. Episodic tachycardia and heart rate volatility contribute to prolonged instability but not uniformly across cases. |
   | 5 | `systolic_bp` | 1.63×10⁻⁵ | 3.67×10⁻⁵ | Baseline systolic BP maintains moderate, steady influence; lower variability suggests broad, background relevance across most patients. |
-
 3. **Interpretation Summary**
-  - **Dominant domains:** Neurological (`level_of_consciousness`) and cardiovascular (`systolic_bp_roll24h_min`, `systolic_bp`) features lead the prediction, representing **persistent systemic compromise**.  
-  - **Secondary contributors:** Respiratory missingness and heart rate signals add to risk duration, marking periods of **incomplete monitoring or intermittent instability**.  
+  - **Dominant domains:** Neurological (`level_of_consciousness`) and cardiovascular (`systolic_bp_roll24h_min`, `systolic_bp`) features lead the prediction, representing persistent systemic compromise.  
+  - **Secondary contributors:** Respiratory missingness and heart rate signals add to risk duration, marking periods of incomplete monitoring or intermittent instability.  
   - **Variability pattern:** Most top features show **high standard deviations (≈4×10⁻⁵)**, implying that while the model consistently considers them important, their relative impact varies by patient trajectory.  
   - **Cross-system weighting:** The mixture of neurological, cardiovascular, and respiratory features demonstrates that cumulative deterioration reflects **multi-system strain over time**, not dominance of a single vital parameter.  
   - **Low-impact features:** Metrics below ≈1.0×10⁻⁵ (e.g., derived rolling slopes, temperature) show weak or context-limited contributions, aligning with their limited temporal saliency in heatmaps.
-
 4. **Overall Summary**
   - The `pct_time_high` output is driven by features that encode **sustained or recurrent physiological instability**, particularly in blood pressure and consciousness.  
   - Respiratory and heart rate variables contribute intermittently, capturing fluctuations that lengthen total time in a high-risk state.  
-  - The combination of high mean and high variability among leading predictors suggests **heterogeneous deterioration pathways**, where different physiological systems dominate in different patients.  
-  - Clinically, this reflects the model’s interpretation of prolonged risk as **cumulative instability** across neurological, cardiovascular, and respiratory axes — a pattern typical of patients who remain unwell for extended periods rather than experiencing discrete acute events.
+  - The combination of high mean and high variability among leading predictors suggests varying deterioration pathways, where different physiological systems dominate in different patients.  
+  - Clinically, this reflects the model’s interpretation of prolonged risk as **cumulative instability** across neurological, cardiovascular, and respiratory axes; a pattern typical of patients who remain unwell for extended periods rather than experiencing discrete acute events.
+
+**Temporal Mean Saliency (`pct_time_high_temporal_saliency.csv`)**
+1. **Context**
+  - Represents the **average absolute saliency per timestep**, aggregated across all features and patients, for predicting the **percentage of time spent in high-risk states** during the stay.
+  - Identifies **when** in the timeline the model is most sensitive to patient data when estimating cumulative risk exposure.  
+  - Unlike peak or median risk, this reflects **total burden of instability**, integrating both early and late physiological contributions.  
+2. **Key Findings (General-Trend Scope)**
+  | **Pattern Region** | **Approx. Timesteps** | **Trend** | **Interpretation** |
+  |--------------------|------------------------|------------|--------------------|
+  | **Initial window** | 0–5 | Sharp early peak (1.96×10⁻⁵ → ~9×10⁻⁶ by t=5) | Model heavily weights **initial physiological state** to define each patient’s baseline high-risk exposure potential. |
+  | **Early–mid phase** | 5–20 | Rapid drop then stable low plateau (~7–8×10⁻⁶) | Reflects transition to steady monitoring; minimal change signals limited incremental information after baseline. |
+  | **Mid sequence** | 20–55 | Fluctuating low–moderate band (~7–8.5×10⁻⁶) | Suggests **ongoing sensitivity to intermittent physiological changes**; captures moderate but persistent contributions. |
+  | **Late sequence** | 55–80 | Broad rise peaking at ~9.15×10⁻⁶ (≈timestep 79) | Indicates **renewed saliency toward the end**, consistent with late deterioration phases influencing overall exposure. |
+  | **Final window** | 85–96 | Progressive decline to <3.6×10⁻⁶ | Model attention fades as physiological signal becomes less informative or stabilises at discharge. |
+3. **Interpretation Summary**
+  - The model demonstrates a **bi-phasic saliency pattern** → strong early activation (baseline definition) followed by a sustained mid-level plateau, and a **broad late rise** (~55–80 hrs).  
+  - Early saliency reflects that **initial blood pressure, consciousness, and baseline vitals** are key to estimating how long a patient remains unstable.  
+  - The long middle period of moderate attention (20–55 hrs) indicates **continuous risk integration** rather than episodic responses.  
+  - The late resurgence (55–80 hrs) corresponds to **renewed instability or cumulative deterioration**, showing that many patients who spent long periods in high risk tend to have another wave of deterioration later, not just early instability.
+  - The lack of sharp spikes supports that `pct_time_high` captures extended instability periods, not isolated events.
+4. **Overall Summary**
+  - Temporal saliency for `pct_time_high` highlights a **dual emphasis**: early physiological presentation and later sustained instability both shape cumulative high-risk exposure.  
+  - The mid-phase consistency suggests the model interprets ongoing physiological status as **continuously additive** to total risk time.  
+  - Clinically, this indicates that **patients who start unstable and later redevelop instability** accumulate greater overall risk exposure.  
+  - The early and late peaks mirror the **two major phases of deterioration burden** → initial vulnerability and subsequent relapse or persistence of instability.
+
+**Top-Feature Temporal Profiles (`pct_time_high_top_features_temporal.csv`)**  
+1. **Context**  
+  - Tracks how the saliency of the **top 5 features** evolves over time (`timestep` = 0–95) when predicting **the percentage of time a patient spent in a high-risk state**.  
+  - Each value represents the **mean absolute saliency** of a feature at a given timestep, averaged across all patients.  
+  - This identifies when specific physiological domains most influence the model’s estimation of **cumulative high-risk exposure** over the hospital stay.  
+2. **Key Findings (General-Trend Scope)**  
+  | **Feature** | **Temporal Pattern** | **Interpretation** |
+  |--------------|----------------------|--------------------|
+  | `systolic_bp_roll24h_min` | Moderate early activation (0–10 h), stable mid-level saliency with **two strong peaks** around **30–50 h** and **60–80 h**, then gradual decline to end | Indicates that **chronic hypotension** and **recurrent low BP episodes** define cumulative exposure—both early and late phases signal prolonged systemic compromise. |
+  | `level_of_consciousness` | Strong and persistent activation from **0–55 h**, then moderate taper until ~70 h before fading | Suggests that **sustained neurological impairment** remains one of the most consistent determinants of prolonged instability, marking patients with continuous altered consciousness as chronically high-risk. |
+  | `respiratory_rate_missing_pct` | Low early signal, followed by a **steady mid-to-late rise** (30–90 h) | Reflects that **missing respiratory observations** or measurement gaps emerge during longer admissions, likely associated with progressive deterioration or reduced monitoring quality. |
+  | `heart_rate` | Episodic peaks at **~16 h**, **45–55 h**, and **70–80 h** | Highlights **intermittent tachycardic surges** that contribute additively to cumulative instability—acute but transient stress periods layered on top of chronic risk. |
+  | `systolic_bp` | Mild activation early (0–10 h), moderate mid (30–60 h), renewed elevation **after 65 h** | Reflects **recurrent BP instability**—a background driver of sustained physiological compromise through both early baseline and later relapse phases. |
+3. **Interpretation Summary**  
+  - **Temporal structure:** Saliency is **broadly distributed**, with two distinct phases of heightened activity—an **early period (0–50 h)** marked by neurological and circulatory instability, and a **late phase (60–80 h)** of multi-system reactivation.  
+  - **Dominant contributors:** Persistent signals from `level_of_consciousness` and `systolic_bp_roll24h_min` indicate that **sustained hypotension and impaired consciousness** are central to predicting how long patients remain at high risk.  
+  - **Dynamic components:** `heart_rate` and `respiratory_rate_missing_pct` add episodic and contextual information, representing transient physiological stress and deteriorating monitoring reliability.  
+  - **Cumulative effect:** The asynchronous yet overlapping feature peaks indicate the model integrates **multiple overlapping physiological instabilities** rather than depending on a single deterioration event.  
+4. **Overall Summary**  
+  - The TCN’s temporal saliency for `pct_time_high` reflects a **dual-phase pattern**: early persistent hypotension and altered consciousness set the baseline for high-risk exposure, while later episodes of respiratory instability and cardiovascular reactivation extend total high-risk duration.  
+  - This pattern aligns clinically with patients who remain unstable for prolonged periods—initial frailty or neurological suppression compounded by later systemic decompensation.  
+  - The model thus captures **prolonged, evolving physiological instability**, distinguishing sustained high-risk exposure from isolated deterioration episodes.  
 
 **Mean Saliency Heatmap (`pct_time_high_mean_heatmap.png`)**
 1. **Context**
@@ -10225,8 +10270,30 @@ All files saved in: `src/results_finalisation/interpretability_tcn/`
   - Key drivers include **altered consciousness** and **chronic hypotension**, supported by episodic contributions from **respiratory and oxygenation markers**.  
   - Clinically, this suggests the model recognises that patients who remain in a high-risk state do so due to **enduring systemic compromise** with recurrent decompensation, rather than discrete acute events.
 
-
-
+**Pct-Time-High Overall Saliency Summary**
+- **Primary Drivers:**
+    - The model consistently emphasises **sustained hypotension** (`systolic_bp_roll24h_min`, `systolic_bp`) and **neurological state** (`level_of_consciousness`) as dominant determinants of cumulative high-risk exposure.
+    - Secondary contributors include **heart rate** and **respiratory missingness** (`respiratory_rate_missing_pct`), which introduce episodic or context-dependent signals extending total high-risk time.
+    - High mean saliency combined with moderate-to-high standard deviation across these features indicates that **different patients accumulate high-risk time through varied physiological pathways**, reflecting subgroup-specific vulnerability patterns.
+- **Temporal Focus:**
+    - **Saliency exhibits a dual-phase pattern:** an early period (0–50 hrs) reflecting baseline vulnerability, and a late period (60–85 hrs) corresponding to recurrent or persistent physiological instability.
+    - Early activation anchors the prediction in **initial BP, consciousness, and vital signs**, setting a baseline for expected cumulative high-risk duration.
+    - The mid-phase (10–50 hrs) maintains moderate, fluctuating saliency, indicating **continuous integration of intermittent physiological changes** rather than acute events.
+    - Late resurgence (55–80 hrs) aligns with **multi-system deterioration**, capturing patients who experience sustained or renewed instability.
+    - Saliency declines sharply after ~90 hrs, consistent with **end-of-stay stabilisation** or completed integration of cumulative risk information.
+- **Early vs Late Contributions:**
+    - `systolic_bp_roll24h_min` and `level_of_consciousness` dominate early phases, marking patients with **baseline chronic hypotension and neurological compromise**.
+    - `heart_rate` and late-phase BP features contribute mid-to-late, reflecting **episodic tachycardia and recurrent blood pressure instability**.
+    - `respiratory_rate_missing_pct` provides context-dependent weight, showing that **monitoring gaps** or evolving respiratory compromise inform cumulative risk.
+    - Other vitals (e.g., SpO₂, minor BP measures) add background information without discrete “crisis” spikes.
+- **Interpretation of Variability:**
+    - Feature-level high mean and moderate-to-high standard deviation reflect **both consistent importance and patient-specific variation** in how physiological features drive cumulative high-risk time.
+    - Temporal patterns confirm that the model integrates **initial patient state plus ongoing and recurrent physiological instability**, rather than responding to single, isolated deterioration events.
+    - The dual-phase reliance—early baseline plus late resurgence—illustrates **how initial vulnerability and later multi-system compromise combine to determine total high-risk exposure**.
+- **Clinical Alignment:**
+    - Early hypotension and impaired consciousness mark patients likely to remain at high risk for prolonged periods.
+    - Late-phase increases in heart rate, BP, and respiratory missingness correspond to **renewed or persistent systemic instability**, clinically reflecting recurrent deterioration or protracted illness.
+    - Overall, the model interprets `pct_time_high` as **cumulative physiological instability**, capturing both baseline vulnerability and later-stage multi-system compromise rather than isolated acute deterioration events.
 ---
 
 ### SHAP-Saliency Comparative Synthesis 
