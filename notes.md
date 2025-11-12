@@ -6671,10 +6671,12 @@ src/
 
 ---
 
-## Phase 6: Visualisation, Comparison & Finalisation (Steps 1-5)
-**Goal: To synthesise all evaluation outputs from Phase 5 into summary metrics, numerical data, visualisations, and interpretability artefacts. This phase transforms raw metrics into human-readable scientific insights, completing the machine-learning pipeline and preparing it for reporting or publication.**
+## Phase 6: Visualisation, Comparison & Finalisation (Steps 1-4)
+### Goal 
+- To synthesise all evaluation outputs from Phase 5 into summary metrics, numerical data, visualisations, and interpretability artefacts. 
+- This phase transforms raw metrics into human-readable scientific insights, allowing for quantitative analysis and interpretatability, completing the machine-learning pipeline ready for deployment.
 
-1. **Comparative Analysis: Create Summary Metrics (`performance_analysis.py`)**
+### 1. **Comparative Analysis: Create Summary Metrics (`performance_analysis.py`)**
   - **Purpose**
     - Provides the primary empirical benchmark between **LightGBM** and **TCN_refined** across three ICU deterioration targets.
     - This step consolidates classification + regression metrics into one structured file, combining pre-computed JSON metrics (AUC, F1, RMSE, R²) with newly calculated calibration diagnostics (Brier score, ECE). 
@@ -6707,7 +6709,7 @@ src/
     - It provides the **most important and interpretable layer of analysis**, establishing which model performs better and by how much, based purely on objective summary metrics.  
     - **All subsequent visualisation work (Step 2) exists to support and contextualise these quantitative findings.**
 
-2. **Comparative Analysis: Generate Visualisations & Numeric Plot Data (`performance_analysis.py`)**
+### 2. **Comparative Analysis: Generate Visualisations & Numeric Plot Data (`performance_analysis.py`)**
   - **Purpose**:
     - Extend Step 1’s scalar metrics and builds into visual and numerical diagnostics:
       - Step 1 → establishes who performs better overall* (numerical summary).  
@@ -6771,7 +6773,7 @@ src/
     - Produces a comprehensive, validated foundation → merging rigorous quantitative benchmarking with interpretable visual analytics
     - Explainability and inference analyses (Step 3) will build upon this first stage of analysis.
 
-3. **LightGBM SHAP Interpretability (`shap_analysis_lightgbm.py`)**
+### 3. **LightGBM SHAP Interpretability (`shap_analysis_lightgbm.py`)**
   - **Purpose**: 
     - Script provides **final interpretability** for all trained LightGBM models, by quantifying each clinical feature’s contribution to predictions using **SHAP (SHapley Additive exPlanations)** values.
     - Deliver transparent, reproducible feature-level insights for all three targets
@@ -6822,7 +6824,7 @@ src/
     - For interpretability, these results are then saved into csv files for reproducibility, and saved as png files for easy visualisations.
     - These results explain why the LightGBM models produce the predictions used in the comparative analysis (Steps 1–2).
 
-4. **TCN Saliency Interpretability (`saliency_analysis_tcn.py`)**
+### 4. **TCN Saliency Interpretability (`saliency_analysis_tcn.py`)**
   - **Purpose**
     - Compute gradient × input saliency maps (|∂y/∂x × x|) for the refined TCN on the held-out test set to quantify how each input feature and timestep contributes to driving predictions for the three output heads (`max_risk`, `median_risk`, `pct_time_high`).
     - Extends interpretability beyond LightGBM SHAP (Phase 6 Step 3) to temporal reasoning in the sequence model.
@@ -6868,44 +6870,82 @@ src/
     - `saliency_analysis_tcn.py` is a modular, reproducible interpretability stage. It rebuilds the trained TCN, computes absolute gradient×input saliency per patient/timestep/feature, and exports concise numeric and visual artefacts for reporting and comparative analysis with SHAP. 
     - The outputs quantify which features the TCN uses and when those features matter in the patient timeline, adding temporal context that complements LightGBM SHAP explanations, allowing for the greatest clinical interpretability.
 
-5. **Inference Demonstration (Deployment-Lite)**
-  - **Purpose**: Create a lightweight demonstration of end-to-end inference for usability validation.
-	- **Plan**:	Add a small inference script (`run_inference.py`) or a notebook demo (`notebooks/inference_demo.ipynb`):
-    -	**Load**: `trained_models/tcn_best.pt` + `deployment_models/preprocessing/standard_scaler.pkl` + `padding_config.json`.
-    -	**Input**: patient time series (or --patient_id) and runs preprocessing identically to training (scaling, padding, mask).
-    -	**Returns**: predicted probabilities and regression output `max_risk_prob, median_risk_prob, pct_time_high_pred`.
-    -	**Example CLI interface**: `python3 run_inference.py --patient_id 123` → returns risk prediction for patient 123 → `--save results/pred_123.json`.
-  - **Reasoning**:
-    - Demonstrates full-pipeline usability without requiring full production deployment.  
-    - Verifies model reproducibility from raw input to final predictions.
-    -	**Polishes the project**: not just training, but usable and demonstrable.
-    -	Shows ability to package ML into runnable inference.
-    -	Low effort and lightweight compared to full FastAPI/CI/CD, but high payoff in terms of “completeness.”
-	  - This is enough to demonstrate end-to-end usage → shows pipeline usability without full FastAPI/CI/CD.
+### End Products of Phase 6
+**Summary**
+- By completion of Phase 6, the project achieved full comparative and interpretability finalisation for both models (LightGBM and refined TCN). 
+- All results were fully analysed, visualised, and interpreted quantitatively and qualitatively.  
+- This phase completes the **core analytical cycle**:  
+  - Raw metrics → Comparative analysis → Interpretability → Reflection and insight generation.  
+  - All results are traceable, interpretable, and publication-ready.
+**Deliverables and Artefacts:**
+| Category | Outputs | Description |
+|-----------|----------|--------------|
+| **Performance Metrics** | `comparison_table.csv` | Unified metrics table for discrimination (AUC, F1), calibration (Brier, ECE), and regression fidelity (RMSE, R²). |
+| **Classification Plots** | `roc_*.png`, `pr_*.png`, `calibration_*.png`, `prob_hist_*.png` + CSVs | Complete classification visualisations and underlying numeric data. |
+| **Regression Plots** | `scatter_pct_time_high.png`, `residuals_pct_time_high.png`, `error_vs_truth_pct_time_high.png` + CSVs | Regression diagnostics for residuals and calibration. |
+| **Summary Charts** | `metrics_comparison_*.png` | Grouped comparison plots summarising all metrics per model and target. |
+| **LightGBM Interpretability** | `*_shap_summary.csv`, `*_shap_summary.png` | Global feature-level importance for each target via mean |SHAP| values. |
+| **TCN Interpretability** | `*_feature_saliency.csv`, `*_temporal_saliency.csv`, `*_top_features_temporal.csv`, `*_mean_heatmap.png` | Gradient×input saliency outputs showing feature and temporal influence across TCN output heads. |
+| **Diagnostics and Analysis** | Reflections, comparisons, and interpretive summaries (`notes.md`) | Detailed write-up describing model behaviour, interpretability alignment (SHAP vs Saliency), and performance conclusions. |
+**Analytical Endpoints:**
+- Completed quantitative analysis across discrimination, calibration, and regression fidelity.
+- Completed interpretability synthesis linking SHAP (global, static) with saliency (temporal, global).
+- Documented reflection on interpretability consistency, divergence, and model behaviour patterns.
+- Provided full reproducibility through paired PNG–CSV artefacts.
 
-**End Products of Phase 6:**
-- Final plots of ROC, calibration, regression results.
--	Final comparison table across all models.
-- Interpretability artefacts (SHAP + temporal saliency).
--	**Deployment-style assets**: Saved models (.pt, .pkl), preprocessing pipeline (scalers, masks)
-- Inference demo script.
--	**Complete README and project documentation that proves**: raw messy clinical data → tabular classical ML model → interpretable deep temporal model → visulisatiosn → fair baseline comparison with classical ML → usable inference.
-**Why not further**:
-- **Deployment:**
-  - Skip deploying as a cloud service (FastAPI/CI/CD).
-  - FastAPI, CI/CD and live deployment shows you understand production ML workflows (packaging, reproducibility, continuous deployment) but this full-stack deployment is unncessary and time consuming.
-  - Inference demo script (deployment-lite) is enough to prove end-to-end usability, full stack ML engineering isn’t necessary here.
-- **Testing:**
-  - **Formal unit testing is not required** for this project.  
-  - Scripts have deterministic inputs/outputs and are validated via execution correctness (successful run, matching metrics).  
-  - The focus is **scientific validity**, not software QA.  
-  - For this research-style ML project, you’re not expected to perform unit testing of every script. Verification = successful script execution + logically consistent outputs.
-  - Basic checks (verifying outputs exist, metrics are consistent, CSVs merge correctly) are sufficient.
-- **Must-have**: training + validation pipeline, test evaluation, metrics, plots, comparison to baselines, inference demo (CLI) + end-to-end reproducibility.
-**By The End of Project:**
-- The entire pipelinewill be complete: raw NEWS2 features → tabular ML → temporal DL → evaluation → visualisation.  
-- All results will be **comparable, interpretable, and publication-ready**.  
-- The project will demonstrate full mastery of clinical ML development: **data engineering → model training → evaluation → interpretability → deployment-lite usability.**
+### Why Not Further
+**Scope rationale:**
+1. **Analytical sufficiency:**  
+  - Metrics computed already cover the full standard evaluation spectrum:
+    -	**Discrimination:** ROC AUC, F1, Precision–Recall, Accuracy, Precision, Recall.
+    -	**Calibration:** Brier score, Expected Calibration Error (ECE).
+    -	**Regression fidelity:** RMSE, R².
+	-	These together provide a complete empirical description of model performance.
+	-	Extending further (e.g., MCC, Cohen’s κ, AUROC confidence intervals) would add redundancy without providing new interpretive value beyond what has already been demonstrated through ROC and PR curves.
+2. **Interpretability completeness:**  
+	-	SHAP captures static/global feature attributions for LightGBM.
+	-	Gradient×Input Saliency captures temporal/local attributions for TCN.
+	-	Together, they already reveal both what features are important and when they influence predictions; the two fundamental interpretability dimensions in clinical sequence modelling.
+	-	Introducing more interpretability methods (e.g., Integrated Gradients via Captum, occlusion tests, or LIME) would only replicate insights already established by the SHAP–Saliency combination.
+3. **Design economy:**  
+  - Per-patient saliency maps and raw tensor saves were removed to avoid redundancy and noise. Aggregated outputs and temporal CSVs already convey clinically meaningful and reproducible results.
+  - Visual scaling refinements (percentile clipping, log scaling, improved colormaps) ensured interpretable visual artefacts without excessive re-engineering.
+4. **Pipeline integrity:**  
+  - Phase 6 already integrates data processing → model training → evaluation → interpretability → synthesis.  
+  - Introducing further layers (e.g., autoencoders, ensemble interpretability, or SHAP–saliency fusion) would break the scope of a clean ML pipeline demonstration, since existing outputs already show all relevant performance behaviour.
+**Conclusion:**  
+- All analyses implemented are deliberate, sufficient, and aligned with standard ML evaluation pipelines.
+- Every model behaviour dimension—performance, calibration, regression fidelity, and interpretability—has been covered with full reproducibility and clarity.
+- Further additions would only increase redundancy, not insight.
+
+### Next Steps / Project Completion Pathway
+**Overview**
+- With Phase 6 complete, the analytical and interpretive work of the project is fully concluded. 
+- The next and final stage transitions from research and analysis to deployment and operationalisation.
+**Upcoming Stages**
+| Phase | Component | Description | Outcome |
+|-------|------------|--------------|----------|
+| **Phase 7A** | **Inference Demonstration (Deployment-Lite)** | Implement a command-line inference pipeline (`run_inference.py`). Loads saved models, preprocessors, and returns risk predictions for given patient inputs. | Demonstrates full end-to-end pipeline usability, showing ability to package ML models into reproducible inference workflows. |
+| **Phase 7B** | **Cloud Deployment (Render)** | Host a lightweight live version via FastAPI (or similar) with containerisation. Exposes endpoints for inference, showing MLOps and cloud deployment skill. | Demonstrates deployment engineering, API design, and CI/CD readiness. |
+**Rationale for This Transition**
+- **End-to-end demonstration:** Deployment validates reproducibility and model usability beyond training.  
+- **Industry relevance:** MLOps and deployment skillsets (packaging, inference, API exposure) are essential to professional ML engineering roles.  
+- **Strategic skill signalling:** The staged deployment (inference now → live API later) mirrors professional pipelines: local validation → cloud production.  
+**Target Deliverables for Phase 7**
+- `run_inference.py`(Deployment-Lite)
+- Packaged model assets (`.pt`, `.pkl`, `config_refined.json`, `padding_config.json`)
+- Later cloud API on Render for live demonstration (Phase 7B)
+- Updated `README.md` detailing the full ML lifecycle: preprocessing → training → evaluation → interpretability → deployment.
+
+### Summary
+- Phase 6 completes the analytical and interpretability phase of the project:
+  - Both models (LightGBM and TCN_refined) have been trained, validated, and explained.
+  - All evaluation artefacts, metrics, and interpretability outputs have been analysed and summarised.
+  - All code modules are modular, reproducible, and pipeline-aligned.
+  - The project now holds all necessary evidence of technical depth, analytical rigour, and interpretability awareness.
+- Next steps:
+  - Proceed to **Phase 7 – Deployment**, where the focus shifts from analysis to reproducible inference and operational demonstration. 
+  - This final stage will complete the project lifecycle, integrating ML development with deployable engineering practice.
 
 ---
 
@@ -9156,7 +9196,7 @@ src/
 
 ---
 
-## Day 39-43 Notes - Continue Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
+## Day 39-44 Notes - Finish Phase 6: Interpretability - TCN Temporal Saliency (Step 4)
 
 ### Goals
 - Finalise and validate `saliency_analysis_tcn.py` script (Phase 6 Step 4).
@@ -10436,6 +10476,7 @@ Are patient_0 saliency maps identical between heads?: True
     - Mid-period (10–50 hrs) shows alternating low and high saliency, suggesting intermittent instability rather than steady decline, though **consciousness** remains persistently bright throughout this phase.  
     - Late sequence (60–85 hrs) displays broad, intense activation across nearly all top features, indicating **system-wide recurrence or persistence of instability**.  
     - Activation drops sharply after ≈90 hrs, consistent with end-of-stay stabilisation or lack of further signal.
+
   | **Pattern** | **Description** | **Interpretation** |
   |--------------|----------------|--------------------|
   | **Early multi-feature activation** | Near-universal brightness at 0–5 hrs | The model anchors on baseline vital and consciousness levels to define each patient’s overall high-risk exposure. |
@@ -10443,6 +10484,7 @@ Are patient_0 saliency maps identical between heads?: True
   | **Chronic cardiovascular weighting** | Systolic BP features (`roll24h_min`, `bp`, `bp_max`, `bp_missing_pct`) remain active across early and late windows | Ongoing hypotension and BP variability define both early and recurrent instability phases. |
   | **Intermittent respiratory influence** | Respiratory rate and missingness show scattered peaks 30–90 hrs | Periods of missing or unstable respiration reinforce high-risk duration, especially late in stay. |
   | **Late multi-system convergence** | Heart rate, SpO₂, and BP peaks coincide 60–80 hrs | Reflects a late, system-wide instability phase contributing to extended high-risk exposure. |
+
 3. **Interpretation Summary**
   - The model distributes attention broadly across the timeline, reflecting the **continuous and cumulative nature** of the `pct_time_high` target.  
   - Unlike `max_risk` or `median_risk`, saliency remains high throughout, indicating that **risk exposure is shaped by long-term physiological burden**, not isolated deterioration periods.  
@@ -10489,6 +10531,7 @@ Are patient_0 saliency maps identical between heads?: True
   - Show **temporal dual-phase patterns** where early indicators anchor predictions and late trends refine risk estimates.
   - Provide **patient-specific variability**, reflecting heterogeneous physiological pathways leading to high-risk events or sustained instability.
 **Comparative Saliency Table**
+
 | **Aspect** | **`max_risk`** | **`median_risk`** | **`pct_time_high`** | **Clinical Alignment / Interpretation** |
 |------------|--------------|----------------|-----------------|----------------------------------------|
 | **Primary Drivers** | `heart_rate_roll24h_min`, respiratory rate metrics (`respiratory_rate`, `respiratory_rate_roll4h_min`), `news2_score` | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric`, `heart_rate_missing_pct` | `systolic_bp_roll24h_min`, `systolic_bp`, `level_of_consciousness`; secondary: `heart_rate`, `respiratory_rate_missing_pct` | `max_risk` captures acute deterioration surges; `median_risk` reflects typical baseline + ongoing cardiovascular trends; `pct_time_high` captures cumulative, multi-system instability (neurological + cardiovascular + respiratory). |
@@ -10510,6 +10553,7 @@ Are patient_0 saliency maps identical between heads?: True
   - Integrate findings for **clinically meaningful insights** into patient deterioration trajectories.
 - **Rationale:** Alignment across models strengthens confidence in feature relevance, while **temporal saliency adds context** about when and how predictors influence risk, providing richer interpretability than static feature importance alone.
 #### Top Feature Overlap
+
 | **Target** | **Top SHAP Features** | **Top Saliency Features** | **Alignment / Observations** |
 |------------|---------------------|--------------------------|------------------------------|
 | **Max Risk** | `spo2_min`, `supplemental_o2_mean`, `respiratory_rate_max`, `temperature_missing_pct`, `heart_rate_mean` | `heart_rate_roll24h_min`, `respiratory_rate`, `respiratory_rate_roll4h_min`, `news2_score`, `temperature_max`, `level_of_consciousness_carried` | Partial overlap: Both highlight **respiratory and cardiovascular metrics**. Saliency adds **temporal context**, showing heart rate minima and respiratory trends rising late in sequence, capturing cumulative deterioration leading to peak risk. SHAP confirms feature relevance without temporal resolution. |
@@ -10628,9 +10672,353 @@ Are patient_0 saliency maps identical between heads?: True
 
 ---
 
-## Day 44 Notes - Finish Phase 6: Deployment-Lite Inference Pipeline (Step 5)
+# Phase 7: Deployment
 
-### Goals
+---
+
+# Phase 7A: Inference Demonstration (Deployment-Lite)
+
+---
+
+## Phase 7: Deployment (Steps 1-2)
+### Goal
+
+---
+
+## Day 45 Notes - Start Phase 7A: Inference Pipeline 
+
+### Goal
+
+### Deployment Rationale, Standards, and Strategy
+#### 1. Overview
+- Deployment is the final stage of the machine learning lifecycle → converting a trained model from a research artifact into a usable, reproducible inference system.  
+- It demonstrates **end-to-end capability**, bridging data science with software engineering and MLOps.  
+- For this project, deployment serves as both a technical milestone and a portfolio signal of readiness for real-world AI development.
+
+#### 2. Standard ML Pipeline and Deliverables
+- A complete ML pipeline typically progresses through five phases, each producing defined outputs:
+
+| **Phase** | **Goal** | **Core Deliverables** |
+|------------|-----------|------------------------|
+| **1. Data Engineering** | Collect, clean, preprocess, and structure input data. | Datasets, preprocessing scripts, normalisation configs (`scaler.pkl`, etc.) |
+| **2. Model Development** | Build and train model architectures. | Training scripts, hyperparameter configs, trained weights (`model.pt`) |
+| **3. Evaluation** | Assess model performance and generalisation. | Metrics reports, validation plots, comparison to baselines |
+| **4. Deployment** | Serve the model for inference in a reproducible environment. | Inference API, containerised service, documentation |
+| **5. Monitoring (MLOps Stage 5)** | Track model performance in production. | Logging, drift detection, retraining triggers |
+
+- Deployment is **Phase 4** → transforming research code into an inference-ready system that other users or systems can interact with.
+
+#### 3. Standard MLOps Deployment Practice
+- MLOps (Machine Learning Operations) integrates ML workflows into reliable software systems.  
+- A standard deployment stack (framework) includes:
+
+| **Component** | **Standard Practice** | **Tools** |
+|----------------|------------------------|------------|
+| **Containerisation** | Freeze dependencies and environment | Docker |
+| **Model Serving** | Provide inference endpoint | FastAPI, Flask, TorchServe |
+| **Model Registry** | Store model artifacts | MLflow, Hugging Face Hub, AWS S3 |
+| **CI/CD** | Automate build, test, and deploy | GitHub Actions, Jenkins |
+| **Monitoring** | Track latency, drift, and usage | Prometheus, Grafana, ELK stack |
+| **Cloud Hosting** | Deploy on scalable platform | AWS SageMaker, GCP Vertex, Azure ML |
+- This is the **production-grade “gold standard”** setup used in large organisations handling live traffic or regulated environments.
+
+#### 4. Why Full Deployment is Not Always Appropriate
+- Full MLOps deployments are complex and resource-intensive. They require:
+  - Persistent cloud infrastructure.
+  - Continuous monitoring and retraining pipelines.
+  - Secure authentication, CI/CD, and cost management.
+- For research or academic projects, this level of infrastructure is excessive.  
+- Instead, a **phased approach**, starting with a “deployment-lite” inference layer, achieves almost all learning and signalling benefits without cost or operational overhead.
+
+#### 5. Deployment-Lite Rationale
+- A **deployment-lite** pipeline focuses on reproducibility and usability rather than scalability.  
+- It simulates how a production service works, but within a self-contained environment.
+- A phased approach is **standard practice** in most professional ML teams → first prove inference works reliably (Phase 7A: deployment-lite) → then move to a scalable, monitored environment (Phase 7B: full deployment).
+
+| **Aspect** | **Deployment-Lite** | **Full Production Deployment** |
+|-------------|--------------------|-------------------------------|
+| **Goal** | Demonstrate inference usability | Serve live traffic |
+| **Infrastructure** | Local or single-container API | Distributed cloud system |
+| **Stack** | FastAPI + Docker | FastAPI + CI/CD + Monitoring |
+| **Hosting** | Render, Hugging Face Spaces, or local | AWS / GCP / Azure |
+| **Scope** | Inference + basic logging | Full lifecycle management |
+| **Use Case** | Research, education, portfolio | Production-scale applications |
+
+#### 6. Our Project’s Deployment Plan
+**Context**
+- The project contains two validated models and their interpretability artefacts:  
+  - **LightGBM (tabular / patient-level):** trained, evaluated, and explained with **SHAP** (global feature attributions saved as CSVs and PNGs).  
+  - **TCN_refined (temporal / sequence-level):** trained, evaluated, and explained with **gradient×input saliency** (per-target temporal saliency CSVs and heatmaps).
+- The next stage is **to demonstrate end-to-end usability**, allowing reproducible inference from raw inputs.
+
+**Objectives**
+
+| **Objective** | **Explanation** |
+|----------------|-----------------|
+| **Create a runnable inference pipeline** | Allow predictions from a patient input sequence. |
+| **Demonstrate reproducibility** | Load trained model, preprocessing scaler, and padding config exactly as in training. |
+| **Expose predictions via CLI or API** | Command-line (`python run_inference.py`) or FastAPI endpoint (`/predict`). |
+| **Validate deployment-readiness** | Ensure outputs match evaluation logic. |
+| **Prepare for cloud deployment** | Modularise code for future Render or Hugging Face hosting. |
+
+**Phase Progression**
+- This mirrors industry progression: start lightweight, then containerise and scale.
+
+Phase
+Goal
+Deliverable
+Phase 7A – Deployment-Lite
+Local inference demo
+CLI + optional FastAPI endpoint
+Phase 7B – Cloud Deployment
+Public showcase
+Render-hosted or Hugging Face app with same logic
+
+**Why Deployment-Lite first**  
+- Low engineering cost, high scientific payoff.  
+- Demonstrates reproducible inference and full pipeline understanding without full cloud infra.  
+- Enables immediate demo and reviewer validation.  
+- Serves as the canonical step before full cloud/CI deployment (Phase 7B).
+
+#### 7. Why This Matters
+**Skills Demonstrated**
+- End-to-end ML fluency: data → model → inference → service.
+- MLOps awareness: modular architecture, dependency control, and deployment flow.
+- Software engineering principles: environment reproducibility, code versioning, modular inference logic.
+- Communication & documentation: clear usage, API specification, and logging.
+**Why Recruiters Value It**
+- A deployment stage proves:
+	-	You can operationalise machine learning, not just run experiments.
+	-	You understand production constraints (inputs, outputs, reproducibility).
+	-	You can communicate technical systems in a structured, maintainable way.
+- It separates research-only candidates from production-ready engineers.
+
+---
+
+### Deployment decisions 
+
+Top Features / Interpretability Output
+	•	LightGBM:
+	•	You already have SHAP values computed for the 70 training patients.
+	•	For deployment-lite, you only need the top 10 features per target.
+	•	This is sufficient for “feature importance” summaries in the inference output.
+	•	TCN:
+	•	The saliency maps you generated are per-patient, per-timestep, per-feature.
+	•	For deployment-lite, you don’t need full per-patient heatmaps.
+	•	Instead, you could compute a small, aggregated summary of top features across the test set (e.g., mean absolute saliency across patients and timesteps).
+
+Decision for Phase 7A:
+	•	Include both:
+	1.	SHAP top-10 for LightGBM (already computed).
+	2.	Aggregated top-5/10 saliency for TCN (numeric summary only).
+	•	No full heatmaps or per-patient saliency — keep it lightweight.
+
+This way, your inference pipeline outputs:
+	•	Predictions for all targets.
+	•	Top features per model (LightGBM via SHAP, TCN via aggregated saliency).
+
+⸻
+
+Batch vs Single-Patient Mode
+	•	Batch mode:
+	•	Run inference on all 15 test patients.
+	•	Standard for validation and demonstration.
+	•	Useful for reproducibility and benchmarking.
+	•	Single-patient mode:
+	•	Run inference on a single patient (CLI or mini-API input).
+	•	Useful for demonstrating real-time, per-patient predictions.
+	•	Best practice in deployment pipelines — shows flexibility and real-world usability.
+
+Decision for Phase 7A:
+	•	Implement both batch and single-patient modes.
+	•	Default to batch inference for speed and full evaluation.
+	•	Single-patient mode can take patient ID or a small CSV/JSON snippet as input.
+
+---
+
+### Reflection
+
+Phase 7A: Deployment-Lite – Best Practices for Your Project
+
+1. Scope
+
+Best practice: In a deployment-lite (proof-of-concept for inference), you normally focus on running inference for the models that matter for evaluation and demonstration.
+	•	Both models (LightGBM + TCN) are feasible because:
+	•	LightGBM is very lightweight (CPU only).
+	•	TCN is slightly heavier (PyTorch, GPU optional but not required for small batch inference).
+	•	Inference-lite does not require interpretability outputs by default, though including summary outputs (like top features or saliency) is acceptable if they are lightweight.
+
+Recommendation for your project:
+	•	Include both models so you can demonstrate comparison at the deployment level.
+	•	Output predictions only, optionally small numeric summaries of top features for interpretability.
+
+⸻
+
+2. Input / Output Format
+
+Best practice: For a deployment-lite pipeline, inputs and outputs should be simple, standard formats that are easy to feed and parse.
+	•	Input:
+	•	CSV or JSON (tabular for LightGBM, time-series for TCN).
+	•	Should include all features needed by the models.
+	•	Batch size can be flexible, default to all test patients, but should allow single patient inference for demonstration.
+	•	Output:
+	•	CSV or JSON with patient ID + predicted risk for each target (LightGBM: max/median/pct_time_high, TCN: same).
+	•	Optional: additional column for “top features” or saliency summaries (small, aggregated, numeric only).
+	•	No heavy plotting required — this is meant to be lightweight.
+
+Why this matters: Makes the pipeline reproducible, portable, and cloud-ready later.
+
+⸻
+
+3. Execution
+
+Best practice:
+	•	Deployment-lite normally supports batch inference (all patients) and optionally single patient inference.
+	•	GPU usage is optional; for TCN, CPU-only inference is acceptable for small datasets (like your 15 test patients).
+	•	Single-patient mode is useful for demonstrating the pipeline in real-time.
+
+Recommendation for your project:
+	•	Allow both modes. Default to batch inference for speed; single-patient mode for demonstration (CLI or small API).
+
+⸻
+
+4. Deliverables
+
+Best practice: Minimal but complete for reproducibility and later integration. Typical outputs in an inference pipeline:
+	1.	Predicted risk per patient for all targets (CSV/JSON).
+	2.	Optional: small numeric summaries for interpretability (top features).
+	3.	Logs or simple reports for sanity checks (e.g., number of patients processed, missing features).
+	4.	No heavy plots or large data files — that’s Phase 7B (full deployment).
+
+Recommendation for your project:
+	•	Deliver a single script or small Python module that:
+	•	Loads models + preprocessing objects.
+	•	Accepts CSV/JSON input.
+	•	Outputs CSV/JSON predictions (all models and targets).
+	•	Prints basic logs for validation.
+	•	Everything else (visuals, dashboards) is optional and can come in Phase 7B.
+
+⸻
+
+5. Speed vs Feature Completeness
+
+Best practice:
+	•	Deployment-lite is lightweight — the goal is reproducibility and functional inference, not full feature richness.
+	•	Full feature outputs (plots, saliency maps, SHAP values) are optional but can be included if they are small, aggregated, and reproducible.
+	•	Speed is important to demonstrate that the pipeline works; heavy computations (like per-patient saliency maps for 171 features × 96 timesteps) can wait for full deployment.
+
+Recommendation for your project:
+	•	Prioritize functional, reproducible predictions.
+	•	Include small, meaningful summaries of interpretability if it enhances clarity.
+	•	No heavy per-patient visualizations.
+
+⸻
+
+Phase 7A vs Phase 7B
+	•	Phase 7A (Deployment-Lite):
+	•	Local script for reproducible inference.
+	•	Minimal, lightweight, functional.
+	•	Input → models → predictions (optional small summaries).
+	•	Goal: Demonstrate end-to-end pipeline works and is portable.
+	•	Phase 7B (Full Deployment):
+	•	Deploy to cloud (Render, AWS, GCP, etc.).
+	•	Can include API endpoint (Flask/FastAPI), optional live visualization dashboards.
+	•	Showcases MLops, CI/CD, cloud skills, scalability.
+	•	Can add heavier interpretability outputs or per-patient dashboards.
+
+Key point:
+	•	Phase 7A is standalone, local, lightweight, demonstrating functionality.
+	•	Phase 7B is cloud-enabled, interactive, full-featured, showcasing end-to-end deployment skills.
+
+⸻
+
+✅ Summary / Best Practice Plan for Phase 7A
+	1.	Scope: Both LightGBM + TCN predictions. Interpretability summaries optional.
+	2.	Input: CSV/JSON with all required features.
+	3.	Output: CSV/JSON with patient ID + predicted risk for all targets (+ optional top feature summary).
+	4.	Execution: Batch mode for all patients + optional single patient mode. CPU OK for now.
+	5.	Deliverables: Single, reproducible Python script or minimal module. No heavy plots. Logs for sanity check.
+	6.	Goal: Demonstrate fully reproducible, end-to-end inference that can be ported to the cloud later for Phase 7B.
+---
+
+Top Features / Interpretability Output
+	•	LightGBM:
+	•	You already have SHAP values computed for the 70 training patients.
+	•	For deployment-lite, you only need the top 10 features per target.
+	•	This is sufficient for “feature importance” summaries in the inference output.
+	•	TCN:
+	•	The saliency maps you generated are per-timestep, per-feature.
+	•	For deployment-lite, you could compute a small, aggregated summary of top features across the test set (e.g., mean absolute saliency across patients and timesteps).- we already have this as one of the outputs csvs (top 5 features)
+
+
+Decision for Phase 7A:
+	•	Include both:
+	1.	SHAP top-10 for LightGBM (already computed).
+	2.	Aggregated top-5/10 saliency for TCN (numeric summary only).
+	•	No full heatmaps or per-patient saliency — keep it lightweight.
+
+This way, your inference pipeline outputs:
+	•	Predictions for all targets.
+	•	Top features per model (LightGBM via SHAP, TCN via aggregated saliency).
+
+⸻
+
+Batch vs Single-Patient Mode
+	•	Batch mode:
+	•	Run inference on all 15 test patients.
+	•	Standard for validation and demonstration.
+	•	Useful for reproducibility and benchmarking.
+	•	Single-patient mode:
+	•	Run inference on a single patient (CLI or mini-API input).
+	•	Useful for demonstrating real-time, per-patient predictions.
+	•	Best practice in deployment pipelines — shows flexibility and real-world usability.
+
+Decision for Phase 7A:
+	•	Implement both batch and single-patient modes.
+	•	Default to batch inference for speed and full evaluation.
+	•	Single-patient mode can take patient ID or a small CSV/JSON snippet as input.
+
+The Phase 7A inference script basically does this:
+	1.	Loads trained models
+	•	LightGBM classifiers/regressor (.pkl)
+	•	TCN model (.pt checkpoint) + configuration + preprocessing artifacts (scaler, padding info, feature list)
+	2.	Loads input data
+	•	Batch mode: e.g., all 15 test patients
+	•	Single-patient mode: e.g., a CLI argument or minimal CSV
+	3.	Preprocesses inputs
+	•	Applies the same scaling, padding, and feature ordering as during training
+	•	Ensures inputs are compatible with each model
+	4.	Runs predictions
+	•	LightGBM: outputs probabilities (max_risk, median_risk), and continuous pct_time_high regression
+	•	TCN: outputs patient-level predictions for each target (from logits or regression output)
+	5.	Optionally computes minimal interpretability summaries
+	•	LightGBM: top 10 features (SHAP summary from Phase 6)
+	•	TCN: top 5 features per target (mean absolute saliency per timestep)
+	6.	Saves outputs
+	•	CSV/JSON with predictions per patient
+	•	Optional numeric summaries for interpretability
+
+No training, no plotting, no exploratory analysis — just input → preprocess → predict → output.
+
+It’s a self-contained inference pipeline: you give it raw or preprocessed inputs, it produces results reproducibly, and it’s lightweight enough to later wrap in a web API or cloud deployment.
+
+Phase 7A condenses everything you’ve done in Phases 5 and 6 into a single, self-contained inference pipeline. 
+Key differences for Phase 7A:
+	•	No plotting or heavy visualisation — just numeric outputs (predictions + optional summary numbers for top features)
+	•	No metric calculation unless needed for quick verification (optional)
+	•	Lightweight — suitable for cloud deployment or wrapping into an API
+	•	Batch & single-patient modes — so it works both for demonstration and for running on full datasets
+
+So yes — think of it as Phase 5 + Phase 6, distilled to essential operations that produce actionable outputs for deployment, skipping the exploratory, visual, and metric-heavy parts.
+
+---
+
+## Phase 7B: Cloud Deployment (Full Live Deployment)
+
+---
+
+
+
 
 
 
