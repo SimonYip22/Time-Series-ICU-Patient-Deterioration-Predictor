@@ -11011,6 +11011,270 @@ Key differences for Phase 7A:
 
 So yes — think of it as Phase 5 + Phase 6, distilled to essential operations that produce actionable outputs for deployment, skipping the exploratory, visual, and metric-heavy parts.
 
+Why do we omit? We’ll omit:
+	•	threshold tuning
+	•	calibration fitting
+	•	metrics/plots
+But what we did actually is what gives the correct outputs?
+
+Good question — this distinction is subtle but important.
+
+We omit those steps in the deployment-lite inference script not because they’re unimportant, but because they belong to evaluation and research, not inference.
+
+Let’s break it down precisely:
+
+⸻
+
+1. What the deployment script is supposed to do
+
+Deployment = using trained models to make predictions on new unseen data (e.g., new ICU patient time series).
+It should:
+	•	Load trained weights + preprocessing
+	•	Accept clean data (batch or single)
+	•	Produce outputs (probabilities / risk predictions)
+	•	Optionally attach interpretability summaries (SHAP, saliency)
+	•	Be lightweight, fast, reproducible
+
+It should not retrain, tune, calibrate, or compute performance metrics — those are only valid when you have true labels (which you won’t in live use).
+
+⸻
+
+2. Why threshold tuning, calibration, and metrics are omitted
+Step
+Why it’s omitted
+When it belongs
+Threshold tuning
+Needs validation labels to find the best cutoff for classification (e.g., median-risk F1-optimal threshold). You can’t do this when inferring on new unseen patients.
+Phase 5 evaluation only
+Calibration fitting
+Requires comparing predictions to true targets to compute the bias correction line (a, b). In deployment, there are no true values. Instead, we can apply precomputed coefficients if we saved them earlier.
+Evaluation & model refinement
+Metrics/plots
+Require ground truth (y_true) to compute AUROC, F1, R², or show calibration scatter. During deployment, there is only inference.
+Phase 5–6 reporting only
+
+3. So what’s actually included in inference
+	•	Loading models + configs
+	•	Loading preprocessing pipeline
+	•	Running forward inference (model(x) or predict())
+	•	Converting to interpretable outputs:
+	•	LightGBM → probabilities + predictions
+	•	TCN → probabilities for classification heads, continuous regression predictions
+	•	Optionally: apply pre-saved calibration correction (e.g., using coefficients from earlier phase)
+
+This produces the same prediction values that the evaluation code used before metric computation — i.e., the real model outputs that drive any decision-making system.
+
+4. Summary
+
+You are right that threshold tuning and calibration gave “corrected” outputs during evaluation, but:
+	•	Threshold tuning adjusts decision thresholds only when comparing to true outcomes (for metrics).
+	•	Calibration can be pre-applied if we want — but not fit live.
+
+Hence, in deployment-lite:
+	•	You can load the pre-saved calibration coefficients (a, b) and apply them to regression predictions.
+	•	But you don’t re-fit or evaluate them — only use them.
+
+1. Hyperparameters are only for training, not prediction
+2. Why they were loaded during evaluation
+
+In your evaluation script, hyperparameters were loaded because you retrained the models from scratch before testing.
+That script did:
+	1.	Load best_params.json
+	2.	Instantiate new models with those params
+	3.	Retrain on the training split
+
+But now, for deployment lite, we’re skipping retraining entirely — we’re just doing:
+	•	Load trained .pkl models
+	•	Load test set features
+	•	Predict
+
+So the hyperparameter JSON is redundant here.
+
+⸻
+
+3. When you would load them
+
+You’d only need the hyperparameters if:
+	•	You were retraining from scratch,
+	•	Or you wanted to display/print model settings in your deployment logs (optional for transparency).
+
+---
+
+Originally, your logic was:
+d["median_risk_binary"] = d["median_risk"].apply(lambda x: 1 if x == 2 else 0)
+
+which only worked because your dataset did not contain any NEWS = 3.
+
+But if your future test sets might contain median_risk == 3, then your binary label must represent “moderate or high risk” vs “low risk.”
+
+So the correct logic becomes:
+d["median_risk_binary"] = d["median_risk"].apply(lambda x: 1 if x >= 2 else 0)
+
+Explanation:
+	•	NEWS = 0–1 → low/no risk → 0
+	•	NEWS = 2–3 → moderate/high risk → 1
+
+That preserves binary classification but generalises properly for unseen test sets that include NEWS = 3.
+
+---
+
+Correct — for Phase 7A (Deployment-Lite Inference), you do not need to include the results analysis or metrics computation scripts.
+
+Here’s why:
+
+1. Purpose difference
+	•	Evaluation scripts (Phase 5) → measure performance (AUC, F1, RMSE, etc.) on the test set, used for research and validation.
+	•	Deployment-lite inference (Phase 7A) → show how the trained models can be run end-to-end to produce usable outputs, not to re-evaluate them.
+
+2. What deployment-lite is meant to show
+
+It demonstrates:
+	•	Model loading from saved weights/configs.
+	•	End-to-end inference from raw or preprocessed inputs.
+	•	Output formatting and saving.
+	•	(Optionally) how to extend it into a live API later.
+
+It is not meant to recompute metrics or visualisations — that belongs to analysis/evaluation stages.
+
+3. When metrics would be included
+
+You would only re-include metrics in:
+	•	A validation or monitoring pipeline (production MLOps style) for performance drift.
+	•	A research-grade reproducibility notebook where inference and evaluation are combined for verification.
+
+For your project right now, the deployment-lite script should:
+	•	Load LightGBM and TCN models.
+	•	Run inference on held-out or new data.
+	•	Output clean, ready-to-use predictions.
+
+So yes — no metrics or analysis scripts are needed here.
+---
+
+1. Two meanings of “inference”
+
+There are two contexts in which inference scripts are used:
+
+(a) Research / internal reproducibility (your current phase – Deployment-Lite)
+Purpose:
+To demonstrate that the entire model pipeline — data in → prediction out — can be executed outside of training, cleanly and reproducibly.
+
+Here, the “user” is you (or a future collaborator, supervisor, or recruiter) verifying that the model works end-to-end.
+
+Output destination:
+Saving predictions to /deployment_lite_outputs/ inside your repo is intentional — it:
+	•	Proves the script runs deterministically on real data.
+	•	Lets you version-control the results for documentation.
+	•	Provides a simple hand-off artefact (the CSVs) without needing an API or cloud setup.
+
+In this phase, you’re testing the pipeline integrity, not serving users.
+
+⸻
+
+(b) Production / external user access (Phase 7B – Live Deployment)
+Purpose:
+To make inference accessible to end users — e.g. clinicians, dashboards, or other systems — through:
+	•	A web API (FastAPI/Flask).
+	•	A UI or dashboard.
+	•	An automated batch job (scheduled prediction updates).
+
+Output destination:
+The predictions go outside the repo — e.g. returned as JSON via an API, written to a database, or visualised on a web interface.
+
+This is the “for users” part.
+It builds directly on top of your deployment-lite pipeline: the same code that currently writes to CSV will later return responses via an endpoint.
+
+⸻
+
+2. Why you still write to CSV now
+
+Saving to file in deployment_lite_outputs/ is best practice because it:
+	•	Keeps inference scriptable and testable (important for recruiters and reviewers).
+	•	Allows deterministic verification — you can re-run the script and confirm identical outputs.
+	•	Makes migration to an API trivial later (you just replace df.to_csv() with a JSON response).
+
+⸻
+
+3. How this relates to SHAP and saliency
+
+When you add interpretability in Phase 7A:
+	•	You’ll load the same trained models.
+	•	Compute top-10 SHAP (LightGBM) and saliency (TCN).
+	•	Save small, interpretable summaries (e.g. top_features_lightgbm.csv, top_features_tcn.csv) alongside predictions.
+
+Those outputs also stay in the repo now — but in the full deployment later, they could be served via API or embedded in a web dashboard.
+
+---
+
+decided that for per-patient requests we will just print to terminal in order to keep it lightweight instead of saving the output to folder
+
+The best practice depends on your goal — and since Phase 7A is meant to be deployment-lite (not a full API), here’s how both options compare:
+
+⸻
+
+Option 1 – Print to terminal (recommended for now)
+
+How it works:
+	•	You add a function like run_single_patient_inference(patient_id) or run_single_patient_inference(input_dict).
+	•	When you call it, the script:
+	•	Loads that one patient’s data,
+	•	Runs inference for LightGBM and TCN,
+	•	Prints the predictions and top features directly to the console.
+
+Pros
+	•	Clean and lightweight.
+	•	No file clutter — ideal for development or demonstration.
+	•	Mimics the output you’d eventually send as a JSON response in an API.
+
+Cons
+	•	You lose the result once the session ends (unless you manually copy it).
+
+---
+Ah, I see exactly where the confusion is coming from—let me clarify step by step. The key is the difference between training vs inference and patient-level vs time-series features.
+
+⸻
+
+1. Binary targets for TCN vs LightGBM
+	•	LightGBM:
+	•	Trained on aggregated patient-level features.
+	•	Classification targets are binary, so we need max_risk_binary and median_risk_binary to match what the model saw during training.
+	•	TCN:
+	•	Trained on time-series sequences, one row per patient per timestep.
+	•	The model has three heads: logit_max, logit_median, regression.
+	•	logit_max and logit_median still correspond to binary outputs, but during inference we don’t need to recreate binary targets—the model itself outputs logits, which we convert to probabilities using sigmoid.
+	•	The TCN internally “knows” the targets it was trained on. Recreating binary targets is only necessary if we were going to compute metrics (accuracy, F1, etc.) in inference.
+
+✅ So the confusion: the TCN does use the same binary targets conceptually, but during deployment inference, you only need the raw logits/probs; you don’t need to recreate *_binary in the code unless you’re evaluating performance.
+
+⸻
+
+2. Feature columns: LightGBM vs TCN
+	•	LightGBM (feature_cols):
+	•	Patient-level aggregated features only (one row per patient).
+	•	Columns come directly from news2_features_patient.csv, excluding IDs and targets.
+	•	TCN (feature_cols_tcn):
+	•	TCN is time-series, so input is 3D: (n_patients, seq_len, n_features).
+	•	The “features” dimension corresponds to the per-timestep features used in training.
+	•	We copy the feature column list from LightGBM only as a convenient reference for saliency outputs (so we can label the top features correctly).
+
+⚠ Important distinction: the actual inputs for TCN are loaded as tensors, not from feature_cols. feature_cols_tcn is just a label mapping, not the actual model input.
+
+⸻
+
+3. Patient-level vs timestamp-level features
+	•	LightGBM: patient-level → CSV features.
+	•	TCN: time-series → tensors (test.pt), already preprocessed.
+	•	During inference:
+	•	We don’t reload per-timestep CSV for TCN. The sequences are already stored in tensors (test.pt) and masks (test_mask.pt).
+	•	feature_cols_tcn exists only for interpretability (top features, saliency labeling).
+
+So you’re correct in thinking they are different feature sets—LightGBM features are patient-level, TCN features are timestep-level. That’s why the script handles them differently.
+
+⸻
+
+4. Why we .copy() for feature_cols_tcn
+	•	To avoid accidental overwriting of the LightGBM feature list.
+	•	Saliency computation may reorder, slice, or subset features (top 10, etc.), but we want the original LightGBM list intact for SHAP or CSV alignment.
+
 ---
 
 ## Phase 7B: Cloud Deployment (Full Live Deployment)
