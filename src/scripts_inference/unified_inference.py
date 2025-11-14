@@ -1,43 +1,43 @@
 # src/scripts_inference/unified_inference.py
 
 """
-run_inference.py
+unified_inference.py
 
 Title: Unified Inference & Interpretability Pipeline for LightGBM and TCN Models
 
 Purpose:
-- Lightweight deployment-ready inference script for both patient-level LightGBM and time-series TCN models.
-- Performs batch inference on a test set (default) or single-patient inference when a patient ID is specified.
-- Note on single-batch inference:
-    - This script performs inference on the entire test set as a single batch.
-    - For patient-level or streaming inference, additional looping and state management would be required.
-    - This lightweight deployment script focuses on batch inference for reproducibility and simplicity.
-- Outputs:
-    1. CSVs of predictions for all targets (classification probabilities and regression outputs).
-    2. Aggregated top-10 feature importances per model:
-        - LightGBM: SHAP-based top features
-        - TCN: Gradient × Input saliency-based top features
-    3. Combined top-10 feature summary for convenience.
-- Includes optional per-patient output to terminal for demonstration or single-case prediction.
+- Provides batch and per-patient inference for patient-level LightGBM and timestamp-level TCN models.
+- Performs predictions on a test set (batch) or for a single patient (interactive CLI).
+- Lightweight, deployment-ready script focusing on reproducibility; streaming or incremental inference requires extra handling.
 
-Design:
-1. Load patient-level test data and LightGBM models.
-2. Load time-series test tensors and TCN model.
-3. Perform batch inference and save results to CSV.
-4. Compute interpretability summaries (top features).
-5. Optionally, run single-patient inference and display results in terminal.
+Workflow:
+1. Load patient-level features (LightGBM input).
+2. Load LightGBM models and perform predictions.
+3. Load TCN tensors, model architecture/config, and perform timestamp-level inference.
+4. Save per-model prediction outputs to CSV.
+5. Run interpretability:
+   - LightGBM: SHAP-based top-10 feature importance.
+   - TCN: Gradient × Input saliency top-10 features.
+6. Combine interpretability summaries for convenience.
+7. Optional CLI loop for single-patient predictions.
+
+Outputs:
+1. Per-model CSVs of predictions for all targets (classification probabilities and regression outputs).
+2. Top-10 feature importance per model (LightGBM SHAP, TCN saliency).
+3. Combined top-10 feature summary CSV for both models.
+4. Optional terminal output for single-patient predictions.
 
 Notes:
-- This script repurposes previous evaluation and interpretability scripts; no new model logic is introduced.
-- Single-patient inference uses the same preprocessed test data and feature mapping.
+- Script repurposes evaluation and interpretability code; no new model logic is introduced.
+- Single-patient inference uses the same preprocessed data and feature mapping as batch inference.
 """
-
 
 # -------------------------------------------------------------
 # Imports
 # -------------------------------------------------------------
 # --- Standard Libraries ---
 import json
+import sys
 from pathlib import Path
 from time import time
 
@@ -60,6 +60,7 @@ PROJECT_ROOT = SRC_DIR.parent
 # Input data paths
 DATA_PATH = PROJECT_ROOT / "data" / "processed_data" / "news2_features_patient.csv"
 SPLITS_PATH = SRC_DIR / "ml_models_tcn" / "deployment_models" / "preprocessing" / "patient_splits.json"
+PADDING_CONFIG_PATH = SRC_DIR / "ml_models_tcn" / "deployment_models" / "preprocessing" / "padding_config.json"
 TEST_TENSORS_DIR = SRC_DIR / "ml_models_tcn" / "prepared_datasets"
 
 # Model paths
@@ -72,30 +73,20 @@ OUTPUT_DIR = SRC_DIR / "scripts_inference" / "deployment_lite_outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------
-# 1. Load Shared Resources & Display Valid Patient IDs
+# 1. Load Test Data and Patient Features for LightGBM
 # -------------------------------------------------------------
 # Load test patient IDs from JSON splits file
 with open(SPLITS_PATH) as f:
     splits = json.load(f)
 test_ids = splits["test"]
 
-# Display valid test patient IDs for reference when running per-patient inference
-print("\nValid test patient IDs:")
-print(test_ids)
-print("\nUse one of these IDs to run per-patient inference.")
-
 # Load patient-level features CSV and subset to test patients
 features_df = pd.read_csv(DATA_PATH)
 test_df = features_df.set_index("subject_id").loc[test_ids].reset_index()
 
-# Recreate binary targets for LightGBM consistency with training
-test_df["max_risk_binary"] = test_df["max_risk"].apply(lambda x: 1 if x > 2 else 0)
-# Binary creation now includes NEWS2=3 as different test set may now include this value
-test_df["median_risk_binary"] = test_df["median_risk"].apply(lambda x: 1 if x >= 2 else 0)
-
 # Define features to exclude from model input
-exclude_cols = ["subject_id", "max_risk", "median_risk", "pct_time_high",
-                "max_risk_binary", "median_risk_binary"]
+exclude_cols = ["subject_id", "max_risk", "median_risk", "pct_time_high"]
+
 # Define feature columns for LightGBM inference
 feature_cols = [c for c in test_df.columns if c not in exclude_cols]
 
@@ -141,16 +132,21 @@ df_lightgbm = pd.DataFrame({
     "y_pred_reg": lightgbm_preds["pct_time_high"]
 })
 
+# Clip negative regression predictions to 0
+df_lightgbm["y_pred_reg"] = df_lightgbm["y_pred_reg"].clip(lower=0)
+
 # Save LightGBM inference outputs to CSV
 df_lightgbm.to_csv(OUTPUT_DIR / "lightgbm_inference_outputs.csv", index=False)
-print(f"[INFO] Saved LightGBM inference outputs → {OUTPUT_DIR/'lightgbm_inference_outputs.csv'}")
+print("[INFO] Saved LightGBM inference outputs → lightgbm_inference_outputs.csv")
 
 # -------------------------------------------------------------
 # 3. TCN Inference
 # -------------------------------------------------------------
 print("[INFO] Starting TCN inference...")
 
-# Load TCNModel from tcn_model.py
+# Load TCNModel from tcn_model.pyw
+SRC_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(SRC_DIR))
 from ml_models_tcn.tcn_model import TCNModel
 
 # Set device for PyTorch
@@ -202,6 +198,11 @@ prob_median = torch.sigmoid(logits_median).numpy()
 
 # Convert regression outputs back from log scale (expm1)
 reg_raw = np.expm1(regression.numpy())
+
+# Clip negative values
+reg_raw = np.clip(reg_raw, a_min=0, a_max=None)
+
+# Report elapsed time for TCN inference
 elapsed = time() - start
 print(f"[INFO] TCN inference completed in {elapsed:.2f}s")
 
@@ -215,19 +216,17 @@ df_tcn = pd.DataFrame({
 
 # Save TCN inference outputs to CSV
 df_tcn.to_csv(OUTPUT_DIR / "tcn_inference_outputs.csv", index=False)
-print(f"[INFO] Saved TCN inference outputs → {OUTPUT_DIR/'tcn_inference_outputs.csv'}")
+print("[INFO] Saved TCN inference outputs → tcn_inference_outputs.csv")
 
-# -------------------------------------------------------------
-# 4. Combined Summary
-# -------------------------------------------------------------
+# Print Summary to Terminal
 print("\n=== Deployment Lite Inference Completed ===")
 print(f"LightGBM predictions: {df_lightgbm.shape[0]} patients")
 print(f"TCN predictions:      {df_tcn.shape[0]} patients")
-print(f"Output directory:     {OUTPUT_DIR}")
+print(f"Outputs saved in 'deployment_lite_outputs/' folder")
 print("===========================================")
 
 # -------------------------------------------------------------
-# 5. LightGBM Interpretability - SHAP (Top 10 features)
+# 4. LightGBM Interpretability - SHAP (Top 10 features)
 # -------------------------------------------------------------
 def compute_lightgbm_shap_top10(models_dict, X_input):
     """
@@ -265,16 +264,14 @@ def compute_lightgbm_shap_top10(models_dict, X_input):
 # Run SHAP summary for LightGBM using loaded models and test features
 print("[INFO] Computing SHAP Top-10 features (LightGBM)...")
 lightgbm_top10 = compute_lightgbm_shap_top10(models_dict, test_df[feature_cols])
-# Save LightGBM top-10 features to CSV
-lightgbm_top10.to_csv(OUTPUT_DIR / "top10_features_lightgbm.csv", index=False)
-print(f"[INFO] Saved LightGBM top-10 features → {OUTPUT_DIR/'top10_features_lightgbm.csv'}")
 
 # -------------------------------------------------------------
-# 6. TCN Interpretability - Gradient x Input Saliency (Top 10 Features)
+# 5. TCN Interpretability - Gradient x Input Saliency (Top 10 Features)
 # -------------------------------------------------------------
-
-# Define feature columns for TCN saliency analysis (same as LightGBM features here for consistency)
-feature_cols_tcn = feature_cols.copy()
+# Load padding configuration to get temporal feature names
+with open(PADDING_CONFIG_PATH) as f:
+    padding_config = json.load(f)
+tcn_feature_names = padding_config["feature_cols"]
 
 # Define targets and corresponding model output keys for saliency computation
 tcn_targets = [
@@ -285,83 +282,87 @@ tcn_targets = [
 
 def compute_tcn_saliency_top10(model, x_tensor, mask_tensor, feature_cols, targets, device):
     """
-    Computes |grad × input| saliency for each model head, averages across
-    patients and timesteps, and returns top 10 features per target.
+    Compute the top-10 most important features per output head of a TCN model
+    using the |gradient × input| saliency method.
 
     Parameters:
-    - model: trained TCN model
-    - x_tensor: input tensor for test set (batch_size, seq_len, features)
-    - mask_tensor: mask tensor indicating valid timesteps
-    - feature_cols: list of feature names corresponding to input features
-    - targets: list of tuples (target_name, model_output_key)
-    - device: torch device
+    - model (torch.nn.Module): Trained TCN model.
+    - x_tensor (torch.Tensor): Input time-series tensor of shape (n_samples, seq_len, n_features).
+    - mask_tensor (torch.Tensor): Mask tensor indicating valid timesteps (same shape as x_tensor[:, :, 0]).
+    - feature_cols (list of str): Names of features corresponding to tensor indices.
+    - targets (list of tuples): Each tuple is (target_name, model_output_key) specifying
+      which output heads to compute saliency for.
+    - device (torch.device): PyTorch device to perform computation on.
 
     Returns:
-    - DataFrame with top 10 features per target based on mean absolute saliency
+    - pandas.DataFrame: Concatenated top-10 features per target with columns:
+        'feature', 'mean_abs_saliency', 'target'.
     """
-    def grad_input_saliency(x_batch, mask_batch, head_key):
-        """
-        Computes gradient × input saliency for a batch and a specific output head.
-        """
-        # Enable gradient tracking
-        x = x_batch.clone().detach().to(device)
-        x.requires_grad = True
-        # Forward pass
-        outputs = model(x, mask_batch)
-        # Select the relevant output head
-        out = outputs[head_key].squeeze() 
-        
-        # Compute gradients
-        grads = []
-
-        # Iterate over batch to compute gradients for each sample
-        for i in range(out.shape[0]):
-            if x.grad is not None:
-                x.grad.zero_()
-            # Backward pass for the i-th output
-            out[i].backward(retain_graph=True)
-            # Store gradient for the i-th sample
-            grads.append(x.grad[i].detach().cpu().numpy())
-        # Stack gradients and compute |grad × input|
-        grads = np.stack(grads, axis=0)
-        saliency = np.abs(grads * x.detach().cpu().numpy())
-        return saliency
-
     results = []
-    batch_size = 4  # Process in small batches to manage memory during gradient computation
-    n_test = x_tensor.shape[0] 
+    batch_size = 4
 
-    # Iterate over each target to compete saliency
+    # Number of test samples
+    n_test = x_tensor.shape[0]
+
+    # Iterate over each target head
     for target_name, head_key in targets:
         print(f"[INFO] Computing TCN saliency for {target_name}...")
         all_saliencies = []
-        # Batch processing
+
+        # Loop through batches
         for i in range(0, n_test, batch_size):
-            xb = x_tensor[i:i+batch_size].to(device)
+
+            # Prepare batch data
+            xb = x_tensor[i:i+batch_size].clone().detach().to(device)
             mb = mask_tensor[i:i+batch_size].to(device)
-            # Compute saliency for the batch
-            sal_b = grad_input_saliency(xb, mb, head_key)
-            all_saliencies.append(sal_b)
+
+            # Enable gradient tracking
+            xb.requires_grad = True
+            # Forward pass
+            outputs = model(xb, mb)
+            # Extract output for the current head
+            out = outputs[head_key].squeeze()
+
+            grads = []
+            # Compute gradients for each sample in the batch
+            for j in range(out.shape[0]):
+                if xb.grad is not None:
+                    xb.grad.zero_()
+                # Backward pass for the j-th sample
+                out[j].backward(retain_graph=True)
+                # Store gradients
+                grads.append(xb.grad[j].detach().cpu().numpy())
+
+            # Stack gradients and compute |grad × input|
+            grads = np.stack(grads, axis=0)
+            sal = np.abs(grads * xb.detach().cpu().numpy())
+            # Append batch saliencies
+            all_saliencies.append(sal)
+
+        # Concatenate all batches
         all_saliencies = np.concatenate(all_saliencies, axis=0)
-        # Average saliency across patients and timesteps per feature
+
+        # Average over patients and timesteps
         feature_mean = all_saliencies.mean(axis=(0, 1))
-        # Create DataFrame of top 10 features
+
+        # Build dataframe
         df = pd.DataFrame({
             "feature": feature_cols,
             "mean_abs_saliency": feature_mean
         }).sort_values("mean_abs_saliency", ascending=False).head(10)
+
+        # Add target name column
         df["target"] = target_name
         results.append(df)
+
     return pd.concat(results, ignore_index=True)
 
 # Run TCN saliency summary using loaded model and test tensors
 print("[INFO] Computing Gradient×Input Saliency Top-10 features (TCN)...")
-tcn_top10 = compute_tcn_saliency_top10(model, x_test, mask_test, feature_cols_tcn, tcn_targets, device)
-tcn_top10.to_csv(OUTPUT_DIR / "top10_features_tcn.csv", index=False)
-print(f"[INFO] Saved TCN top-10 features → {OUTPUT_DIR/'top10_features_tcn.csv'}")
+tcn_top10 = compute_tcn_saliency_top10(model, x_test, mask_test, tcn_feature_names, tcn_targets, device)
 
 # -------------------------------------------------------------
-# 7. Merge Feature Summaries
+# 6. Merge Feature Summaries
 # -------------------------------------------------------------
 # Combine LightGBM and TCN top 10 feature summaries into one file for convenience
 combined_summary = pd.concat([
@@ -369,16 +370,30 @@ combined_summary = pd.concat([
     tcn_top10.assign(model="TCN")
 ])
 combined_summary.to_csv(OUTPUT_DIR / "top10_features_summary.csv", index=False)
-
-print(f"[INFO] ✅ Combined interpretability summary saved → {OUTPUT_DIR/'top10_features_summary.csv'}")
+print("[INFO] ✅ Combined interpretability summary saved → top10_features_summary.csv")
 
 # -------------------------------------------------------------
-# 8. Single-Patient Inference
+# 7. Interactive CLI: Single-Patient Inference
 # -------------------------------------------------------------
+"""
+- Provides a command-line interface to view per-patient predictions.
+- Users can enter a valid patient ID to display LightGBM and TCN predictions for that patient. 
+- The loop continues until the user exits.
+"""
 def run_single_patient_inference(patient_id):
     """
-    Prints LightGBM and TCN predictions for a single patient in the terminal.
+    Display LightGBM and TCN predictions for a single patient.
+
+    Parameters:
+    - patient_id (int or str): The ID of the patient to compute predictions for.
+
+    Behavior:
+    - Validates the patient ID against the test set.
+    - Prints predicted probabilities for classification targets (LightGBM and TCN).
+    - Prints regression output (LightGBM and TCN).
+    - Alerts if the patient ID is invalid.
     """
+    # Check if patient ID is valid
     if patient_id not in test_df["subject_id"].values:
         print(f"[ERROR] Patient ID {patient_id} not in test set.")
         return
@@ -397,3 +412,31 @@ def run_single_patient_inference(patient_id):
     print(f"prob_max: {prob_max[idx]:.4f}")
     print(f"prob_median: {prob_median[idx]:.4f}")
     print(f"y_pred_reg_raw: {reg_raw[idx]:.4f}")
+
+if __name__ == "__main__":
+
+    print("\nBatch inference complete.")
+
+    # Display available patient IDs for reference
+    print("Available patient IDs for per-patient inference:")
+    print(test_ids)
+
+    # Simple interactive loop for single-patient inference
+    while True:
+        user_input = input("\nEnter a patient ID for per-patient inference (or 'no' to exit): ").strip()
+
+        if user_input.lower() == "no":
+            print("Exiting per-patient inference.")
+            break
+
+        if not user_input.isdigit():
+            print("Please enter a numeric patient ID.")
+            continue
+
+        patient_id = int(user_input)
+
+        if patient_id not in test_ids:
+            print(f"Patient ID {patient_id} is not in the test set: {test_ids}")
+            continue
+
+        run_single_patient_inference(patient_id)
