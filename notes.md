@@ -10694,80 +10694,104 @@ Are patient_0 saliency maps identical between heads?: True
     - Provide optional interactive CLI for single-patient predictions.  
     - Ensure reproducible, dataset-agnostic outputs without requiring true labels. 
   - **Process (Summary)**
-0. **Initialise Imports & Paths**
-  - Load standard, data, ML, and interpretability libraries (`json`, `pandas`, `numpy`, `torch`, `joblib`, `shap`).
-  - Resolve project directories (`SCRIPT_DIR`, `SRC_DIR`, `PROJECT_ROOT`).
-  - Load input paths:
-    - Patient-level features (`news2_features_patient.csv`)
-    - Test splits (`patient_splits.json`)
-    - TCN: padding config (`padding_config.json`), prepared tensors (`prepared_datasets/`)
-  - Load model paths:
-    - LightGBM models (`lightgbm_results/`)
-    - TCN weights and config (`tcn_best_refined.pt`, `config_refined.json`)
-  - Create output folder: `deployment_lite_outputs/`.
-1. **Load Test Data for LightGBM**
-  - Load test patient IDs → `test_ids`.
-  - Subset patient-level features → `test_df`.
-  - Define model input features (`feature_cols`) by excluding non-features (`subject_id`, `max_risk`, `median_risk`, `pct_time_high`).
-  - **Rationale:** Only input features needed; binary targets and labels unnecessary for inference.
-2. **Compute LightGBM Inference**
-  - Load and run each model (`max_risk`, `median_risk`, `pct_time_high`) on `X_test`.
-  - Classification → positive-class probabilities; regression → continuous predictions.
-  - Clip regression outputs at 0.
-  - Save `lightgbm_inference_outputs.csv`.
-3. **Compute TCN Inference**
-  - Load `TCNModel`, test tensors (`x_test`, `mask_test`), and configuration.
-  - Reconstruct model architecture and load weights; set to evaluation mode.
-  - Run forward pass with `torch.no_grad()` → deterministic outputs.
-  - Extract outputs:
-    - Convert logits → sigmoid probabilities
-    - Inverse-transform regression (`expm1`), clip negatives at 0.
-  - Build `df_tcn` and save `tcn_inference_outputs.csv`.
-  - **Rationale:** No binary targets needed; architecture reconstruction required for loading weights; masks preserve sequence validity.
-4. **Compute LightGBM Interpretability (SHAP)**
-  - Compute mean absolute SHAP values per feature for each target.
-  - Keep **top-10 features** per target in dataframe.
-  - Save numeric summary → `lightgbm_top10`.
-  - **Rationale:** Lightweight, deployment-ready; mirrors Phase 6 top-10 summary; no plots to maintain lightweight outputs.
-5. **Compute TCN Interpretability (Gradient × Input Saliency)**
-  - Load feature names from `padding_config.json`, map to TCN tensor features.
-  - For each output head (`max_risk`, `median_risk`, `pct_time_high`):
-    - Compute |gradient × input| saliency across patients and timesteps.
-    - Aggregate to mean per feature (average across patients and timesteps), keep top-10 features.
-  - Save numeric summary → `tcn_top10`.
-  - **Rationale:** Matches Phase 6 methodology; numeric-only output keeps pipeline lightweight.
-6. **Merge Feature Summaries**
-  - Concatenate LightGBM `lightgbm_top10` and TCN `tcn_top10` top-10 summaries → `combined_summary`.
-    - Columns: `feature`, `mean_abs_shap`, `target`, `model`, `mean_abs_saliency`
-    - Output: `top10_features_summary.csv`
-  - Save as `top10_features_summary.csv` (60 rows: 2 models × 3 targets × 10 features).
-  - **Rationale:** One consolidated, deployment-ready file; no plots or per-patient arrays; easy dashboard/reporting.
-7. **Interactive CLI: Single-Patient Inference**
-  - Optional CLI interface post-batch inference.
-  - Input patient ID → validate against `test_ids`.
-  - Display that patient’s predictions for LightGBM (`lightgbm_preds`) and TCN (`prob_max`, `prob_median`, `y_pred_reg_raw`).
-  - Loop until user exits.
-  - **Rationale:** Optional, lightweight, reproducible CLI for quick inspection; uses precomputed outputs; supports deployment without extra artefacts.
-**Outputs**
-- **Batch Predictions**
-  - `lightgbm_inference_outputs.csv` → classification probabilities (`max_risk`, `median_risk`) + regression (`pct_time_high`) for all test patients.
-  - `tcn_inference_outputs.csv` → probabilities and regression outputs for TCN model.
-- **Interpretability**
-  - `top10_features_summary.csv` → combined top-10 features per target from LightGBM (SHAP) and TCN (Gradient×Input Saliency).
-- **Interactive CLI**
-  - Optional terminal output for single-patient predictions using the same preprocessed inputs.
-**Reasoning / Rationale**
-- **Reproducibility:** Batch inference ensures deterministic outputs and removes variation from looping or incremental processing.
-- **Unified pipeline:** Consolidates separate evaluation and interpretability scripts into a single workflow for both LightGBM and TCN.
-- **Interpretability tailored to model type:** LightGBM → SHAP; TCN → Gradient×Input Saliency. Only top-10 features retained to keep outputs lightweight, consistent with Phase 6 methodology.
-- **Binary targets omitted:** Inference does not compute metrics; outputs are generated from input features only, without label reconstruction or calibration.
-- **Regression clipping:** Ensures numeric predictions are valid (no negative percentages).
-- **Deployment-ready and dataset-agnostic:** Any dataset with the required feature columns / tensors can be passed directly into the script without outcome labels.
-- **Optional CLI:** Lightweight inspection of single-patient predictions without recomputation; aligns with batch outputs for consistency.
+    0. **Initialise Imports & Paths**
+      - Load standard, data, ML, and interpretability libraries (`json`, `pandas`, `numpy`, `torch`, `joblib`, `shap`).
+      - Resolve project directories (`SCRIPT_DIR`, `SRC_DIR`, `PROJECT_ROOT`).
+      - Load input paths:
+        - Patient-level features (`news2_features_patient.csv`)
+        - Test splits (`patient_splits.json`)
+        - TCN: padding config (`padding_config.json`), prepared tensors (`prepared_datasets/`)
+      - Load model paths:
+        - LightGBM models (`lightgbm_results/`)
+        - TCN weights and config (`tcn_best_refined.pt`, `config_refined.json`)
+      - Create output folder: `deployment_lite_outputs/`.
+    1. **Load Test Data for LightGBM**
+      - Load test patient IDs → `test_ids`.
+      - Subset patient-level features → `test_df`.
+      - Define model input features (`feature_cols`) by excluding non-features (`subject_id`, `max_risk`, `median_risk`, `pct_time_high`).
+      - **Rationale:** Only input features needed; binary targets and labels unnecessary for inference.
+    2. **Compute LightGBM Inference**
+      - Load and run each model (`max_risk`, `median_risk`, `pct_time_high`) on `X_test`.
+      - Classification → positive-class probabilities; regression → continuous predictions.
+      - Clip regression outputs at 0.
+      - Save `lightgbm_inference_outputs.csv`.
+    3. **Compute TCN Inference**
+      - Load `TCNModel`, test tensors (`x_test`, `mask_test`), and configuration.
+      - Reconstruct model architecture and load weights; set to evaluation mode.
+      - Run forward pass with `torch.no_grad()` → deterministic outputs.
+      - Extract outputs:
+        - Convert logits → sigmoid probabilities
+        - Inverse-transform regression (`expm1`), clip negatives at 0.
+      - Build `df_tcn` and save `tcn_inference_outputs.csv`.
+      - **Rationale:** No binary targets needed; architecture reconstruction required for loading weights; masks preserve sequence validity.
+    4. **Compute LightGBM Interpretability (SHAP)**
+      - Compute mean absolute SHAP values per feature for each target.
+      - Keep **top-10 features** per target in dataframe.
+      - Save numeric summary → `lightgbm_top10`.
+      - **Rationale:** Lightweight, deployment-ready; mirrors Phase 6 top-10 summary; no plots to maintain lightweight outputs.
+    5. **Compute TCN Interpretability (Gradient × Input Saliency)**
+      - Load feature names from `padding_config.json`, map to TCN tensor features.
+      - For each output head (`max_risk`, `median_risk`, `pct_time_high`):
+        - Compute |gradient × input| saliency across patients and timesteps.
+        - Aggregate to mean per feature (average across patients and timesteps), keep top-10 features.
+      - Save numeric summary → `tcn_top10`.
+      - **Rationale:** Matches Phase 6 methodology; numeric-only output keeps pipeline lightweight.
+    6. **Merge Feature Summaries**
+      - Concatenate LightGBM `lightgbm_top10` and TCN `tcn_top10` top-10 summaries → `combined_summary`.
+        - Columns: `feature`, `mean_abs_shap`, `target`, `model`, `mean_abs_saliency`
+        - Output: `top10_features_summary.csv`
+      - Save as `top10_features_summary.csv` (60 rows: 2 models × 3 targets × 10 features).
+      - **Rationale:** One consolidated, deployment-ready file; no plots or per-patient arrays; easy dashboard/reporting.
+    7. **Interactive CLI: Single-Patient Inference**
+      - Optional CLI interface post-batch inference.
+      - Input patient ID → validate against `test_ids`.
+      - Display that patient’s predictions for LightGBM (`lightgbm_preds`) and TCN (`prob_max`, `prob_median`, `y_pred_reg_raw`).
+      - Loop until user exits.
+      - **Rationale:** Optional, lightweight, reproducible CLI for quick inspection; uses precomputed outputs; supports deployment without extra artefacts.
+  - **Outputs**
+    - **Batch Predictions**
+      - `lightgbm_inference_outputs.csv` → classification probabilities (`max_risk`, `median_risk`) + regression (`pct_time_high`) for all test patients.
+      - `tcn_inference_outputs.csv` → probabilities and regression outputs for TCN model.
+    - **Interpretability**
+      - `top10_features_summary.csv` → combined top-10 features per target from LightGBM (SHAP) and TCN (Gradient×Input Saliency).
+    - **Interactive CLI**
+      - Optional terminal output for single-patient predictions using the same preprocessed inputs.
+  - **Reasoning / Rationale**
+    - **Reproducibility:** Batch inference ensures deterministic outputs and removes variation from looping or incremental processing.
+    - **Unified pipeline:** Consolidates separate evaluation and interpretability scripts into a single workflow for both LightGBM and TCN.
+    - **Interpretability tailored to model type:** LightGBM → SHAP; TCN → Gradient×Input Saliency. Only top-10 features retained to keep outputs lightweight, consistent with Phase 6 methodology.
+    - **Binary targets omitted:** Inference does not compute metrics; outputs are generated from input features only, without label reconstruction or calibration.
+    - **Regression clipping:** Ensures numeric predictions are valid (no negative percentages).
+    - **Deployment-ready and dataset-agnostic:** Any dataset with the required feature columns / tensors can be passed directly into the script without outcome labels.
+    - **Optional CLI:** Lightweight inspection of single-patient predictions without recomputation; aligns with batch outputs for consistency.
 ### End Products of Phase 7A
-
+- **Fully functional deployment-lite inference pipeline**
+  - Single, unified script (`unified_inference.py`) that handles both LightGBM (patient-level) and TCN (time-series) models.
+  - Supports **batch inference** for all test patients and **interactive per-patient predictions** via CLI.
+- **Reproducible, deployment-ready outputs**
+  - Clean CSVs of predictions for both models:
+    - LightGBM → classification probabilities + regression.
+    - TCN → classification probabilities + regression.
+  - Combined top-10 feature importance summary:
+    - LightGBM SHAP + TCN Gradient×Input saliency.
+    - Provides quick interpretability without heavy visualisation.
+- **Lightweight, minimal, and consistent**
+  - No extraneous evaluation steps or binary label recreation.
+  - Regression outputs clipped to valid ranges.
+  - Fully dataset-agnostic: any dataset with required features/tensors can be processed directly.
+- **Optional interactive interface**
+  - CLI allows rapid inspection of predictions for a single patient.
+  - Uses the same preprocessed inputs and outputs as batch inference for consistency.
+- **Canonical demonstration of end-to-end deployment**
+  - Shows reproducible, production-ready inference for both model families.
+  - Serves as a **foundation for full cloud deployment or dashboard integration in Phase 7B**.
 ### Summary
-
+- Phase 7A finalises the project by delivering a **deployment-ready, unified inference pipeline** for both LightGBM (patient-level) and TCN (time-series) models. 
+- It consolidates all preprocessing, model loading, prediction, and interpretability steps into a single, reproducible workflow. 
+- This phase demonstrates **end-to-end usability**, allowing both batch inference on datasets and interactive per-patient inspection. 
+- By stripping out evaluation-specific steps (binary target recreation, metric computation) and focusing solely on producing predictions and top feature summaries, Phase 7A produces a **lightweight, deterministic, and dataset-agnostic pipeline**. 
+- It serves as the canonical end-point of the modeling workflow, ensuring that all previous phases—from model training to interpretability analysis—can be executed in a consistent and production-ready manner. 
+- In essence, Phase 7A **completes the project** by transforming the experimental models and scripts into a cohesive, deployment-ready system that can be used directly for inference, reporting, or future cloud-based deployment.
 
 ---
 
@@ -11315,7 +11339,8 @@ project_root/
 
 ---
 
-### Terminal Output and CLI Example
+### Inference Pipeline Output 
+#### Terminal Output and CLI Example
 ```bash
 [INFO] Starting LightGBM inference...
 [INFO] Saved LightGBM inference outputs → lightgbm_inference_outputs.csv
@@ -11354,505 +11379,78 @@ y_pred_reg_raw: 0.0855
 Enter a patient ID for per-patient inference (or 'no' to exit): no
 Exiting per-patient inference.
 ```
+#### Notes:
+- **Batch inference produces CSV outputs for all patients and computes top-10 feature interpretability summaries:**
+	-	Confirms batch predictions for both models and top-10 feature summaries saved.
+	-	TCN inference reports elapsed time; LightGBM outputs probabilities/regression.
+- **The interactive CLI allows querying predictions for individual patients using their IDs:**
+	-	Users can select any valid patient ID from the test set for individual predictions.
+	-	LightGBM outputs include positive-class probabilities and regression predictions.
+	-	TCN outputs include classification probabilities for `max_risk` and `median_risk` plus the back-transformed regression prediction (`y_pred_reg_raw`).
+	-	CLI interaction is clean, minimal, and does not recompute batch outputs, ensuring fast inspection.
+	-	Entering "no" exits the loop and terminates the single-patient inference session.
+- Terminal outputs are kept minimal, clear, and informative to support deployment and quick inspection.
+
 ---
 
 ### Reflection
-
-Phase 7A: Deployment-Lite – Best Practices for Your Project
-
-1. Scope
-
-Best practice: In a deployment-lite (proof-of-concept for inference), you normally focus on running inference for the models that matter for evaluation and demonstration.
-	•	Both models (LightGBM + TCN) are feasible because:
-	•	LightGBM is very lightweight (CPU only).
-	•	TCN is slightly heavier (PyTorch, GPU optional but not required for small batch inference).
-	•	Inference-lite does not require interpretability outputs by default, though including summary outputs (like top features or saliency) is acceptable if they are lightweight.
-
-Recommendation for your project:
-	•	Include both models so you can demonstrate comparison at the deployment level.
-	•	Output predictions only, optionally small numeric summaries of top features for interpretability.
-
-⸻
-
-2. Input / Output Format
-
-Best practice: For a deployment-lite pipeline, inputs and outputs should be simple, standard formats that are easy to feed and parse.
-	•	Input:
-	•	CSV or JSON (tabular for LightGBM, time-series for TCN).
-	•	Should include all features needed by the models.
-	•	Batch size can be flexible, default to all test patients, but should allow single patient inference for demonstration.
-	•	Output:
-	•	CSV or JSON with patient ID + predicted risk for each target (LightGBM: max/median/pct_time_high, TCN: same).
-	•	Optional: additional column for “top features” or saliency summaries (small, aggregated, numeric only).
-	•	No heavy plotting required — this is meant to be lightweight.
-
-Why this matters: Makes the pipeline reproducible, portable, and cloud-ready later.
-
-⸻
-
-3. Execution
-
-Best practice:
-	•	Deployment-lite normally supports batch inference (all patients) and optionally single patient inference.
-	•	GPU usage is optional; for TCN, CPU-only inference is acceptable for small datasets (like your 15 test patients).
-	•	Single-patient mode is useful for demonstrating the pipeline in real-time.
-
-Recommendation for your project:
-	•	Allow both modes. Default to batch inference for speed; single-patient mode for demonstration (CLI or small API).
-
-⸻
-
-4. Deliverables
-
-Best practice: Minimal but complete for reproducibility and later integration. Typical outputs in an inference pipeline:
-	1.	Predicted risk per patient for all targets (CSV/JSON).
-	2.	Optional: small numeric summaries for interpretability (top features).
-	3.	Logs or simple reports for sanity checks (e.g., number of patients processed, missing features).
-	4.	No heavy plots or large data files — that’s Phase 7B (full deployment).
-
-Recommendation for your project:
-	•	Deliver a single script or small Python module that:
-	•	Loads models + preprocessing objects.
-	•	Accepts CSV/JSON input.
-	•	Outputs CSV/JSON predictions (all models and targets).
-	•	Prints basic logs for validation.
-	•	Everything else (visuals, dashboards) is optional and can come in Phase 7B.
-
-⸻
-
-5. Speed vs Feature Completeness
-
-Best practice:
-	•	Deployment-lite is lightweight — the goal is reproducibility and functional inference, not full feature richness.
-	•	Full feature outputs (plots, saliency maps, SHAP values) are optional but can be included if they are small, aggregated, and reproducible.
-	•	Speed is important to demonstrate that the pipeline works; heavy computations (like per-patient saliency maps for 171 features × 96 timesteps) can wait for full deployment.
-
-Recommendation for your project:
-	•	Prioritize functional, reproducible predictions.
-	•	Include small, meaningful summaries of interpretability if it enhances clarity.
-	•	No heavy per-patient visualizations.
-
-⸻
-
-Phase 7A vs Phase 7B
-	•	Phase 7A (Deployment-Lite):
-	•	Local script for reproducible inference.
-	•	Minimal, lightweight, functional.
-	•	Input → models → predictions (optional small summaries).
-	•	Goal: Demonstrate end-to-end pipeline works and is portable.
-	•	Phase 7B (Full Deployment):
-	•	Deploy to cloud (Render, AWS, GCP, etc.).
-	•	Can include API endpoint (Flask/FastAPI), optional live visualization dashboards.
-	•	Showcases MLops, CI/CD, cloud skills, scalability.
-	•	Can add heavier interpretability outputs or per-patient dashboards.
-
-Key point:
-	•	Phase 7A is standalone, local, lightweight, demonstrating functionality.
-	•	Phase 7B is cloud-enabled, interactive, full-featured, showcasing end-to-end deployment skills.
-
-⸻
-
-✅ Summary / Best Practice Plan for Phase 7A
-	1.	Scope: Both LightGBM + TCN predictions. Interpretability summaries optional.
-	2.	Input: CSV/JSON with all required features.
-	3.	Output: CSV/JSON with patient ID + predicted risk for all targets (+ optional top feature summary).
-	4.	Execution: Batch mode for all patients + optional single patient mode. CPU OK for now.
-	5.	Deliverables: Single, reproducible Python script or minimal module. No heavy plots. Logs for sanity check.
-	6.	Goal: Demonstrate fully reproducible, end-to-end inference that can be ported to the cloud later for Phase 7B.
----
-
-Top Features / Interpretability Output
-	•	LightGBM:
-	•	You already have SHAP values computed for the 70 training patients.
-	•	For deployment-lite, you only need the top 10 features per target.
-	•	This is sufficient for “feature importance” summaries in the inference output.
-	•	TCN:
-	•	The saliency maps you generated are per-timestep, per-feature.
-	•	For deployment-lite, you could compute a small, aggregated summary of top features across the test set (e.g., mean absolute saliency across patients and timesteps).- we already have this as one of the outputs csvs (top 5 features)
-
-
-Decision for Phase 7A:
-	•	Include both:
-	1.	SHAP top-10 for LightGBM (already computed).
-	2.	Aggregated top-5/10 saliency for TCN (numeric summary only).
-	•	No full heatmaps or per-patient saliency — keep it lightweight.
-
-This way, your inference pipeline outputs:
-	•	Predictions for all targets.
-	•	Top features per model (LightGBM via SHAP, TCN via aggregated saliency).
-
-⸻
-
-Batch vs Single-Patient Mode
-	•	Batch mode:
-	•	Run inference on all 15 test patients.
-	•	Standard for validation and demonstration.
-	•	Useful for reproducibility and benchmarking.
-	•	Single-patient mode:
-	•	Run inference on a single patient (CLI or mini-API input).
-	•	Useful for demonstrating real-time, per-patient predictions.
-	•	Best practice in deployment pipelines — shows flexibility and real-world usability.
-
-Decision for Phase 7A:
-	•	Implement both batch and single-patient modes.
-	•	Default to batch inference for speed and full evaluation.
-	•	Single-patient mode can take patient ID or a small CSV/JSON snippet as input.
-
-The Phase 7A inference script basically does this:
-	1.	Loads trained models
-	•	LightGBM classifiers/regressor (.pkl)
-	•	TCN model (.pt checkpoint) + configuration + preprocessing artifacts (scaler, padding info, feature list)
-	2.	Loads input data
-	•	Batch mode: e.g., all 15 test patients
-	•	Single-patient mode: e.g., a CLI argument or minimal CSV
-	3.	Preprocesses inputs
-	•	Applies the same scaling, padding, and feature ordering as during training
-	•	Ensures inputs are compatible with each model
-	4.	Runs predictions
-	•	LightGBM: outputs probabilities (max_risk, median_risk), and continuous pct_time_high regression
-	•	TCN: outputs patient-level predictions for each target (from logits or regression output)
-	5.	Optionally computes minimal interpretability summaries
-	•	LightGBM: top 10 features (SHAP summary from Phase 6)
-	•	TCN: top 5 features per target (mean absolute saliency per timestep)
-	6.	Saves outputs
-	•	CSV/JSON with predictions per patient
-	•	Optional numeric summaries for interpretability
-
-No training, no plotting, no exploratory analysis — just input → preprocess → predict → output.
-
-It’s a self-contained inference pipeline: you give it raw or preprocessed inputs, it produces results reproducibly, and it’s lightweight enough to later wrap in a web API or cloud deployment.
-
-Phase 7A condenses everything you’ve done in Phases 5 and 6 into a single, self-contained inference pipeline. 
-Key differences for Phase 7A:
-	•	No plotting or heavy visualisation — just numeric outputs (predictions + optional summary numbers for top features)
-	•	No metric calculation unless needed for quick verification (optional)
-	•	Lightweight — suitable for cloud deployment or wrapping into an API
-	•	Batch & single-patient modes — so it works both for demonstration and for running on full datasets
-
-So yes — think of it as Phase 5 + Phase 6, distilled to essential operations that produce actionable outputs for deployment, skipping the exploratory, visual, and metric-heavy parts.
-
-Why do we omit? We’ll omit:
-	•	threshold tuning
-	•	calibration fitting
-	•	metrics/plots
-But what we did actually is what gives the correct outputs?
-
-Good question — this distinction is subtle but important.
-
-We omit those steps in the deployment-lite inference script not because they’re unimportant, but because they belong to evaluation and research, not inference.
-
-Let’s break it down precisely:
-
-⸻
-
-1. What the deployment script is supposed to do
-
-Deployment = using trained models to make predictions on new unseen data (e.g., new ICU patient time series).
-It should:
-	•	Load trained weights + preprocessing
-	•	Accept clean data (batch or single)
-	•	Produce outputs (probabilities / risk predictions)
-	•	Optionally attach interpretability summaries (SHAP, saliency)
-	•	Be lightweight, fast, reproducible
-
-It should not retrain, tune, calibrate, or compute performance metrics — those are only valid when you have true labels (which you won’t in live use).
-
-⸻
-
-2. Why threshold tuning, calibration, and metrics are omitted
-Step
-Why it’s omitted
-When it belongs
-Threshold tuning
-Needs validation labels to find the best cutoff for classification (e.g., median-risk F1-optimal threshold). You can’t do this when inferring on new unseen patients.
-Phase 5 evaluation only
-Calibration fitting
-Requires comparing predictions to true targets to compute the bias correction line (a, b). In deployment, there are no true values. Instead, we can apply precomputed coefficients if we saved them earlier.
-Evaluation & model refinement
-Metrics/plots
-Require ground truth (y_true) to compute AUROC, F1, R², or show calibration scatter. During deployment, there is only inference.
-Phase 5–6 reporting only
-
-3. So what’s actually included in inference
-	•	Loading models + configs
-	•	Loading preprocessing pipeline
-	•	Running forward inference (model(x) or predict())
-	•	Converting to interpretable outputs:
-	•	LightGBM → probabilities + predictions
-	•	TCN → probabilities for classification heads, continuous regression predictions
-	•	Optionally: apply pre-saved calibration correction (e.g., using coefficients from earlier phase)
-
-This produces the same prediction values that the evaluation code used before metric computation — i.e., the real model outputs that drive any decision-making system.
-
-4. Summary
-
-You are right that threshold tuning and calibration gave “corrected” outputs during evaluation, but:
-	•	Threshold tuning adjusts decision thresholds only when comparing to true outcomes (for metrics).
-	•	Calibration can be pre-applied if we want — but not fit live.
-
-Hence, in deployment-lite:
-	•	You can load the pre-saved calibration coefficients (a, b) and apply them to regression predictions.
-	•	But you don’t re-fit or evaluate them — only use them.
-
-1. Hyperparameters are only for training, not prediction
-2. Why they were loaded during evaluation
-
-In your evaluation script, hyperparameters were loaded because you retrained the models from scratch before testing.
-That script did:
-	1.	Load best_params.json
-	2.	Instantiate new models with those params
-	3.	Retrain on the training split
-
-But now, for deployment lite, we’re skipping retraining entirely — we’re just doing:
-	•	Load trained .pkl models
-	•	Load test set features
-	•	Predict
-
-So the hyperparameter JSON is redundant here.
-
-⸻
-
-3. When you would load them
-
-You’d only need the hyperparameters if:
-	•	You were retraining from scratch,
-	•	Or you wanted to display/print model settings in your deployment logs (optional for transparency).
+#### Challenges
+1. **Deployment-Lite Pipeline Conceptualisation**
+  - Needed to translate research/evaluation scripts (Phase 5–6) into a single, reproducible, lightweight inference pipeline for deployment.
+  - Needed to balance completeness (both LightGBM + TCN predictions) with minimalism (no plotting, no metrics, no heavy per-patient outputs).
+2. **Binary Target Columns**
+  - Previous evaluation scripts required recreating binary target columns (`max_risk_binary`, `median_risk_binary`) to compute metrics.
+  - Inference does not require true labels, so including these columns would add unnecessary computation and complexity.
+3. **TCN Model Loading**
+  - PyTorch `.pt` files store only weights, not architecture. Directly loading weights without rebuilding the model would fail.
+  - Required consistent feature order and masking to ensure inference outputs matched expectations.
+4. **Regression Outputs Producing Negative Values**
+  - LightGBM regression predictions (`pct_time_high`) occasionally returned small negative numbers, which are impossible for percentage targets.
+  - Needed a safe and reproducible way to constrain predictions without affecting other outputs.
+5. **Interpretability Summaries**
+  - Phase 6 outputs (full SHAP plots, per-timestep saliency) were too heavy for lightweight deployment.
+  - Needed concise, aggregated summaries that retained actionable information but were fast and portable.
+6. **Interactive Single-Patient CLI**
+  - Need to provide real-time per-patient inference without duplicating batch computation or saving unnecessary files.
+  - Needed a simple interface that was intuitive and aligned with deployment-lite goals.
+#### Solutions and Learnings
+1. **Unified Deployment-Lite Pipeline**
+  - Implemented `unified_inference.py` to consolidate LightGBM and TCN inference into a single script.
+  - Outputs both batch predictions and optional per-patient CLI predictions.
+  - Workflow: load models → load input features/tensors → run inference → save batch outputs → compute minimal interpretability → provide optional CLI.
+2. **Omitting Binary Targets**
+  - Excluded binary target recreation from inference.
+  - Pipeline uses only input features; predictions are generated without ground-truth labels or metric calculations.
+  - Simplified feature preprocessing and ensured dataset-agnostic usability.
+3. **TCN Model Reconstruction**
+  - Loaded JSON configuration to rebuild model architecture before loading `.pt` weights.
+  - Applied input masks during inference to ignore padded timesteps, ensuring outputs match training logic.
+  - Learned: Neural network weights must always be coupled with architecture reconstruction; LightGBM does not require this.
+4. **Regression Output Clipping**
+  - Applied `clip(lower=0)` to LightGBM and `np.clip(..., 0, None)` to TCN regression outputs.
+  - Ensured no negative predictions appear, maintaining deployment-safe numeric outputs.
+5. **Concise Interpretability Summaries**
+  - LightGBM: Computed top-10 SHAP features per target, numeric-only.
+  - TCN: Computed mean absolute saliency per target, top-10 features.
+  - Merged summaries into a single CSV for easy inspection.
+  - Learned: Minimal numeric summaries provide interpretability insights without compromising speed or portability.
+6. **Interactive CLI Implementation**
+  - Added `run_single_patient_inference(patient_id)` function.
+  - Validates patient ID, prints LightGBM probabilities/regression and TCN outputs directly to terminal.
+  - Avoided saving per-patient outputs to disk for lightweight interaction.
+  - Learned: CLI demonstrates functionality and provides real-time inspection while keeping deployment-lite goals intact.
+#### Overall Reflection
+- **Phase 7A successfully distilled Phases 5–6 into a self-contained, deployment-ready inference pipeline:**
+  - **Inputs:** Patient-level CSV (LightGBM), preprocessed tensors (TCN).  
+  - **Processing:** Pre-trained models loaded, feature order preserved, masks applied for TCN.  
+  - **Outputs:** Batch predictions for all targets, top-10 feature summaries, optional single-patient CLI display.  
+- **Key takeaways:**
+  - Deployment-lite focuses on **reproducible, fast, minimal inference**, not on evaluation or visualisation.
+  - Challenges around TCN architecture, regression clipping, and interpretability were solved with lightweight, deterministic solutions.
+  - Binary targets, threshold tuning, calibration, and plots were deliberately omitted because they belong to evaluation, not inference.
+  - Phase 7A forms a **complete, portable, cloud-ready foundation** for Phase 7B, demonstrating functional end-to-end inference for both model families.
 
 ---
-
-
----
-
-Correct — for Phase 7A (Deployment-Lite Inference), you do not need to include the results analysis or metrics computation scripts.
-
-Here’s why:
-
-1. Purpose difference
-	•	Evaluation scripts (Phase 5) → measure performance (AUC, F1, RMSE, etc.) on the test set, used for research and validation.
-	•	Deployment-lite inference (Phase 7A) → show how the trained models can be run end-to-end to produce usable outputs, not to re-evaluate them.
-
-2. What deployment-lite is meant to show
-
-It demonstrates:
-	•	Model loading from saved weights/configs.
-	•	End-to-end inference from raw or preprocessed inputs.
-	•	Output formatting and saving.
-	•	(Optionally) how to extend it into a live API later.
-
-It is not meant to recompute metrics or visualisations — that belongs to analysis/evaluation stages.
-
-3. When metrics would be included
-
-You would only re-include metrics in:
-	•	A validation or monitoring pipeline (production MLOps style) for performance drift.
-	•	A research-grade reproducibility notebook where inference and evaluation are combined for verification.
-
-For your project right now, the deployment-lite script should:
-	•	Load LightGBM and TCN models.
-	•	Run inference on held-out or new data.
-	•	Output clean, ready-to-use predictions.
-
-So yes — no metrics or analysis scripts are needed here.
----
-
-1. Two meanings of “inference”
-
-There are two contexts in which inference scripts are used:
-
-(a) Research / internal reproducibility (your current phase – Deployment-Lite)
-Purpose:
-To demonstrate that the entire model pipeline — data in → prediction out — can be executed outside of training, cleanly and reproducibly.
-
-Here, the “user” is you (or a future collaborator, supervisor, or recruiter) verifying that the model works end-to-end.
-
-Output destination:
-Saving predictions to /deployment_lite_outputs/ inside your repo is intentional — it:
-	•	Proves the script runs deterministically on real data.
-	•	Lets you version-control the results for documentation.
-	•	Provides a simple hand-off artefact (the CSVs) without needing an API or cloud setup.
-
-In this phase, you’re testing the pipeline integrity, not serving users.
-
-⸻
-
-(b) Production / external user access (Phase 7B – Live Deployment)
-Purpose:
-To make inference accessible to end users — e.g. clinicians, dashboards, or other systems — through:
-	•	A web API (FastAPI/Flask).
-	•	A UI or dashboard.
-	•	An automated batch job (scheduled prediction updates).
-
-Output destination:
-The predictions go outside the repo — e.g. returned as JSON via an API, written to a database, or visualised on a web interface.
-
-This is the “for users” part.
-It builds directly on top of your deployment-lite pipeline: the same code that currently writes to CSV will later return responses via an endpoint.
-
-⸻
-
-2. Why you still write to CSV now
-
-Saving to file in deployment_lite_outputs/ is best practice because it:
-	•	Keeps inference scriptable and testable (important for recruiters and reviewers).
-	•	Allows deterministic verification — you can re-run the script and confirm identical outputs.
-	•	Makes migration to an API trivial later (you just replace df.to_csv() with a JSON response).
-
-⸻
-
-3. How this relates to SHAP and saliency
-
-When you add interpretability in Phase 7A:
-	•	You’ll load the same trained models.
-	•	Compute top-10 SHAP (LightGBM) and saliency (TCN).
-	•	Save small, interpretable summaries (e.g. top_features_lightgbm.csv, top_features_tcn.csv) alongside predictions.
-
-Those outputs also stay in the repo now — but in the full deployment later, they could be served via API or embedded in a web dashboard.
-
----
-
-decided that for per-patient requests we will just print to terminal in order to keep it lightweight instead of saving the output to folder
-
-The best practice depends on your goal — and since Phase 7A is meant to be deployment-lite (not a full API), here’s how both options compare:
-
-⸻
-
-Option 1 – Print to terminal (recommended for now)
-
-How it works:
-	•	You add a function like run_single_patient_inference(patient_id) or run_single_patient_inference(input_dict).
-	•	When you call it, the script:
-	•	Loads that one patient’s data,
-	•	Runs inference for LightGBM and TCN,
-	•	Prints the predictions and top features directly to the console.
-
-Pros
-	•	Clean and lightweight.
-	•	No file clutter — ideal for development or demonstration.
-	•	Mimics the output you’d eventually send as a JSON response in an API.
-
-Cons
-	•	You lose the result once the session ends (unless you manually copy it).
-
----
-
-2. Feature columns: LightGBM vs TCN
-	•	LightGBM (feature_cols):
-	•	Patient-level aggregated features only (one row per patient).
-	•	Columns come directly from news2_features_patient.csv, excluding IDs and targets.
-	•	TCN (feature_cols_tcn):
-	•	TCN is time-series, so input is 3D: (n_patients, seq_len, n_features).
-	•	The “features” dimension corresponds to the per-timestep features used in training.
-	•	We copy the feature column list from LightGBM only as a convenient reference for saliency outputs (so we can label the top features correctly).
-
-⚠ Important distinction: the actual inputs for TCN are loaded as tensors, not from feature_cols. feature_cols_tcn is just a label mapping, not the actual model input.
-
-⸻
-
-3. Patient-level vs timestamp-level features
-	•	LightGBM: patient-level → CSV features.
-	•	TCN: time-series → tensors (test.pt), already preprocessed.
-	•	During inference:
-	•	We don’t reload per-timestep CSV for TCN. The sequences are already stored in tensors (test.pt) and masks (test_mask.pt).
-	•	feature_cols_tcn exists only for interpretability (top features, saliency labeling).
-
-So you’re correct in thinking they are different feature sets—LightGBM features are patient-level, TCN features are timestep-level. That’s why the script handles them differently
-
----
-
-That’s a key and insightful question — and you’re exactly right to notice the asymmetry.
-
-Here’s the reasoning:
-
-1. LightGBM models
-	•	LightGBM is a tree-based algorithm (non-neural), and when you saved your trained .pkl files, each file already contained the full model definition + trained parameters + hyperparameters.
-	•	So when you do:
-  model = joblib.load("model.pkl")
-
-you’re directly restoring a fully configured and ready-to-use model.
-It knows its number of features, hyperparameters (like depth, learning rate, etc.), and how to interpret each input column.
-
-	•	That’s why LightGBM requires no re-instantiation — it’s self-contained in the pickle file.
-
-2. TCN models
-	•	Neural networks (PyTorch, TensorFlow, etc.) don’t serialize architecture structure and weights together by default.
-	•	You must first instantiate an empty model with the same architecture (same layer sizes, kernel size, dropout, etc.) and then load the weights into it:
-model = TCNModel(**arch_config)
-model.load_state_dict(torch.load("tcn_weights.pt"))
-
-	•	The .pt file only contains numerical weights — not the structure of the network.
-	•	So you must also load the JSON config to rebuild the correct architecture before attaching those weights.
-
-Model Type
-What .pkl or .pt contains
-Needs architecture code?
-Needs feature names?
-LightGBM
-Entire model (trees, params, metadata)
-❌ No
-✅ Yes, for input alignment
-TCN (PyTorch)
-Only trained weights
-✅ Yes (instantiate first)
-✅ Yes, for interpretability (gradients per feature)
-
-4. Interpretability difference
-	•	LightGBM: feature importance or SHAP is computed using the same DataFrame columns that trained it.
-	•	TCN: saliency depends on tensor feature order, not the CSV columns, but we still need the feature names list to map tensor indices → human-readable features.
-
-So your instinct is right — LightGBM models are “plug and play,” while neural nets like TCNs must be “rebuilt and rehydrated” before inference.
-
----
-2.	Why negative:
-	•	The pct_time_high target represents a proportion or percentage, so its expected values are usually ≥0.
-	•	LightGBM regression has no built-in constraints; it can produce any real number.
-	•	If the training target distribution had small values near zero or the model extrapolates outside the training range, you can get small negative predictions like -0.0127.
-	3.	TCN prediction is positive:
-Your TCN model applies np.expm1() after predicting a log-transformed target. That ensures outputs are ≥0 (as long as the predicted log value isn’t very negative), which is why y_pred_reg_raw is positive (0.0855) for the same patient.
-
-How to fix / handle it
-	•	Clip negative predictions to 0:
-
----
-
-✔ Inference Does NOT Need Binary Target Columns
-
-Inference uses:
-	•	the trained LightGBM models (model.predict_proba / model.predict)
-	•	the input features only
-	•	no metrics
-	•	no y_true
-	•	no thresholding
-	•	no binary labels
-
-Therefore:
-
-You do NOT need to:
-	•	recreate max_risk_binary
-	•	recreate median_risk_binary
-	•	include them in the dataframe
-	•	drop them from features
-	•	handle NEWS2 threshold mapping
-
-Those steps were only needed in your evaluation scripts (Phase 5) because those scripts computed metrics that required ground-truth binary labels.
-
-⸻
-
-✔ Replace with the minimal required process
-
-Your inference pipeline only needs:
-
-1. Load the features CSV
-
-2. Subset to test_ids
-
-3. Drop target columns (max_risk, median_risk, pct_time_high)
-
-4. Use the remaining columns as feature_cols
-
-Nothing else.
-
----
-
 
 ## Phase 7B: Cloud Deployment (Full Live Deployment)
 
