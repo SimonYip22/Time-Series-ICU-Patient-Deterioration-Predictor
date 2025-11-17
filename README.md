@@ -116,6 +116,29 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 
 ---
 
+## 2. Project Goals & Contributions
+
+### Primary Objectives
+1. Establish a clinically validated deterioration-prediction framework by using NEWS2-derived risk categories as the reference standard for all model targets and evaluation.
+2. Quantify the added predictive value of temporal modelling by systematically comparing a static gradient-boosted decision tree model (LightGBM) against a temporal convolutional network (TCN) on the same patients and targets,  highlighting the explicit classical vs. deep learning comparison.
+3. Design dual feature engineering pipelines (timestamp-level for TCN, patient-level for LightGBM) incorporating temporal statistics, imputation, and missingness/carried-forward flags; aligned with real hospital data quality constraints, enabling dual-pipeline evaluation.
+4. Evaluate model performance across complementary risk horizons (maximum risk, median sustained risk, percentage time in high-risk) to ensure fair, like-for-like model comparison, demonstrating how different architectures capture acute vs. long-term physiological instability.
+5. Implement transparent interpretability pathways (SHAP and gradient×input saliency) to ensure outputs remain clinically defensible, aligned with established physiological understanding, supporting clinician trust during decision-making and escalation.
+6. Develop an end-to-end, deployment-lite inference system capable of running batch and per-patient predictions, enabling direct applicability to real-world ICU or ward settings.
+
+### Key Technical Contributions
+- **ML Pipeline Construction:** Built a reproducible ML pipeline from raw EHR data, including feature extraction, NEWS2 computation (GCS→LOC mapping, CO₂ retainer identification, supplemental O₂ rules), clinically interpretable feature engineering (LOCF, missingness flags, rolling windows, summary statistics).
+- **LightGBM Baselines:** Developed robust models with binary target handling for sparse classes, stratified cross-validation, and tuned hyperparameters to ensure stable, reproducible performance.
+- **TCN Architecture:** Designed a multi-task TCN for sequential time-series data, combining causal dilated convolutions, residual connections, and masked mean pooling for joint classification (max/median risk) and regression (% time high).
+- **Data-Driven Adaptations:** applied target binarisation, log-transformed regression, threshold tuning, missingness-aware features, and stratified CV to handle sparse, irregular clinical datasets.
+- **Evaluation Framework:** Built robust evaluation utilities for reproducible, bias-free metric computation across models, and diagnosed/fixed subtle metric misalignment in TCN evaluation to restore true ROC-AUC.
+- **Model Retraining:** Implemented targeted TCN retraining with class-weighted BCE and log-transform regression, preserving architecture and hyperparameters while improving convergence and predictive stability.
+- **Comprehensive Evaluation Pipeline:** Unbiased test set inference, calibration and threshold tuning, pre/post-calibration diagnostics, and structured CSV/JSON outputs.
+- **Comparative Analysis:** Unified LightGBM and refined TCN metrics across classification and regression tasks, generating scientifically valid, reproducible, three-phase cross-model comparisons.
+- **Interpretability Layers:** Produced global SHAP explanations for LightGBM and gradient×input saliency maps (feature × timestep) for TCN, aggregating top-10 features per target for transparent, reproducible insights.
+- **Deployment-Ready Inference:** Packaged a unified, lightweight pipeline supporting batch and interactive per-patient predictions, producing deterministic, dataset-agnostic outputs for both TCN and LightGBM models.
+---
+
 ```text
                                Raw EHR Data
                    (vitals, observations, lab results)
