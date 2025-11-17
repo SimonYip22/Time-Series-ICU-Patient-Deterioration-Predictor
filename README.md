@@ -77,6 +77,8 @@ ICU patient deterioration manifests through subtle vital sign changes hours befo
 - Support clinical decision-making with actionable, interpretable metrics
 - Provide a foundation for advanced ML models to improve patient outcomes
 
+![NEWS2 scoring system](images/news2_chart.png)
+
 Although NEWS2 is the national standard for deterioration detection, it has well-recognised constraints:
 - **No true temporal modelling:** Although observations are charted sequentially, the scoring algorithm treats each set of vitals independently and does not incorporate trend, slope, variability, or rate-of-change.
 - **Discrete scoring limitations:** NEWS2 discretises continuous physiological signals into coarse bands and does not model interactions between multiple variables, which limits sensitivity to subtle multivariate deterioration patterns.
