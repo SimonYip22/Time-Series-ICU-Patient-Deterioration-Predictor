@@ -115,7 +115,7 @@ ICU deterioration is complex and often subtle, involving multivariate temporal p
 | Model | Type | Input Features | Modelling Type | Strengths | Weaknesses | Interpretability |
 |-------|------|----------------|------------------|-----------|------------|----------------|
 | LightGBM | Gradient-Boosted Decision Tree | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
-| TCN | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (|grad×input|) |
+| TCN | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (grad×input) |
 
 #### LightGBM (classical, non-temporal ML)
 - LightGBM, a gradient-boosted decision tree (GBDT) algorithm, provides a strong baseline for tabular clinical data
