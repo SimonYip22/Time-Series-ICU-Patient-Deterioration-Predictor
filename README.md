@@ -54,6 +54,7 @@ ICU patient deterioration often emerges through subtle physiological changes hou
 - Provide a foundation for advanced ML-based early warning systems
 
 ![NEWS2 API Diagram](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png)
+
 ***Figure: NHS Digital, NEWS2 API guide (Open Government Licence v3.0)***  
 
 Although the national standard for deterioration detection, NEWS2 has well-recognised constraints:
