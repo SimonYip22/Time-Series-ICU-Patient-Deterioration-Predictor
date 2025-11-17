@@ -747,7 +747,7 @@ LightGBM Model (v1)
    - Learned how `agg()` outputs a MultiIndex → flattening into `vital_stat` format.  
    - Steps 3–6 (imputation, % missingness, risk encoding, save CSV) still to do.  
 
- ### Neural Network Model Selection
+### Neural Network Model Selection
 - **Options considered**:
   - **Recurrent Neural Networks (LSTM / GRU)** → well-suited for sequences but prone to vanishing gradients on long ICU stays, slower to train.
   - **Transformers** → powerful for long sequences, but overkill for moderate dataset size, computationally intensive.

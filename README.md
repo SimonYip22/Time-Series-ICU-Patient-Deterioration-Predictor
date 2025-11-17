@@ -1,153 +1,98 @@
-# Time-Series ICU Patient Deterioration Predictor 📉⏳ 
+# Time-Series ICU Patient Deterioration Predictor
 
-Early warning system predicting ICU patient deterioration on MIMIC-IV Clinical Demo v2.2 dataset (100 patients), framework comparing LightGBM vs Temporal Convolutional Network across 3 targets: peak deterioration (max_risk), typical risk (median_risk), and proportion of admission in high-risk states (pct_time_high).
+## *Hybrid Machine Learning System for Early Warning in Critical Care*
 
-Temporal and aggregated feature engineering with clinical-validity-aware missing data handling, using custom NEWS2-derived ground-truth values (GCS/LOC mapping, supplemental O₂ and CO₂ retainer custom logic).
+---
 
-TCN trained on 171 temporal-features x 96 timestamps, 24hr rolling windows across 8 vital parameters, with 3-layer TemporalBlock stack, kernel=3, dropout=0.2, head_hidden=64, batch=32, 50 epochs, early stopping at epoch 10;
+## Executive Summary
 
-LightGBM trained on 40 aggregated patient-features with 5-fold stratified CV, with hyperparameter tuning.
+**Tech stack:** *Python, pandas, NumPy, LightGBM, PyTorch, Scikit-learn*
 
-TCN greater sensivity on max_risk (AUC +9.3%, AP +1.25%), LightGBM greater reliability and calibration on median_risk (AUC +17%, Brier ↓68%, ECE ↓63%) and more precise pct_time_high (RMSE ↓32%, R² +44%, residual SD ↓42%).
+This project implements a dual-architecture early warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three risk horizons (maximum risk atained, average sustained risk, % time spent in high risk). Built on MIMIC-IV Clinical Demo v2.2 dataset (100 patients), the system processes 171 temporal features across 24-hour windows and 40 aggregated patient-level features, to support continuous monitoring and escalation decisions.
 
-evaluating interpretability (SHAP) versus saliency-based explanations for clinical adoption.
+The hybrid approach reveals complementary strengths: LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment, while TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration. 
 
-Deployed, reproducible auditable pipeline with deployment-lite, and full documentation for clinical validation.
+The complete pipeline includes NHS-validated NEWS2 preprocessing with CO₂ retainer logic, GCS mapping, and supplemental O₂ protocols; extensive evaluation metrics and model-specific interpretability methods for clinical validation (SHAP for LightGBM, absolute gradient×input saliency for TCN); and a deployment-ready dual inference system (batch and per-patient) for end-to-end usability.
 
-TCN_refined captures short-term acute events with rapid early detection, whereas LightGBM provides robust, calibrated estimates of sustained deterioration exposure; supports ICU triage, continuous monitoring, and escalation decisions with quantified, actionable confidence.
-TCN excels at short-term acute events with rapid detection while LightGBM provides reliable long-term estimates of sustained deterioration exposure, suggesting ensemble approach for production deployment.
+**Key Contributions:**
+- Clinical validity pipeline with robust NEWS2 computation
+- Dual feature engineering (patient-level vs timestamp) for both classical and deep learning models
+- Duel model training with hyperparameter tuning
+- Rigorous refinement and model evaluation
+- Transparent interpretability validated against domain knowledge
+- Deployment-lite inference pipeline demonstrating end-to-end usability
 
-Portfolio-ready, deployed, and clinically-informed.
+---
 
-**Tech stack**: python, pandas, NumpPy, LightGBM, PyTorch
+## Table of Contents
+1. [Introduction](#introduction)
+2. [Clinical Motivation](#clinical-motivation)
+3. [Data Pipeline Overview](#data-pipeline-overview)
+4. [Phase 1: CO₂ Retainer Identification & NEWS2 Tracker](#phase-1-co2-retainer-identification--news2-tracker)
+5. [Phase 2: ML-Ready Feature Engineering](#phase-2-ml-ready-feature-engineering)
+6. [Phase 3: LightGBM Training & Validation](#phase-3-lightgbm-training--validation)
+7. [Next Steps](#next-steps)
 
-**Pipeline**
-```text
-Raw ICU Vitals (long format, MIMIC-style)
-   └─> compute_news2.py
-         ├─ Input: raw vitals CSV
-         ├─ Action: compute NEWS2 scores per timestamp
-         └─ Output: news2_scores.csv (wide format with vitals, NEWS2 score, escalation labels), news2_patient_summary.csv (patient-level summary)
-
-news2_scores.csv
-   └─> make_timestamp_features.py
-         ├─ Action:
-         │   ├─ Aggregate per patient
-         │   ├─ Add missingness flags
-         │   ├─ Apply LOCF per vital
-         │   ├─ Compute carried-forward flags
-         │   ├─ Compute rolling window stats (1h/4h/24h)
-         │   ├─ Compute time-since-last-observation
-         │   └─ Encode risk/escalation as ordinal numeric
-         └─ Output: news2_features_timestamp.csv
-               (ML-ready timestamp-level features)
-
-news2_scores.csv
-   └─> make_patient_features.py
-         ├─ Action:
-         │   ├─ Aggregate per patient
-         │   ├─ Compute median, mean, min, max per vital
-         │   └─ Include % missingness per vital
-         └─ Output: news2_features_patient.csv
-               (ML-ready patient-level summary features)
-```
-
-# Timestamp features rationale
-- We compute rolling window features over 1h, 4h, and 24h intervals. 
-   - Mean, min, max capture the magnitude and variability of vitals. 
-   - Slope gives the trend — whether the vital is rising or falling and how fast. 
-   - AUC measures cumulative exposure, i.e., how much and for how long a patient has experienced abnormal values. 
-- These features provide temporal context for the ML model, so it doesn’t just see isolated values but also their trajectory over time.
+---
 
 
-# LightGBM vs Neural Network (TCN) Pipeline
-```text
-ML Model (LightGBM)
-   ├─ Input: news2_features_patient.csv 
-   │     ├─ Median, mean, min, max per vital
-   │     ├─ Impute missing values
-   │     ├─ % missing per vital
-   │     └─ Risk summary stats (max, median, % time at high risk)
-   ├─ Action:
-   │     ├─ Train predictive model for deterioration / escalation
-   │     ├─ Use timestamp trends + missingness flags
-   │     └─ Evaluate performance (AUROC, precision-recall, etc.)
-   └─ Output: predictions, feature importances, evaluation metrics
+## 1. Clinical Background & Motivation
 
-ML Model (Neural Network, TCN)
-   ├─ Input: news2_features_timestamp.csv
-   │     ├─ Timestamp-level vitals & rolling features (mean, min, max, std, slopes, AUC)
-   │     ├─ Missingness flags
-   │     ├─ Carried-forward flags  
-   │     └─ Time since last observation
-   ├─ Action:
-   │     ├─ Train predictive model for deterioration / escalation
-   │     ├─ Learn temporal patterns, trends, and interactions
-   │     ├─ Can handle sequences of variable length per patient
-   │     └─ Evaluate performance (AUROC, precision-recall, calibration)
-   └─ Output: 
-         ├─ Predictions per timestamp or per patient
-         ├─ Learned feature embeddings / attention weights (if applicable)
-         └─ Evaluation metrics
-```
+### The Problem
+ICU patient deterioration manifests through subtle vital sign changes hours before critical events. The National Early Warning Score 2 (NEWS2) is widely used in UK hospitals to detect and escalate care for deteriorating patients. Accurate, real-time scoring and risk stratification can:
+- Enable earlier intervention and ICU escalation
+- Support clinical decision-making with actionable, interpretable metrics
+- Provide a foundation for advanced ML models to improve patient outcomes
 
-# LightGBM vs Neural Network (TCN) Pipeline Visualisation
-```text
-  Raw EHR Data (vitals, observations, lab results)
-         │
-         ▼
-Timestamp Feature Engineering (news2_scores.csv)
- - Rolling statistics (mean, min, max, std)
- - Slopes, AUC, time since last observation
- - Imputation & missingness flags
-         │
-         ├─────────────► TCN Neural Network Model (v2)
-         │              - Input: full time-series per patient
-         │              - Can learn temporal patterns, trends, dynamics
-         │
-         ▼
-Patient-Level Feature Aggregation (make_patient_features.py → news2_features_patient.csv)
- - Median, mean, min, max per vital
- - % missing per vital
- - Risk summary stats (max, median, % time at high risk)
- - Ordinal encoding for risk/escalation
-         │
-         ▼
-LightGBM Model (v1)
- - Input: one row per patient (fixed-length vector)
- - Uses aggregated statistics only
- - Cannot handle sequences or variable-length time series
-```
+Although NEWS2 is the national standard for deterioration detection, it has well-recognised constraints:
+- **No true temporal modelling:** Although observations are charted sequentially, the scoring algorithm treats each set of vitals independently and does not incorporate trend, slope, variability, or rate-of-change.
+- **Discrete scoring limitations:** NEWS2 discretises continuous physiological signals into coarse bands and does not model interactions between multiple variables, which limits sensitivity to subtle multivariate deterioration patterns.
+- **Escalation overload:** Threshold-based scoring generates many false positives in elderly and multimorbid cohorts, contributing to alert burden and escalation fatigue.
+- **Limited predictive horizon:** NEWS2 typically identifies deterioration only after thresholds are crossed, offering limited early-warning capability compared with models that can detect sub-threshold physiological drift.
 
- # Model Comparison: LightGBM vs Neural Network (V1 & V2)
+### Clinical Escalation Context
+NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
-| Aspect | LightGBM (V1) | Temporal Convolutional Network (TCN) (V2) |
-|--------|-------------------|-------------------|
-| **ML Model Name / Type** | LightGBM (Gradient Boosted Decision Trees) | Temporal Convolutional Network (TCN)(Neural network) |
-| **V1 / V2** | V1: uses patient-level features, baseline interpretable patient summary (classic tabular ML) | V2: uses timestamp-level features, advanced sequence modeling (modern deep learning) |
-| **Input Datasets** | `news2_features_patient.csv` (patient-level summaries) | `news2_features_timestamp.csv` (time series of vitals, missingness flags) |
-| **Optional Inputs** | Timestamp features could be added later for hybrid model | Patient-level summary features from `news2_features_patient.csv` can be appended but not mandatory |
-| **Reason for this input choice** | LightGBM is a tree-based model: handles static features and aggregates well; does not naturally model temporal sequences | Neural networks (LSTM/TCN) can model temporal trends, sequences, and interactions over time; need full timestamp features to exploit sequential information |
-| **Why two different models** | LightGBM: fast, interpretable (feature importance), strong baseline. | Neural network: captures temporal dynamics, can potentially improve predictive performance on time-series deterioration<br>Complements LightGBM; addresses potential limitations of static patient summaries by using sequential information in timestamp features |
-| **Strengths** | - Handles missing values gracefully.<br>- Fast training and inference.<br>- Provides feature importances.<br>- Works well with tabular summary features. | - Models temporal trends and interactions.<br>- Can capture subtle patterns in sequences of vitals.<br>- Potentially better performance on real-time deterioration prediction. |
-| **Weaknesses / Limitations** | - Ignores sequence and timing of events.<br>- May lose some granularity of patient trajectory.<br>- Cannot capture interactions over time. | - Requires more computation and tuning.<br>- Harder to interpret.<br>- Sensitive to missing data; requires careful imputation or masking. |
-| **Output** | Predictions per patient, feature importances, evaluation metrics (AUROC, PR-AUC, etc.) | Predictions per timestamp or per patient trajectory, evaluation metrics (AUROC, PR-AUC, potentially time-dependent metrics) |
-| **Use case / Deployment** | Baseline model; interpretable; fast deployment; can be used for early warning systems using summary features | Advanced model for final deployment or v2 experimentation; may be integrated in real-time monitoring dashboards for continuous deterioration prediction |
+| NEWS2 Score.                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
+|-----------------------------------|---------------|--------------------------------------------------------|------------------------------------------------------------------------------------|
+| **0**                             | Low           | Minimum every **12 hours**                             | Routine monitoring by registered nurse.                                            |
+| **1–4**                           | Low           | Minimum every **4–6 hours**                            | Nurse to assess need for change in monitoring or escalation.                       |
+| **Score of 3 in any parameter**   | Low–Medium    | Minimum every **1 hour**                               | **Urgent** review by ward-based doctor to decide monitoring/escalation.            |
+| **5–6**                           | Medium        | Minimum every **1 hour**                               | **Urgent** review by ward-based doctor or acute team nurse; consider critical care team review.   |
+| **≥7**                            | High          | **Continuous** monitoring                              | **Emergent** assessment by clinical/critical-care team; usually transfer to HDU/ICU. |
 
+#### Why this matters
+- Transitions between risk bands (especially into medium or high) drive clinical workload and resource allocation, including urgent reviews and ICU involvement.  
+- Predicting imminent transitions into these categories (e.g., entering high risk within the next 4–6 hours) enables earlier intervention, reducing delayed escalations and improving critical-care resource planning.  
 
-Portfolio narrative framing (objective and honest)
+#### Why NEWS2 is used as the reference standard
+- NEWS2 is the nationally accepted standard for ward-based clinical deterioration assessment. Using it as the ground-truth ensures that ML models are trained and evaluated against a clinically validated reference.  
+- ML models predict summary outcomes derived from NEWS2 clinical-risk categories:
+  - `max_risk`: Maximum risk attained during the observation window  
+  - `median_risk`: Average sustained risk across the stay  
+  - `pct_time_high`: Percentage of time spent in high-risk state  
+- Evaluating ML predictions against these NEWS2-derived outcomes allows assessment of **predictive horizon**, **sensitivity**, and the ability to anticipate **clinically actionable deterioration trends** before standard escalation would occur.
 
-Here’s how you can present this:
-	1.	State the limitation upfront:
-	•	“Synthetic dataset contains very few high-risk events; patient-level deterioration classification targets were largely zero. Standard classification tasks were infeasible.”
-	2.	Pivot your narrative to learnable outcomes:
-	•	LightGBM: Predict patient-level NEWS2 / continuous risk burden, analyze feature importances to show clinical insights.
-	•	TCN: Predict timestamp-level NEWS2 trends to capture dynamic risk evolution.
-	3.	Metrics and comparison:
-	•	Report regression metrics (RMSE, R², MAE).
-	•	Compare to simple baselines (mean NEWS2, last observation carried forward) to show your model improves predictive performance.
-	•	Highlight trend detection and feature influence, which is a clinically relevant skill.
-	4.	Why this is still strong for a portfolio:
-	•	Demonstrates data wrangling, preprocessing, CV, feature engineering, ML pipeline, model selection, hyperparameter tuning, and neural networks.
-	•	Shows clinical insight (feature importance, temporal trends).
-	•	Recruiters and technical reviewers care about how you solved real-world limitations, not just “predicted rare events.”
+### Why Machine Learning?
+ICU deterioration is complex and often subtle, involving multivariate temporal patterns that standard threshold-based systems cannot fully capture. ML models allow us to go beyond static scoring by predicting summary outcomes derived from NEWS2 clinical-risk categories.
+
+#### LightGBM (classical, non-temporal ML)
+- LightGBM, a gradient-boosted decision tree (GBDT) algorithm, provides a strong baseline for tabular clinical data
+- Captures nonlinear interactions between vital signs  
+- Fast to train and tune, handles missing data robustly
+- Highly interpretable via SHAP  
+- Often competitive or superior when temporal structure is weak  
+
+#### Temporal Convolutional Network (TCN) (temporal deep learning)
+- TCN captures time-dependent patterns, slopes, and variability  
+- Models long-range temporal context  
+- Robust to irregular sampling  
+- Potentially detects subtle deterioration earlier than threshold-based approaches  
+
+#### Why compare both
+- LightGBM provides a robust classical-ML baseline for tabular clinical data.
+- TCN evaluates whether temporal modelling yields measurable gains by capturing sequential patterns and slopes in vital signs.
+- This comparison reflects realistic deployment: classical ML may suffice for lower-frequency ward data, whereas temporal models exploit high-resolution ICU monitoring to detect early deterioration.
+- The evaluation clarifies where temporal modelling adds value, where classical ML is sufficient, and the trade-offs between interpretability and predictive performance.
+
+This project therefore systematically evaluates temporal vs. non-temporal ML approaches for predicting ICU deterioration, using clinically meaningful NEWS2-derived summary outcomes as targets.
