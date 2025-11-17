@@ -77,7 +77,7 @@ ICU patient deterioration manifests through subtle vital sign changes hours befo
 - Support clinical decision-making with actionable, interpretable metrics
 - Provide a foundation for advanced ML models to improve patient outcomes
 
-![NEWS2 API Diagram](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/index.html)
+![NEWS2 API Diagram](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png)
 
 Figure: NHS Digital, NEWS2 API guide (Open Government Licence v3.0)  
 
