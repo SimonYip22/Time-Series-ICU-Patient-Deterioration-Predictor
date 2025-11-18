@@ -69,11 +69,11 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
 
 | NEWS2 Score.                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
 |-----------------------------------|---------------|--------------------------------------------------------|------------------------------------------------------------------------------------|
-| **0**                             | Low           | Minimum every **12 hours**                             | Routine monitoring by registered nurse.                                            |
-| **1–4**                           | Low           | Minimum every **4–6 hours**                            | Nurse to assess need for change in monitoring or escalation.                       |
-| **Score of 3 in any parameter**   | Low–Medium    | Minimum every **1 hour**                               | **Urgent** review by ward-based doctor to decide monitoring/escalation.            |
-| **5–6**                           | Medium        | Minimum every **1 hour**                               | **Urgent** review by ward-based doctor or acute team nurse; consider critical care team review.   |
-| **≥7**                            | High          | **Continuous** monitoring                              | **Emergent** assessment by clinical/critical-care team; usually transfer to HDU/ICU. |
+| **0**                             | Low           | Minimum every 12h                             | Routine monitoring by registered nurse.                                            |
+| **1–4**                           | Low           | Minimum every 4-6h                            | Nurse to assess need for change in monitoring or escalation.                       |
+| **Score=3 in any parameter**   | Low–Medium    | Minimum every 1h                               | Urgent review by ward-based doctor to decide monitoring/escalation.            |
+| **5–6**                           | Medium        | Minimum every 1h                               | Urgent review by ward-based doctor or acute team nurse; consider critical care team review.   |
+| **≥7**                            | High          | Continuous monitoring                              | Emergent assessment by clinical/critical-care team; usually transfer to HDU/ICU. |
 
 #### Why this matters
 - Transitions between these risk categories directly influence clinical workload and resource allocation, including urgent reviews and ICU involvement.  
@@ -91,10 +91,10 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
 ### Why Machine Learning?
 ICU deterioration involves complex and often subtle, multivariate temporal patterns that standard threshold-based systems cannot fully capture. Machine learning enables prediction of clinically meaningful NEWS2-derived outcomes using both static and temporal representations of patient physiology.
 
-| Model | Type | Input Features | Modelling Type | Strengths | Weaknesses | Interpretability |
+| Model | Type   | Input Features   | Modelling Type   | Strengths     | Weaknesses     | Interpretability |
 |-------|------|----------------|------------------|-----------|------------|----------------|
-| LightGBM | Gradient-Boosted Decision Tree (GBDT) | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
-| TCN | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (grad×input) |
+| **LightGBM** | Gradient-Boosted Decision Tree (GBDT) | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
+| **TCN** | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (grad×input) |
 
 #### LightGBM (classical machine learning)
 - Strong baseline for tabular clinical data
@@ -260,8 +260,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 
 Missingness flag before carried-forward fill so that it is known which values were originally missing
 
-#### Rolling Window Features (1h, 4h, 24h)
-For each vital sign:
+#### Rolling Window Features (1/4/24h)
 - **Mean:** Average value
 - **Min/Max:** Range boundaries
 - **Std**: Variability
@@ -280,11 +279,11 @@ Captures short-, medium-, and long-term deterioration patterns
 ```text 
 (total_timestamps, n_features) = (20,814 timestamps, 136 features)
 ``` 
-- **171 features =**
-  - Rolling windows: 5 vitals x 3 windows x 6 stats = 90
-  - 8 vitals (staleness + missingness flag + LOCF flag) = 24
+- **136 features =**
+  - Rolling windows → 5 vitals * 3 windows * 6 stats = 90
+  - 8 vitals * (staleness + missingness flag + LOCF flag) = 24
   - 14 raw clinical signals + 3 derived clinical labels = 17
-  - NEWS2: NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
+  - NEWS2 → NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
 
 ##
 ### 4.2 Patient-Level Features (for LightGBM)
@@ -306,7 +305,7 @@ Captures short-, medium-, and long-term deterioration patterns
 (n_patients, n_features) = (100, 43)
 ```
 - **43 features =**
-  - 8 vitals × (median + mean + min + max + % missing) = 40
-  - Summary features: `max_risk` + `median_risk` + `pct_time_high` = 3
+  - 8 vitals * (median + mean + min + max + % missing) = 40
+  - Summary features → `max_risk` + `median_risk` + `pct_time_high` = 3
 
 ---
