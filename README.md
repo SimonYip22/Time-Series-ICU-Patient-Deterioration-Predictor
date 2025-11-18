@@ -1,6 +1,6 @@
 # Time-Series ICU Patient Deterioration Predictor
 
-## *Hybrid Machine Learning System for Early Warning in Critical Care*
+***Hybrid Machine Learning System for Early Warning in Critical Care***
 
 ---
 
@@ -208,14 +208,15 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 → Any supplemental O₂ adds +2 to NEWS2
 ```
 #### Output Format
-**Timestamp-level: `news2_scores.csv`**
-- One row per observation timestamp
-- Raw vitalis, ndividual parameter scores, total NEWS2 score
-- Supplemental O₂, CO₂ retainer, and consciousness/GCS labels.
-- Escalation risk category (low/medium/high), monitoring frequency, response.
-**Patient-level: `news2_patient_summary.csv`**
-- **Per-patient aggregations:** min, max, mean, median, total number of timestamps
-- Summary statistics per patient.
+1. **Timestamp-level: `news2_scores.csv`**
+  - One row per observation timestamp
+  - Raw vitalis, ndividual parameter scores, total NEWS2 score
+  - Supplemental O₂, CO₂ retainer, and consciousness/GCS labels.
+  - Escalation risk category (low/medium/high), monitoring frequency, response.
+
+2. **Patient-level: `news2_patient_summary.csv`**
+  - **Per-patient aggregations:** min, max, mean, median, total number of timestamps
+  - Summary statistics per patient.
 
 ---
 
@@ -245,13 +246,14 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
              ▼                                                   ▼
   LightGBM Model (Classical ML)                     Temporal Convolutional Network (TCN)                         
 ```
-
+##
 ### 4.1 Timestamp-Level Features (for TCN)
 **Purpose:** Capture temporal dynamics for sequential modeling
 
 #### Imputation Strategy
 - **Missingness flags:** Binary indicators (1/0) for each vital parameter (1 if value was carried forward) so models can learn from missing patterns.
 - **LOCF (Last Observation Carried Forward) flags:** Propagate previous valid measurement, and create a carried-forward flag (binary 1/0).
+
 Missingness flag before carried-forward fill so that it is known which values were originally missing
 
 #### Rolling Window Features (1h, 4h, 24h)
@@ -261,6 +263,7 @@ For each vital sign:
 - **Std**: Variability
 - **Slope:** Linear trend coefficient
 - **AUC (Area Under Curve):** Integral of value over time
+
 Captures short-, medium-, and long-term deterioration patterns
 
 #### Other Features
@@ -279,14 +282,15 @@ Captures short-, medium-, and long-term deterioration patterns
 - 14 raw clinical signals + 3 derived clinical labels = 17
 - NEWS2: NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
 
+##
 ### 4.2 Patient-Level Features (for LightGBM)
 **Purpose:** Aggregated risk profile for interpretable tree-based modeling
 
 #### Feature Computation
-1. **Vital Sign Aggregations (per Parameter):** Median, mean, min, max
-2. **Patient-specific Median Imputation**: Fill missing values for each vital (preserves patient-specific patterns), if a patient never had a vital recorded, fall back to population median.
-3. **% Missingness per Vital:** track proportion of missing values pre-imputation, data quality indicator, signal from incomplete measurement pattern.
-4. **Escalation Summary Metrics:** convert risk label to numeric then compute
+- **Vital Sign Aggregations (per Parameter):** Median, mean, min, max
+- **Patient-specific Median Imputation**: Fill missing values for each vital (preserves patient-specific patterns), if a patient never had a vital recorded, fall back to population median.
+- **% Missingness per Vital:** track proportion of missing values pre-imputation, data quality indicator, signal from incomplete measurement pattern.
+- **Escalation Summary Metrics:** convert risk label to numeric then compute
   - `max_risk` = maximum risk attained
   - `median_risk`= average sustained risk
   - `pct_time_high` = % time spent in high-risk state
@@ -298,7 +302,7 @@ Captures short-, medium-, and long-term deterioration patterns
 (n_patients, n_features) = (100, 43)
 ```
 **43 features =**
-8 vitals × (median + mean + min + max + % missing) = 40
-Summary features: `max_risk` + `median_risk` + `pct_time_high` = 3
+- 8 vitals × (median + mean + min + max + % missing) = 40
+- Summary features: `max_risk` + `median_risk` + `pct_time_high` = 3
 
 ---
