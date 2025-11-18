@@ -19,7 +19,7 @@ The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ r
 A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use.
 
 | Target           | Best Model | Key Metric(s)             | Notes |
-|-----------------|------------|--------------------------|-------|
+|------------------|------------|--------------------------|-------|
 | Maximum Risk     | TCN        | ROC AUC: 0.923           | Strong acute detection, high sensitivity |
 | Median Risk      | LightGBM   | ROC AUC: 0.972, Brier: 0.065 | Superior sustained risk calibration |
 | Percentage Time High | LightGBM | R²: 0.793                | Better regression fidelity for high-risk exposure |
@@ -67,11 +67,11 @@ Although the national standard for deterioration detection, NEWS2 has well-recog
 ### Clinical Escalation Context
 NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
-| NEWS2 Score.                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
-|-----------------------------------|---------------|--------------------------------------------------------|------------------------------------------------------------------------------------|
+| NEWS2 Score                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
+|-----------------------------------|-----------------|---------------------------------------------------------------|------------------------------------------------------------------------------------|
 | **0**                             | Low           | Minimum every 12h                             | Routine monitoring by registered nurse.                                            |
 | **1–4**                           | Low           | Minimum every 4-6h                            | Nurse to assess need for change in monitoring or escalation.                       |
-| **Score=3 in any parameter**   | Low–Medium    | Minimum every 1h                               | Urgent review by ward-based doctor to decide monitoring/escalation.            |
+| **Score of 3 in any parameter**   | Low–Medium    | Minimum every 1h                               | Urgent review by ward-based doctor to decide monitoring/escalation.            |
 | **5–6**                           | Medium        | Minimum every 1h                               | Urgent review by ward-based doctor or acute team nurse; consider critical care team review.   |
 | **≥7**                            | High          | Continuous monitoring                              | Emergent assessment by clinical/critical-care team; usually transfer to HDU/ICU. |
 
@@ -92,7 +92,7 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
 ICU deterioration involves complex and often subtle, multivariate temporal patterns that standard threshold-based systems cannot fully capture. Machine learning enables prediction of clinically meaningful NEWS2-derived outcomes using both static and temporal representations of patient physiology.
 
 | Model | Type   | Input Features   | Modelling Type   | Strengths     | Weaknesses     | Interpretability |
-|-------|------|----------------|------------------|-----------|------------|----------------|
+|-------|------|-------------------|------------------|----------------|-----------------|---------------|
 | **LightGBM** | Gradient-Boosted Decision Tree (GBDT) | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
 | **TCN** | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (grad×input) |
 
@@ -280,8 +280,8 @@ Captures short-, medium-, and long-term deterioration patterns
 (total_timestamps, n_features) = (20,814 timestamps, 136 features)
 ``` 
 - **136 features =**
-  - Rolling windows → 5 vitals * 3 windows * 6 stats = 90
-  - 8 vitals * (staleness + missingness flag + LOCF flag) = 24
+  - Rolling windows → 5 vitals x 3 windows x 6 stats = 90
+  - 8 vitals x (staleness + missingness flag + LOCF flag) = 24
   - 14 raw clinical signals + 3 derived clinical labels = 17
   - NEWS2 → NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
 
@@ -305,7 +305,7 @@ Captures short-, medium-, and long-term deterioration patterns
 (n_patients, n_features) = (100, 43)
 ```
 - **43 features =**
-  - 8 vitals * (median + mean + min + max + % missing) = 40
+  - 8 vitals x (median + mean + min + max + % missing) = 40
   - Summary features → `max_risk` + `median_risk` + `pct_time_high` = 3
 
 ---
