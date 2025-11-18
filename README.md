@@ -122,32 +122,31 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 
 ### Primary Objectives
 1. Establish a clinically validated deterioration-prediction framework by using NEWS2-derived risk categories as the reference standard for all model targets and evaluation.
-2. Quantify the added predictive value of temporal modelling by systematically comparing a static gradient-boosted decision tree model (LightGBM) against a temporal convolutional network (TCN) on the same patients and targets,  highlighting the explicit classical vs. deep learning comparison.
-3. Design dual feature engineering pipelines (timestamp-level for TCN, patient-level for LightGBM) incorporating temporal statistics, imputation, and missingness/carried-forward flags; aligned with real hospital data quality constraints, enabling dual-pipeline evaluation.
-4. Evaluate model performance across complementary risk horizons (maximum risk, median sustained risk, percentage time in high-risk) to ensure fair, like-for-like model comparison, demonstrating how different architectures capture acute vs. long-term physiological instability.
-5. Implement transparent interpretability pathways (SHAP and gradient×input saliency) to ensure outputs remain clinically defensible, aligned with established physiological understanding, supporting clinician trust during decision-making and escalation.
+2. Compare classical vs. deep learning to quantify the added predictive value of temporal modelling by systematically comparing a static gradient-boosted decision tree model (LightGBM) against a temporal convolutional network (TCN) on the same patients and targets.
+3. Design dual feature engineering pipelines (timestamp-level for TCN, patient-level for LightGBM) incorporating temporal statistics, imputation, and missingness flags; aligned with real hospital data quality constraints.
+4. Evaluate model performance across 3 risk horizons to ensure fair model comparison, demonstrating how different architectures capture acute vs. long-term physiological instability.
+5. Implement transparent model-specific interpretability pathways (SHAP vs. saliency) to ensure outputs remain clinically aligned and defensible, supporting clinician trust during decision-making and escalation.
 6. Develop an end-to-end, deployment-lite inference system capable of running batch and per-patient predictions, enabling direct applicability to real-world ICU or ward settings.
 
 ### Key Technical Contributions
-- **ML Pipeline Construction:** Built a reproducible pipeline from raw EHR data, including feature extraction, NEWS2 computation (GCS→LOC mapping, CO₂ retainer identification, supplemental O₂ rules), and clinically interpretable timestamp- and patient-level features (LOCF, missingness flags, rolling windows, summary statistics).
+- **Dual-Model Feature Engineering:** Built a reproducible pipeline from raw EHR data, including feature extraction, NEWS2 computation (GCS→LOC mapping, CO₂ retainer and supplemental O₂ rules), and clinically interpretable timestamp- and patient-level features (LOCF, missingness flags, rolling windows, summary statistics).
 - **LightGBM Baselines:** Developed robust patient-level models with binary target handling for sparse classes, stratified cross-validation, and hyperparameter tuning for stable, reproducible performance.
-- **TCN Architecture:** Designed a multi-task temporal convolutional network for sequential ICU data, combining causal dilated convolutions, residual connections, and masked mean pooling for joint classification (max/median risk) and regression (% time high).
-- **Data-Driven Optimisations:** Applied target binarisation, log-transformed regression, threshold tuning, and missingness-aware features to handle sparse, irregular clinical datasets while preserving interpretability.
-- **Evaluation & Diagnostics:** Built unified evaluation utilities for reproducible, bias-free metrics; diagnosed and corrected subtle TCN metric misalignment to restore true ROC-AUC.
+- **TCN Architecture:** Designed multi-task temporal convolutional network for time-series data, combining causal dilated convolutions, residual connections, and masked mean pooling.
+- **Evaluation & Diagnostics:** Built unified evaluation utility for reproducible metrics; diagnosed and corrected TCN metric misalignment to restore true ROC-AUC.
 - **Model Retraining & Stability:** Implemented targeted TCN retraining with class-weighted BCE and log-transform regression, preserving architecture and hyperparameters while improving convergence and predictive reliability.
-- **Comprehensive Analysis Pipeline:** Executed unbiased test set inference, calibration/threshold tuning, structured CSV/JSON outputs, and cross-model comparative analysis for LightGBM vs TCN across classification and regression tasks.
-- **Interpretability & Deployment:** Delivered global SHAP feature explanations (LightGBM) and gradient×input saliency maps (TCN), aggregated top-10 features per target, and packaged a unified, lightweight inference pipeline supporting batch and interactive per-patient predictions with deterministic, dataset-agnostic outputs.
+- **Comprehensive Analysis Pipeline:** Executed unbiased test set inference, TCN calibration/threshold tuning, and cross-model comparative analysis for LightGBM vs. TCN.
+- **Interpretability & Deployment:** Delivered global SHAP feature explanations (LightGBM) and gradient×input saliency maps (TCN), and packaged a unified, lightweight inference pipeline supporting batch and interactive per-patient predictions with deterministic, dataset-agnostic outputs.
 
 ---
 
-## 3. Phase 1: Data Extraction & NEWS2 Computation
+## 3. Phase 1 - Data Extraction & NEWS2 Computation
 
 ### 3.1 Data Source: MIMIC-IV Demo (v2.2)
-- **Overview:** Medical Information Mart for Intensive Care (MIMIC)-IV database is comprised of deidentified electronic health records for patients admitted to the Beth Israel Deaconess Medical Center, taken from PhysioNet.org.
+- **Overview:** Medical Information Mart for Intensive Care (MIMIC)-IV database is comprised of deidentified patient electronic health records, taken from PhysioNet.org.
 - **Contents:** 26 tables of structured vital signs, labs, and admission data; excludes free-text clinical notes.
-- **Patients:** subset 100 ICU admissions (synthetic/de-identified subset)
+- **Patients:** 100 ICU admissions (de-identified subset)
 - **Tables used:** `chartevents`, `patients`, `admissions`, `d_items`
-- **Limitations:** Small sample size (full dataset contains >65,000 ICU admissions), limited high-risk events, synthetic distribution.
+- **Limitations:** Small sample size (full dataset contains >65,000 ICU admissions), limited high-risk events.
 
 ##
 ### 3.2 NEWS2 Pipeline Overview
@@ -197,11 +196,11 @@ All ABG measurements in `chartevents.csv` examined. Criteria (all must be met):
 - ABG measurements ±1 hour apart
 → Triggers SpO₂ Scale 2 (target 88-92% vs 94-98%). No patients in current dataset met criteria.
 ```
-2. **GCS → Level of Consciousness Mapping**
+2. **GCS → Level of Consciousness (LOC) Mapping**
 ```text
 Combine column scores (`GCS - Eye Opening`, `GCS - Verbal Response`, `GCS - Motor Response`) to create `gcs_total`. 
-- GCS ≥15: Alert
-- GCS <15: Not Alert
+- GCS ≥15: Alert (LOC = 0)
+- GCS <15: Not Alert (LOC = 3)
 → Non-alert states add +3 to NEWS2
 ```
 3. **Supplemental O₂ Detection**
@@ -214,7 +213,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 #### Output Format
 **Timestamp-level: `news2_scores.csv`**
 - One row per observation timestamp
-- Raw vitalis, ndividual parameter scores, total NEWS2 score
+- Raw vitals, individual parameter scores, total NEWS2 score
 - Supplemental O₂, CO₂ retainer, and consciousness/GCS labels.
 - Escalation risk category (low/medium/high), monitoring frequency, response.
 
@@ -224,8 +223,8 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 
 ---
 
-## 4. Phase 2: Feature Engineering (Timestamp & Patient-Level)
-**Goal:** Transform NEWS2 timestamp-level data into ML-ready features for tree-based models (LightGBM) and Neural Networks (TCN). Handle missing data, temporal continuity, and encode risk labels while preserving clinical interpretability
+## 4. Phase 2 - Feature Engineering (Timestamp & Patient-Level)
+**Purpose:** Transform NEWS2 timestamp-level data into ML-ready features for tree-based models (LightGBM) and Neural Networks (TCN). Handle missing data, temporal continuity, and encode risk labels while preserving clinical interpretability
 
 ```text
                               news2_scores.csv
@@ -250,6 +249,10 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
              ▼                                                   ▼
   LightGBM Model (Classical ML)                     Temporal Convolutional Network (TCN)                         
 ```
+
+- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
+- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
+
 ##
 ### 4.1 Timestamp-Level Features (for TCN)
 **Purpose:** Capture temporal dynamics for sequential modeling
@@ -276,6 +279,7 @@ Captures short-, medium-, and long-term deterioration patterns
 #### Output Format
 - **Timestamp-level:** `news2_features_timestamp.csv`
 - ML-ready per patient per timestamp features (ordered by `subject_id` and by `charttime`).
+- Full time-series per patient allows modelling of temporal patterns, trends, dynamics
 ```text 
 (total_timestamps, n_features) = (20,814 timestamps, 136 features)
 ``` 
@@ -299,8 +303,9 @@ Captures short-, medium-, and long-term deterioration patterns
   - `pct_time_high` = % time spent in high-risk state
 
 #### Output Format
-- **Patient-level:** `make_patient_features.py`
+- **Patient-level:** `news2_features_patient.csv`
 - ML-ready per patient aggregated summary features (ordered by `subject_id`)
+- One row per patient (fixed-length vector).
 ```text
 (n_patients, n_features) = (100, 43)
 ```
@@ -309,3 +314,190 @@ Captures short-, medium-, and long-term deterioration patterns
   - Summary features → `max_risk` + `median_risk` + `pct_time_high` = 3
 
 ---
+
+## 5. ML Modelling Strategy
+
+### Bimodal Architecture Rationale
+
+### Why This Matters Clinically
+- Acute detection: Requires sensitivity to short-term trend changes (TCN advantage)
+- Sustained risk: Requires calibrated probability estimates over full stay (LightGBM advantage)
+- Ensemble potential: Combine both signals for comprehensive early warning system
+---
+
+ML Model Selection
+-	**Options considered**:
+  -	Logistic Regression → easy to deploy and explainable but underpowered, tends to underperform on raw time-series vitals.
+  -	Deep learning (LSTMs/Transformers) → overkill, prone to overfitting with moderate datasets.
+  -	Boosted Trees (XGBoost / LightGBM / CatBoost) → robust for tabular ICU data, handle NaNs, train fast, interpretable.
+-	**Decision: LightGBM (Gradient Boosted Decision Tree (GBDT) library)**
+  - State-of-the-art for structured tabular data (EHR/ICU vitals is tabular + time-series).
+  -	Handles missing values natively (NaNs) → no additional imputation required (simpler pipeline).
+  -	Provides feature importances → interpretability for clinical review.
+  -	Easy to train/evaluate quickly → allows multiple experiments.
+
+**Model Roadmap Finalised**:
+   - **V1: LightGBM (Gradient Boosted Decision Trees)**  
+     - **Input**: `news2_features_patient.csv`.  
+     - **Output**: news2_features_patient.csv → LightGBM → AUROC, feature importances.
+     - One row per patient, interpretable, strong baseline.
+     - Very interpretable for clinicians (median HR, % missing SpO₂, % time high risk).  
+   - **V2: Neural Network (TCN – Temporal Convolutional Network)**  
+     - **Input**: `news2_features_timestamp.csv`.  
+     - **Output**: news2_features_timestamp.csv → TCN → sequence classification (predict escalation).
+     - Full time-series per patient, captures sequential deterioration patterns.
+     - Demonstrates modern advanced deep learning sequence modeling.  
+     - Shows can move from tabular ML → time-series DL progression.
+     - More impressive to interviewers / academics (future-proof).
+
+4. **Neural Network Model Selection**:
+   - **Considered**: LSTM/GRU, Transformers, TCN.  
+   - **Decision: TCN** because it handles long sequences efficiently, avoids vanishing gradients, and trains faster than RNNs.  
+   - **Requirements**: sequence padding, normalisation, masking for missingness. 
+
+### Neural Network Model Selection
+- **Options considered**:
+  - **Recurrent Neural Networks (LSTM / GRU)** → well-suited for sequences but prone to vanishing gradients on long ICU stays, slower to train.
+  - **Transformers** → powerful for long sequences, but overkill for moderate dataset size, computationally intensive.
+  - **Temporal Convolutional Networks (TCN)** → convolutional sequence modeling, parallelizable, captures long-term dependencies efficiently.
+- **Decision: TCN (Temporal Convolutional Network)**
+  - Ideal for time-series vitals data with sequential trends.
+  - Can handle long sequences without vanishing gradient issues like recurrent neural networks (RNN).
+  - Parallel convolutional operations → faster training than sequential RNNs.
+  - Compatible with timestamp-level features and missingness flags.
+- **Preprocessing requirements**:
+  - Sequence padding to unify input lengths.
+  - Normalisation of continuous vitals.
+  - Optional interpolation or masking for missing values.
+  - One-hot encoding of categorical labels if required.
+- **Strengths**:
+  - Captures temporal patterns and trends across patient stays.
+  - Expressive for sequence modeling where LightGBM may miss temporal dynamics.
+  - Empirically outperforms LSTM/GRU for moderate-length clinical sequences.
+- **Weaknesses / Limitations**:
+  - More computationally intensive than tree-based models.
+  - Less interpretable than LightGBM feature importances.
+  - Requires careful tuning of hyperparameters (kernel size, dilation, layers).
+- **Use case in pipeline**:
+  - Secondary model after LightGBM to capture fine-grained temporal trends.
+  - Useful for sequences where timestamp-level patterns predict escalation more accurately.
+
+ **Future-proofing with both feature sets ensures robustness and flexibility**:
+  - **LightGBM (V1)** → clinician-friendly, interpretable baseline.  
+  - **TCN (V2)** → modern DL, captures dynamics.  
+- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
+- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
+- Keeping both pipelines means we can mix (hybrid approaches) if needed (e.g., summary features + LSTM on sequences). 
+- LightGBM is often deployed first because it’s fast, robust, and interpretable, while the neural network is a v2 that might improve performance. 
+
+### Portfolio story
+- **LightGBM (v1)**: We started with patient-level aggregation to establish a baseline model that is interpretable and fast to train. This gives clinicians an overview of which vitals and risk patterns matter most.
+- **Neural Network (TCN)(v2)**: Once we had a solid baseline, we moved to a temporal convolutional network to directly learn time-dependent deterioration patterns from patient trajectories. This captures dynamics that aggregated features can’t.
+
+
+---
+
+## 6. Phase 3 — LightGBM Pipeline: Baseline Modelling & Hyperparameter Tuning
+
+**Purpose:** Establish classical ML baseline, identify dataset properties, and produce stable hyperparameters for downstream evaluation.
+
+```text
+                                      news2_features_patient.csv
+                                                  │
+              ┌──────────────────────────┬────────┴───────────────┬───────────────────────┐
+  complete_train_lightgbm.py    feature_importance.py   train_final_models.py       tune_models.py
+              │                          │                        │                       │
+              ▼                          ▼                        ▼                       ▼
+  Preprocessing + CV Training   Feature Importance      Final Models               Hyperparameter Tuning
+  (baseline models)             (per-fold)              (3 deployed LGBMs)         (only retained output)
+  - Class collapse +            - Aggregated across     - Full-dataset models      - 5-fold CV grid search
+  binarisation                  folds                   - Deployment-ready .pkls   - Tuning run logs per target
+  - 5-fold CV (15 models)       - Bar plots + CSVs                │                - best_params.json
+  - Fold metrics                       │                          │                       │
+              │                        │                          │                       │
+              ▼                        ▼                          ▼                       ▼
+    Superseded by Phase 5     Superseded by Phase 6     Superseded by Phase 5    Retained for Phase 5
+    (evaluation pipeline)     (SHAP interpretability)   (retraining)             (retraining and evaluation) 
+```
+
+### 6.1 Overview
+**Pipeline Summary**
+- **Class handling:** Identified severe class imbalance and rare-events carcity → applied target binarisation and stratified 5-fold CV to stabilise evaluation.
+- **Baseline modelling:** Trained initial LightGBM classifiers/regressors on patient-level features (5-fold CV → 15 baseline models + metrics).
+- **Hyperparameter tuning:** Per-target tuning of `learning_rate`, `max_depth`, `n_estimators`, `min_data_in_leaf` → produced `best_params.json` used in later phases.
+-	**Feature importance:** Generated fold-averaged LightGBM feature importance to confirm model signal (later superseded by Phase 6 SHAP).
+-	**Final models:** Trained full-cohort deployment-style final models using tuned hyperparameters (later superseded by Phase 5 retraining).
+
+### 6.2 Baseline Cross-Validation 
+- A 5-fold CV LightGBM baseline was run to validate pipeline correctness, expose dataset issues, and establish a minimal working baseline before tuning.
+- **Models were trained on `news2_features_patient.csv` for 3 targets:**
+  - Classification: `max_risk` + `median_risk` → 5-fold StratifiedKFold
+  - Regression: `pct_time_high` → 5-fold KFold
+- **Baseline runs revealed major dataset properties:**
+	- Strong class imbalance and rare-event sparsity.
+	- Clinically expected: severe deterioration (max_risk=3) and sustained high-risk burden are uncommon.
+- **Required class consolidation + binarisation:**
+	-	`max_risk`: (0/1/2 → 0 [not high risk]), (3 → 1 [high risk])
+	-	`median_risk`: (0/1 → 0 [low risk]), (2 → 1 [medium risk]), (3 removed [no high risk])
+	-	Binarisation improves model stability, simplifies clinical interpretation, and aligns with binary alert systems.
+- StratifiedKFold was essential to ensure each fold contained minority-class examples, avoid folds with absent classes, and reduce evaluation variance; critical with only 100 patients.
+- Identifying these issues early ensured consistent binarisation and stratified sampling throughout later phases, making subsequent pipelines robust and reproducible on small, imbalanced clinical datasets.
+
+### 6.3 Hyperparameter Tuning
+- This is the only Phase 3 component used in later phases (Phase 5 LightGBM evaluation).
+- Tuned the four parameters with the highest impact on stability and generalisation for small tabular datasets:
+	- `learning_rate` → controls step size; balances speed vs overfitting.
+	- `max_depth` / `num_leaves` → limits tree complexity; prevents overfitting small dataset.
+	- `n_estimators` → total number of trees.
+	-	`min_data_in_leaf` → ensures each leaf has enough samples, 
+-	**5-fold CV evaluation:**
+	-	Classification (`max_risk`, `median_risk`) → AUROC / Accuracy
+	-	Regression (`pct_time_high`) → RMSE
+- **Why tuning was essential:**
+	-	Only 100 patients → high overfitting risk.
+	-	These parameters dominate LightGBM performance on small data.
+	-	Ensures LightGBM is fairly compared against TCN models in later phases.
+- Generates stable, reproducible, validated parameter sets that optimise baseline performance without overfitting, especially critical with only 100 patients.
+
+#### Best hyperparameters
+
+| Target         | learning_rate | max_depth | n_estimators | min_data_in_leaf |
+|----------------|---------------|-----------|--------------|-------------------|
+| **max_risk**       | 0.1           | 5         | 50           | 20                |
+| **median_risk**    | 0.05          | 5         | 100          | 5                 |
+| **pct_time_high**  | 0.1           | 3         | 200          | 5                 |
+
+
+### 6.4 Feature Importance
+- Fold-level LightGBM feature importance was generated to confirm that models were learning meaningful clinical signal and to verify early pipeline sanity.
+- Provided an initial interpretability check and highlighted key predictors per target.
+- These plots served as exploratory, legacy interpretability and were later superseded by SHAP analysis in Phase 6.
+
+### 6.5 Deployment-style LightGBM models 
+-	Trained one final model per target (3 total) on the full cohort using tuned hyperparameters.
+-	Maximised use of all available data and produced deployment-ready artefacts for demonstration of real-world deployment practice.
+- These models served as complete baseline artefacts, although final benchmarking used the unified evaluation pipeline in phase 5, not these models.
+- These final models validate pipeline completeness and full ML workflow coverage (baseline → tuning → deployment) even if later superseded by retraining in phase 5.
+
+### 6.6 Summary 
+#### Retained Outputs
+
+| Item                                | Rationale                                                     |
+|-------------------------------------|----------------------------------------------------------------|
+| **Hyperparameters (`best_params.json`)** | Used in Phase 5 LightGBM–TCN fair comparison                  |
+
+#### Superseded Outputs
+
+| Item                                | Replaced By / Reason                                          |
+|-------------------------------------|----------------------------------------------------------------|
+| Baseline 5-fold models              | Phase 5 retrained models on same split as TCN                   |
+| Fold-level feature importance       | Phase 6 SHAP (model-consistent interpretability)              |
+| Full-cohort final models            | Phase 5 retrained models on same split as TCN                 |
+
+### Why Phase 3 Matters
+- Phase 3 established the first credible classical ML baseline, exposed the dataset’s true behaviour, and produced the validated LightGBM hyperparameters reused in final benchmarking. 
+- It delivered the two foundations that shaped all later phases:
+	-	Target binarisation (after diagnosing rare-event imbalance).
+	-	Stable tuned hyperparameters (ensuring fair LightGBM vs TCN comparison).
+- Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing, confirmed learnable signal, and grounded the project in rigorous baseline modelling before moving to temporal architectures.
+
