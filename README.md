@@ -63,6 +63,7 @@ Although the national standard for deterioration detection, NEWS2 has well-recog
 - **Escalation overload:** Threshold-based triggers produce high false-positive rates in elderly and multimorbid cohorts, contributing to alert burden and escalation fatigue.
 - **Limited predictive horizon:** Escalation only occurs after thresholds are breached, restricting early-warning capability.
 
+##
 ### Clinical Escalation Context
 NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
@@ -86,6 +87,7 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
   - `pct_time_high`: Percentage of time spent in high-risk state  
 - Evaluating ML predictions against these NEWS2-derived outcomes allows assessment of **predictive horizon**, **sensitivity**, and the ability to anticipate **clinically actionable deterioration trends** before standard escalation would occur.
 
+##
 ### Why Machine Learning?
 ICU deterioration involves complex and often subtle, multivariate temporal patterns that standard threshold-based systems cannot fully capture. Machine learning enables prediction of clinically meaningful NEWS2-derived outcomes using both static and temporal representations of patient physiology.
 
@@ -147,6 +149,7 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 - **Tables used:** `chartevents`, `patients`, `admissions`, `d_items`
 - **Limitations:** Small sample size (full dataset contains >65,000 ICU admissions), limited high-risk events, synthetic distribution.
 
+##
 ### 3.2 NEWS2 Pipeline Overview
 **Goal:** Extract relevant vital signs, encode clinical rules, compute NEWS2 scores per timestamp and per patient producing reproducible outputs for feature engineering.
 
@@ -166,6 +169,7 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
   news2_scores.csv (timestamp-level)   news2_patient_summary.csv (patient-level)
 ```
 
+##
 ### 3.3 Clinical Feature Extraction & NEWS2 Computation
 
 The pipeline extracts all NEWS2-relevant physiological variables using universal encoding labels, including custom CO2 retainer logic implementation. NEWS2 parameter scoring and total scoring is implemented, with both timestamp-level and patient-level files being created.
@@ -208,15 +212,15 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 → Any supplemental O₂ adds +2 to NEWS2
 ```
 #### Output Format
-1. **Timestamp-level: `news2_scores.csv`**
-  - One row per observation timestamp
-  - Raw vitalis, ndividual parameter scores, total NEWS2 score
-  - Supplemental O₂, CO₂ retainer, and consciousness/GCS labels.
-  - Escalation risk category (low/medium/high), monitoring frequency, response.
+**Timestamp-level: `news2_scores.csv`**
+- One row per observation timestamp
+- Raw vitalis, ndividual parameter scores, total NEWS2 score
+- Supplemental O₂, CO₂ retainer, and consciousness/GCS labels.
+- Escalation risk category (low/medium/high), monitoring frequency, response.
 
-2. **Patient-level: `news2_patient_summary.csv`**
-  - **Per-patient aggregations:** min, max, mean, median, total number of timestamps
-  - Summary statistics per patient.
+**Patient-level: `news2_patient_summary.csv`**
+- **Per-patient aggregations:** min, max, mean, median, total number of timestamps
+- Summary statistics per patient.
 
 ---
 
@@ -276,21 +280,21 @@ Captures short-, medium-, and long-term deterioration patterns
 ```text 
 (total_timestamps, n_features) = (20,814 timestamps, 136 features)
 ``` 
-**171 features =**
-- Rolling windows: 5 vitals x 3 windows x 6 stats = 90
-- 8 vitals (staleness + missingness flag + LOCF flag) = 24
-- 14 raw clinical signals + 3 derived clinical labels = 17
-- NEWS2: NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
+- **171 features =**
+  - Rolling windows: 5 vitals x 3 windows x 6 stats = 90
+  - 8 vitals (staleness + missingness flag + LOCF flag) = 24
+  - 14 raw clinical signals + 3 derived clinical labels = 17
+  - NEWS2: NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
 
 ##
 ### 4.2 Patient-Level Features (for LightGBM)
 **Purpose:** Aggregated risk profile for interpretable tree-based modeling
 
 #### Feature Computation
-- **Vital Sign Aggregations (per Parameter):** Median, mean, min, max
-- **Patient-specific Median Imputation**: Fill missing values for each vital (preserves patient-specific patterns), if a patient never had a vital recorded, fall back to population median.
-- **% Missingness per Vital:** track proportion of missing values pre-imputation, data quality indicator, signal from incomplete measurement pattern.
-- **Escalation Summary Metrics:** convert risk label to numeric then compute
+- **Vital sign aggregations (per parameter):** Median, mean, min, max
+- **Patient-specific median imputation**: Fill missing values for each vital (preserves patient-specific patterns), if a patient never had a vital recorded, fall back to population median.
+- **% Missingness per vital:** track proportion of missing values pre-imputation, data quality indicator, signal from incomplete measurement pattern.
+- **Escalation summary metrics:** convert risk label to numeric then compute
   - `max_risk` = maximum risk attained
   - `median_risk`= average sustained risk
   - `pct_time_high` = % time spent in high-risk state
@@ -301,8 +305,8 @@ Captures short-, medium-, and long-term deterioration patterns
 ```text
 (n_patients, n_features) = (100, 43)
 ```
-**43 features =**
-- 8 vitals × (median + mean + min + max + % missing) = 40
-- Summary features: `max_risk` + `median_risk` + `pct_time_high` = 3
+- **43 features =**
+  - 8 vitals × (median + mean + min + max + % missing) = 40
+  - Summary features: `max_risk` + `median_risk` + `pct_time_high` = 3
 
 ---
