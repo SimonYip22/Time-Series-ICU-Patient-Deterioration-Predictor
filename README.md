@@ -47,7 +47,7 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 
 ## 1. Clinical Background & Motivation
 
-### The Problem
+### 1.1 The Problem
 ICU patient deterioration often emerges through subtle physiological changes hours before critical events. The National Early Warning Score 2 (NEWS2) is widely used in UK hospitals to detect and escalate care for deteriorating patients. Accurate, real-time scoring and risk stratification can:
 - Enable earlier intervention and ICU escalation
 - Support clinical decision-making with actionable, interpretable metrics
@@ -64,7 +64,7 @@ Although the national standard for deterioration detection, NEWS2 has well-recog
 - **Limited predictive horizon:** Escalation only occurs after thresholds are breached, restricting early-warning capability.
 
 ##
-### Clinical Escalation Context
+### 1.2 Clinical Escalation Context
 NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
 | NEWS2 Score                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
@@ -88,7 +88,7 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
 - Evaluating ML predictions against these NEWS2-derived outcomes allows assessment of **predictive horizon**, **sensitivity**, and the ability to anticipate **clinically actionable deterioration trends** before standard escalation would occur.
 
 ##
-### Why Machine Learning?
+### 1.3 Why Machine Learning Is Used
 ICU deterioration involves complex and often subtle, multivariate temporal patterns that standard threshold-based systems cannot fully capture. Machine learning enables prediction of clinically meaningful NEWS2-derived outcomes using both static and temporal representations of patient physiology.
 
 | Model | Type   | Input Features   | Modelling Type   | Strengths     | Weaknesses     | Interpretability |
@@ -96,22 +96,22 @@ ICU deterioration involves complex and often subtle, multivariate temporal patte
 | **LightGBM** | Gradient-Boosted Decision Tree (GBDT) | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
 | **TCN** | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | Requires high-resolution data, slower to train | Saliency (grad×input) |
 
-#### LightGBM (classical machine learning)
-- Strong baseline for tabular clinical data
-- Captures nonlinear interactions between vital signs  
-- Fast to train and tune, handles missing data robustly
-- Highly interpretable via SHAP  
+#### LightGBM (Classical ML)
+- Strong baseline for structured, tabular data like patient-level aggregations of vitals and summary statistics.
+- Captures non-linear interactions between vital signs  
+- Fast to train and tune, handles missing values natively
+- Highly interpretable via SHAP, critical for clinician understanding  
 - Often competitive or superior when temporal structure is weak  
 
-#### TCN (temporal deep learning)
+#### TCN (Temporal Deep Learning)
 - Models long-range temporal context and time-dependent patterns
-- Robust to irregular sampling  
-- Potentially detects subtle deterioration earlier than threshold-based approaches  
+- Robust to irregular sampling frequency (measurement intervals)
+- Learns patterns in timestamp-level features, detecting short-term deterioration trends and acute changes that static models may miss.
 
-#### Why compare both?
+#### Why Compare Both?
 - LightGBM evaluates performance on aggregated, low-frequency data.
 - TCN uses temporal modelling to capture complex, sequential patterns.
-- Comparison reflects realistic deployment: classical ML may suffice for lower-frequency ward data, whereas temporal models exploit high-resolution ICU monitoring to detect early deterioration.
+- Comparison reflects realistic deployment: classical ML may suffice for long-term sustained deterioration patterns, whereas temporal models exploit high-resolution monitoring to detect early deterioration.
 - This identifies where temporal modelling adds value, where classical ML suffices, and the trade-offs between performance and interpretability.
 
 This project therefore systematically evaluates temporal vs. non-temporal ML approaches for predicting ICU deterioration using clinically meaningful NEWS2-derived targets.
@@ -120,7 +120,7 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 
 ## 2. Project Goals & Contributions
 
-### Primary Objectives
+### 2.1 Primary Objectives
 1. Establish a clinically validated deterioration-prediction framework by using NEWS2-derived risk categories as the reference standard for all model targets and evaluation.
 2. Compare classical vs. deep learning to quantify the added predictive value of temporal modelling by systematically comparing a static gradient-boosted decision tree model (LightGBM) against a temporal convolutional network (TCN) on the same patients and targets.
 3. Design dual feature engineering pipelines (timestamp-level for TCN, patient-level for LightGBM) incorporating temporal statistics, imputation, and missingness flags; aligned with real hospital data quality constraints.
@@ -128,7 +128,7 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 5. Implement transparent model-specific interpretability pathways (SHAP vs. saliency) to ensure outputs remain clinically aligned and defensible, supporting clinician trust during decision-making and escalation.
 6. Develop an end-to-end, deployment-lite inference system capable of running batch and per-patient predictions, enabling direct applicability to real-world ICU or ward settings.
 
-### Key Technical Contributions
+### 2.2 Key Technical Contributions
 - **Dual-Model Feature Engineering:** Built a reproducible pipeline from raw EHR data, including feature extraction, NEWS2 computation (GCS→LOC mapping, CO₂ retainer and supplemental O₂ rules), and clinically interpretable timestamp- and patient-level features (LOCF, missingness flags, rolling windows, summary statistics).
 - **LightGBM Baselines:** Developed robust patient-level models with binary target handling for sparse classes, stratified cross-validation, and hyperparameter tuning for stable, reproducible performance.
 - **TCN Architecture:** Designed multi-task temporal convolutional network for time-series data, combining causal dilated convolutions, residual connections, and masked mean pooling.
@@ -250,7 +250,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
   LightGBM Model (Classical ML)                     Temporal Convolutional Network (TCN)                         
 ```
 
-- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
+- **Timestamp-level features** = richest representation, essential for sequence models / deep learning. Captures short-, medium-, and long-term deterioration patterns.
 - **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
 
 ##
@@ -258,10 +258,8 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 **Purpose:** Capture temporal dynamics for sequential modeling
 
 #### Imputation Strategy
-- **Missingness flags:** Binary indicators (1/0) for each vital parameter (1 if value was carried forward) so models can learn from missing patterns.
-- **LOCF (Last Observation Carried Forward) flags:** Propagate previous valid measurement, and create a carried-forward flag (binary 1/0).
-
-Missingness flag before carried-forward fill so that it is known which values were originally missing
+- **Missingness flags:** Binary indicators (1/0) for each vital parameter (value carried forward=1) so models can learn from missing patterns. Before carried-forward so that it is known which values were originally missing.
+- **LOCF (Last Observation Carried Forward) flags:** Propagate previous valid measurement, and create a binary carried-forward flag (binary 1/0). 
 
 #### Rolling Window Features (1/4/24h)
 - **Mean:** Average value
@@ -269,8 +267,6 @@ Missingness flag before carried-forward fill so that it is known which values we
 - **Std**: Variability
 - **Slope:** Linear trend coefficient
 - **AUC (Area Under Curve):** Integral of value over time
-
-Captures short-, medium-, and long-term deterioration patterns
 
 #### Other Features
 - **Staleness:** Time since last observation (staleness per vital)
@@ -317,54 +313,88 @@ Captures short-, medium-, and long-term deterioration patterns
 
 ## 5. ML Modelling Strategy
 
-### Bimodal Architecture Rationale
+### 5.1 Bimodal Architecture Rationale
+#### Overview Table
+| Model      | Input Resolution                | Architecture Type                | Mechanism                                                                 | Primary Strength                                        | Clinical Application                                             |
+|------------|---------------------------------|---------------------------------|---------------------------------------------------------------------------|--------------------------------------------------------|-----------------------------------------------------------------|
+| **LightGBM** | Patient-aggregated (40 features) | Gradient-boosted decision trees | Builds an ensemble of decision trees sequentially using gradient-based optimization; each tree corrects residual errors of previous trees to minimize loss | Calibrated probability estimates, strong interpretability, robust baseline | Sustained risk stratification, resource allocation, triage scoring |
+| **TCN**      | Timestamp-sequential (96×171 tensor) | Temporal convolutional network | Applies causal, dilated convolutions with residual connections over sequential inputs to capture long-range temporal dependencies efficiently | Temporal pattern detection, high acute-event sensitivity | Real-time monitoring, rapid deterioration alerts, dynamic forecasting |
 
-### Why This Matters Clinically
-- Acute detection: Requires sensitivity to short-term trend changes (TCN advantage)
-- Sustained risk: Requires calibrated probability estimates over full stay (LightGBM advantage)
-- Ensemble potential: Combine both signals for comprehensive early warning system
----
+#### Narrative Motivation
+- **LightGBM (Classical ML):** Establishes transparent, clinician-interpretable baseline and identifies which vitals matter most at the patient-level.
+- **TCN (Deep Learning):** Advances to time-series modeling which captures temporal dependencies, demonstrating how deterioration unfolds dynamically over time
+- Combining the two showcases progression from classical tabular ML → modern sequence-level deep learning, proving competence across both paradigms.
 
-ML Model Selection
--	**Options considered**:
-  -	Logistic Regression → easy to deploy and explainable but underpowered, tends to underperform on raw time-series vitals.
-  -	Deep learning (LSTMs/Transformers) → overkill, prone to overfitting with moderate datasets.
-  -	Boosted Trees (XGBoost / LightGBM / CatBoost) → robust for tabular ICU data, handle NaNs, train fast, interpretable.
--	**Decision: LightGBM (Gradient Boosted Decision Tree (GBDT) library)**
-  - State-of-the-art for structured tabular data (EHR/ICU vitals is tabular + time-series).
-  -	Handles missing values natively (NaNs) → no additional imputation required (simpler pipeline).
-  -	Provides feature importances → interpretability for clinical review.
-  -	Easy to train/evaluate quickly → allows multiple experiments.
+#### Clinical Motivation
+- **Acute detection:** Requires high-sensitivity to short-term trend changes (TCN advantage)
+- **Sustained risk:** Requires calibrated probability estimates over full stay (LightGBM advantage)
+- Dual architecture approach represents two distinct clinical tasks; sustained risk assessment + acute monitoring, pipeline leverages each model's inherent strengths by aligning to its optimal prediction task.
 
-**Model Roadmap Finalised**:
-   - **V1: LightGBM (Gradient Boosted Decision Trees)**  
-     - **Input**: `news2_features_patient.csv`.  
-     - **Output**: news2_features_patient.csv → LightGBM → AUROC, feature importances.
-     - One row per patient, interpretable, strong baseline.
-     - Very interpretable for clinicians (median HR, % missing SpO₂, % time high risk).  
-   - **V2: Neural Network (TCN – Temporal Convolutional Network)**  
-     - **Input**: `news2_features_timestamp.csv`.  
-     - **Output**: news2_features_timestamp.csv → TCN → sequence classification (predict escalation).
-     - Full time-series per patient, captures sequential deterioration patterns.
-     - Demonstrates modern advanced deep learning sequence modeling.  
-     - Shows can move from tabular ML → time-series DL progression.
-     - More impressive to interviewers / academics (future-proof).
+#### Future Clinical Deployment Strategy
+1. LightGBM runs at admission → baseline, interpretable risk stratification (resource planning)
+2. TCN runs continuously → real-time continuous temporal monitoring (acute alerts)
+3. Ensemble logic → hybrid alert triggers if either model exceeds threshold (maximizes sensitivity)
+4. Calibration layer → Map TCN probabilities to LightGBM-aligned scale via isotonic regression
 
-4. **Neural Network Model Selection**:
-   - **Considered**: LSTM/GRU, Transformers, TCN.  
-   - **Decision: TCN** because it handles long sequences efficiently, avoids vanishing gradients, and trains faster than RNNs.  
-   - **Requirements**: sequence padding, normalisation, masking for missingness. 
+This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
 
-### Neural Network Model Selection
-- **Options considered**:
-  - **Recurrent Neural Networks (LSTM / GRU)** → well-suited for sequences but prone to vanishing gradients on long ICU stays, slower to train.
-  - **Transformers** → powerful for long sequences, but overkill for moderate dataset size, computationally intensive.
-  - **Temporal Convolutional Networks (TCN)** → convolutional sequence modeling, parallelizable, captures long-term dependencies efficiently.
-- **Decision: TCN (Temporal Convolutional Network)**
-  - Ideal for time-series vitals data with sequential trends.
-  - Can handle long sequences without vanishing gradient issues like recurrent neural networks (RNN).
-  - Parallel convolutional operations → faster training than sequential RNNs.
-  - Compatible with timestamp-level features and missingness flags.
+**Future-proofing with both feature sets ensures robustness and flexibility**:
+  - **LightGBM (V1)** → clinician-friendly, interpretable baseline.  
+  - **TCN (V2)** → modern DL, captures dynamics.  
+- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
+- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
+- Keeping both pipelines means we can mix (hybrid approaches) if needed (e.g., summary features + LSTM on sequences). 
+- LightGBM is often deployed first because it’s fast, robust, and interpretable, while the neural network is a v2 that might improve performance. 
+
+### Portfolio story
+- **LightGBM (v1)**: We started with patient-level aggregation to establish a baseline model that is interpretable and fast to train. This gives clinicians an overview of which vitals and risk patterns matter most.
+- **Neural Network (TCN)(v2)**: Once we had a solid baseline, we moved to a temporal convolutional network to directly learn time-dependent deterioration patterns from patient trajectories. This captures dynamics that aggregated features can’t.
+
+
+##
+### 5.2 Baseline Model Selection
+#### Classical Architectures Considered
+| Classical Model   | Strengths                              | Limitations                                      | Decision Rationale                                     |
+|------------------|----------------------------------------|-------------------------------------------------|------------------------------------------------------------|
+| Logistic Regression (Linear) | Simple, fast, easy to deploy, interpretable coefficients | Linear assumptions; cannot model non-linear vital-sign interactions, tends to underperform on raw time-series vitals | Insufficient for complex ICU physiological patterns |
+| Random Forest (Bagged Trees) | Robust, ensemble tree-based method; handles nonlinearities; less sensitive to scaling | Slower and less sample-efficient than boosted trees; weaker performance on small datasets | Boosted trees outperform on structured EHR data |
+| XGBoost (Boosted Trees) | Industry-standard GBDT; good regularisation; mature ecosystem | Slower training, higher memory usage | Comparable, but suboptimal for small 100-patient dataset |
+| CatBoost (Boosted Trees) | Excellent handling of categorical features; stable training | Benefits irrelevant when features are already numeric | No categorical variables → added complexity gives no gain |
+| LightGBM (Boosted Trees) | Fastest GBDT, highly efficient, handles NaNs natively, efficient SHAP integration | Requires careful hyperparameter tuning to avoid overfitting on small samples | Best choice for small tabular datasets with missingness |
+
+#### Decision: LightGBM (Gradient Boosted Decision Tree (GBDT) library)
+- Most efficient GBDT for small tabular datasets → faster and lighter than XGBoost/CatBoost, ideal for a 100-patient regime.
+- Native missing-value handling (NaNs) → tree-splitting logic automatically routes missing values, avoiding imputation pipelines (beyond simple patient-median fallback).
+- Rapid training/evaluation → enables fast experimentation and iteration across multiple targets and CV folds.
+- Efficient SHAP integration for interpretability → SHAP values directly explain tree splits, giving exact feature attribution, critical for clinical transparency. 
+- Proven performance → boosted trees consistently outperform linear models and shallow learners on structured EHR/ICU tabular data
+
+##
+### 5.3 Advanced Deep Learning Model Selection
+#### Neural Network Architectures Considered
+| Neural Networks               | Strengths                                       | Limitations                                                      | Decision Rationale                          |
+|--------------------|-------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------|
+| LSTM/GRU (Recurrent) | Well-suited for sequences, handles variable-length inputs | Vanishing gradients on long sequences, slow sequential training | Unstable on 24-hour ICU sequences, computationally inefficient, dataset too small for deep LSTM stacks |
+| Transformer (Self-attention) | Powerful for long sequences, models global dependencies | Requires large datasets for self-attention to learn effectively, computationally intensive, prone to overfitting | Overkill for small dataset; unnecessary complexity |
+| TCN (Convolutional) | Parallelizable, dilated convolutions, stable gradients, captures long-range temporal dependencies | Requires sequence padding, normalisation, masking for missingness | Efficient and robust for small-sample ICU time-series; best balance of performance and practicality | 
+
+| Specialised/Niche               | Strengths                                       | Limitations                                                      | Decision Rationale                        |
+|--------------------|-------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------|
+| Neural ODE (continuous-time) | Continuous-time dynamics instead of discrete layers | Niche research technique, slow, unstable complex training (ODE solvers) | Rarely production-ready, not clinically validated |
+| Graph Neural Network (GNN) | Models patient-patient or hospital network relationships | Requires graph structure, not sequences or grids; operates on node/edges | Inapplicable to independent patient time-series |
+| WaveNet (autoregressive) | Deep, heavy convolutional autoregressive model for audio | Designed for massive datasets (speech), computationally huge | Impractical and slow for 100-patient clinical dataset |
+
+#### Decision: TCN (Temporal Convolutional Neural Network)
+- handles long sequences efficiently Ideal for time-series vitals data with sequential trends, Compatible with timestamp-level features and missingness flags.
+- TCN has inductive bias for local temporal patterns (appropriate for vital signs)
+- Better performance on small datasets (fewer parameters and Lower infernece computational cost than trasnformers)
+- Parallel convolutional operations → faster training than sequential RNNs.
+- Dilated causal convolutions ideal for capturing physiological context windows (no future leakage), Long effective receptive field 
+- Stable gradients: Residual connections prevent vanishing/exploding gradients issues like recurrent neural networks (RNN).
+- Provides temporal saliency maps showing when features became important (interpretability over time)
+- Clinically credible: Strong benchmark in published clinical time-series papers (not exotic/untested like Neural ODEs, GNNs or WaveNet)
+
+
 - **Preprocessing requirements**:
   - Sequence padding to unify input lengths.
   - Normalisation of continuous vitals.
@@ -382,17 +412,26 @@ ML Model Selection
   - Secondary model after LightGBM to capture fine-grained temporal trends.
   - Useful for sequences where timestamp-level patterns predict escalation more accurately.
 
- **Future-proofing with both feature sets ensures robustness and flexibility**:
-  - **LightGBM (V1)** → clinician-friendly, interpretable baseline.  
-  - **TCN (V2)** → modern DL, captures dynamics.  
-- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
-- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
-- Keeping both pipelines means we can mix (hybrid approaches) if needed (e.g., summary features + LSTM on sequences). 
-- LightGBM is often deployed first because it’s fast, robust, and interpretable, while the neural network is a v2 that might improve performance. 
+### Why Temporal Convolutional Network (TCN)?
+- TCN is a modern sequence model that is complex enough to impress recruiters but not so niche or exotic that it looks gimmicky.
+- **Why not other neural networks?**
+  - **LSTM/GRU**: older, sequentially unrolled models → training is slow, vanishing gradients, weaker for long sequences.
+  - **Transformers (BERT-style, GPT-style)**: dominant in NLP, too heavy for our dataset (100 patients, not millions of tokens). Would look like overkill and raise “did we really need this?” questions.
+- **Why not more niche/exotic neural networks?**
+  - **Neural ODEs (Ordinary Differential Equations)**: continuous-time dynamics models. Very niche, rarely used in production.
+	- **Graph Neural Networks (GNNs)**: great if we are model hospital networks or patient similarity graphs, but not necessary for ICU vitals.
+	- **WaveNet-style autoregressive models**: very heavy, Google’s original audio model, impractical for our dataset size.
+	- **Attention-only architectures**: flashy but raise “did he just copy a paper?” questions.
+- These are the ones that would look impressive to a PhD audience but gimmicky / overkill to recruiters, they won’t credit more for using these. They’ll think we're chasing buzzwords instead of showing clinical + ML maturity.
+- **TCN is advanced, technically impressive, clinically relevant, and justified for the EHR time-series dataset**:
+	-	**Causal convolutions** → predictions at time t only depend on past, not future.
+	-	**Dilated convolutions** → exponential receptive field, captures long ICU sequences.
+	-	**Parallel training** → faster and more scalable than RNNs.
+	-	**Strong benchmark in clinical time-series papers** → credible.
 
-### Portfolio story
-- **LightGBM (v1)**: We started with patient-level aggregation to establish a baseline model that is interpretable and fast to train. This gives clinicians an overview of which vitals and risk patterns matter most.
-- **Neural Network (TCN)(v2)**: Once we had a solid baseline, we moved to a temporal convolutional network to directly learn time-dependent deterioration patterns from patient trajectories. This captures dynamics that aggregated features can’t.
+
+
+
 
 
 ---
@@ -434,14 +473,18 @@ ML Model Selection
   - Classification: `max_risk` + `median_risk` → 5-fold StratifiedKFold
   - Regression: `pct_time_high` → 5-fold KFold
 - **Baseline runs revealed major dataset properties:**
-	- Strong class imbalance and rare-event sparsity.
-	- Clinically expected: severe deterioration (max_risk=3) and sustained high-risk burden are uncommon.
+	- Strong class imbalance and rare-event sparsity in both classification targets `max_risk` + `median_risk`.
+	- Clinically expected: severe deterioration (`max_ris`k=3) and sustained high-risk burden are uncommon.
 - **Required class consolidation + binarisation:**
-	-	`max_risk`: (0/1/2 → 0 [not high risk]), (3 → 1 [high risk])
-	-	`median_risk`: (0/1 → 0 [low risk]), (2 → 1 [medium risk]), (3 removed [no high risk])
 	-	Binarisation improves model stability, simplifies clinical interpretation, and aligns with binary alert systems.
-- StratifiedKFold was essential to ensure each fold contained minority-class examples, avoid folds with absent classes, and reduce evaluation variance; critical with only 100 patients.
+- **Required StratifiedKFold:**
+  - Essential to ensure each fold contained minority-class examples, avoid folds with absent classes, and reduce evaluation variance; critical with only 100 patients.
 - Identifying these issues early ensured consistent binarisation and stratified sampling throughout later phases, making subsequent pipelines robust and reproducible on small, imbalanced clinical datasets.
+
+| Target         | Original Classes        | Consolidated Classes                       | Binary Encoding Used in Training |
+|----------------|--------------------------|---------------------------------------------|----------------------------------|
+| **max_risk**   | 0, 1, 2, 3               | 0/1/2 → 2 (not high risk), 3 → 3 (high risk) | 2 → 0, 3 → 1                     |
+| **median_risk**| 0, 1, 2, 3               | 0+1 → 1 (low), 2 → 2 (medium), 3 removed (no high risk in data) | 1 → 0, 2 → 1                     |
 
 ### 6.3 Hyperparameter Tuning
 - This is the only Phase 3 component used in later phases (Phase 5 LightGBM evaluation).
@@ -496,8 +539,23 @@ ML Model Selection
 
 ### Why Phase 3 Matters
 - Phase 3 established the first credible classical ML baseline, exposed the dataset’s true behaviour, and produced the validated LightGBM hyperparameters reused in final benchmarking. 
-- It delivered the two foundations that shaped all later phases:
+- **It delivered the two foundations that shaped all later phases:**
 	-	Target binarisation (after diagnosing rare-event imbalance).
 	-	Stable tuned hyperparameters (ensuring fair LightGBM vs TCN comparison).
 - Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing, confirmed learnable signal, and grounded the project in rigorous baseline modelling before moving to temporal architectures.
 
+---
+
+### How Temporal Convolutional Network (TCN) Works
+**Temporal awareness**:
+-	Causal convolutions → at each time step, the model only looks backwards in time (no data leakage from the future).
+-	Dilated convolutions → skip connections expand the receptive field exponentially, letting the model capture long patient histories without deep stacking (without needing hundreds of layers).
+**Stable training**:
+- Residual blocks → stabilise training, prevent vanishing/exploding gradients, making the deep temporal model easier to optimise.
+**From sequences to predictions**:
+-	Global pooling → compresses the sequence into a single fixed-length representation.
+-	Dense output layer → produces prediction:
+  -	Sigmoid activation → binary classification (max_risk, median_risk).
+  -	Linear activation → regression (pct_time_high).
+-	**Interpretability**: 
+  - Saliency maps (e.g., gradient-based attribution) highlight which time periods and features most influenced the model’s prediction.

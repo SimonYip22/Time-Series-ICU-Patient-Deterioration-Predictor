@@ -285,7 +285,7 @@ Final NEWS2 scores per patient
   2. Create missingness flags for each vital (before fills).
   3. LOCF forward-fill per subject (optionally backward-fill for initial missingness or leave as NaN), do not use population median.
   4. Create carried-forward flags (binary indicator - 1 if the value came from LOCF). Helps ML distinguish between observed vs assumed stable, exploit missingness patterns (e.g. vitals measured more frequently when patients deteriorate).
-  5. **Compute rolling windows (1h, 4h, 24h)**: mean, min, max, std, count, slope, AUC.
+  5. **Compute rolling windows (1h, 4h, 24h)**: mean, min, max, std, slope, AUC.
   6. Compute time since last observation (`time_since_last_obs`) for each vital (staleness per vital).
   7. **Encode risk/escalation labels**: Convert textual escalation/risk labels → numeric ordinal encoding (`Low=0, Low-Medium=1, Medium=2, High=3`) for ML. Keeps things simple - one column, easy to track in feature importance
   8. Save `news2_features_timestamp.csv` (ML-ready). 
