@@ -109,8 +109,8 @@ ICU deterioration involves complex and often subtle, multivariate temporal patte
 - Learns patterns in timestamp-level features, detecting short-term deterioration trends and acute changes that static models may miss.
 
 #### Why Compare Both?
-- LightGBM evaluates performance on aggregated, low-frequency data.
-- TCN uses temporal modelling to capture complex, sequential patterns.
+- LightGBM evaluates performance on static, aggregated patient-level data.
+- TCN uses temporal modelling to capture complex, sequential patterns from timestamp-level data.
 - Comparison reflects realistic deployment: classical ML may suffice for long-term sustained deterioration patterns, whereas temporal models exploit high-resolution monitoring to detect early deterioration.
 - This identifies where temporal modelling adds value, where classical ML suffices, and the trade-offs between performance and interpretability.
 
@@ -250,11 +250,16 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
   LightGBM Model (Classical ML)                     Temporal Convolutional Network (TCN)                         
 ```
 
-- **Timestamp-level features** = richest representation, essential for sequence models / deep learning. Captures short-, medium-, and long-term deterioration patterns.
-- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
+### 4.1 Feature Overview
+- **Timestamp-level features**: Provide the richest representation, capturing short-, medium-, and long-term deterioration patterns. Essential for sequence-based models like deep learning architectures (e.g., TCN).  
+- **Patient-level features**: Aggregated summaries of vital signs, useful for testing simpler models, evaluating feature importance, and establishing baseline metrics.  
+
+Maintaining both feature sets ensures flexibility and robustness in model selection:  
+- **LightGBM** → clinician-friendly, interpretable baseline using patient-level features.  
+- **TCN** → modern deep learning approach leveraging full temporal sequences to capture dynamic deterioration trends.
 
 ##
-### 4.1 Timestamp-Level Features (for TCN)
+### 4.2 Timestamp-Level Features (for TCN)
 **Purpose:** Capture temporal dynamics for sequential modeling
 
 #### Imputation Strategy
@@ -286,7 +291,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
   - NEWS2 → NEWS2 score + risk label + monitoring frequency + response + numeric risk = 5
 
 ##
-### 4.2 Patient-Level Features (for LightGBM)
+### 4.3 Patient-Level Features (for LightGBM)
 **Purpose:** Aggregated risk profile for interpretable tree-based modeling
 
 #### Feature Computation
@@ -338,13 +343,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 
 This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
 
-**Future-proofing with both feature sets ensures robustness and flexibility**:
-  - **LightGBM (V1)** → clinician-friendly, interpretable baseline.  
-  - **TCN (V2)** → modern DL, captures dynamics.  
-- **Timestamp-level features** = richest representation, essential for sequence models / deep learning
-- **Patient-level features** = distilled summaries, useful to quickly test simpler models, feature importance or quick baseline metrics.
-- Keeping both pipelines means we can mix (hybrid approaches) if needed (e.g., summary features + LSTM on sequences). 
-- LightGBM is often deployed first because it’s fast, robust, and interpretable, while the neural network is a v2 that might improve performance. 
+
 
 ### Portfolio story
 - **LightGBM (v1)**: We started with patient-level aggregation to establish a baseline model that is interpretable and fast to train. This gives clinicians an overview of which vitals and risk patterns matter most.
@@ -352,9 +351,9 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 
 ##
-### 5.2 Baseline Model Selection
-#### Classical Architectures Considered
-| Classical Model   | Strengths                              | Limitations                                      | Decision Rationale                                     |
+### 5.2 Baseline Classical ML Model Selection
+#### Classical Models Considered
+| Model   | Strengths                              | Limitations                                      | Decision Rationale                                     |
 |------------------|----------------------------------------|-------------------------------------------------|------------------------------------------------------------|
 | Logistic Regression (Linear) | Simple, fast, easy to deploy, interpretable coefficients | Linear assumptions; cannot model non-linear vital-sign interactions, tends to underperform on raw time-series vitals | Insufficient for complex ICU physiological patterns |
 | Random Forest (Bagged Trees) | Robust, ensemble tree-based method; handles nonlinearities; less sensitive to scaling | Slower and less sample-efficient than boosted trees; weaker performance on small datasets | Boosted trees outperform on structured EHR data |
@@ -371,18 +370,18 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ##
 ### 5.3 Advanced Deep Learning Model Selection
-#### Neural Network Architectures Considered
-| Neural Networks               | Strengths                                       | Limitations                                                      | Decision Rationale                          |
+#### Neural Architectures Considered
+| Standard / Core              | Strengths                                       | Limitations                                                      | Decision Rationale                          |
 |--------------------|-------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------|
-| LSTM/GRU (Recurrent) | Well-suited for sequences, handles variable-length inputs | Vanishing gradients on long sequences, slow sequential training | Unstable on 24-hour ICU sequences, computationally inefficient, dataset too small for deep LSTM stacks |
+| LSTM/GRU (Recurrent) | Well-suited for sequences, handles variable-length inputs | Vanishing gradients on long sequences, slow sequential training | Unstable gradients on long ICU sequences, computationally inefficient, dataset too small for deep RNN stacks |
 | Transformer (Self-attention) | Powerful for long sequences, models global dependencies | Requires large datasets for self-attention to learn effectively, computationally intensive, prone to overfitting | Overkill for small dataset; unnecessary complexity |
 | TCN (Convolutional) | Parallelizable, dilated convolutions, stable gradients, captures long-range temporal dependencies | Requires sequence padding, normalisation, masking for missingness | Efficient and robust for small-sample ICU time-series; best balance of performance and practicality | 
 
-| Specialised/Niche               | Strengths                                       | Limitations                                                      | Decision Rationale                        |
+| Specialised / Niche           | Strengths                                       | Limitations                                                      | Decision Rationale                        |
 |--------------------|-------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------|
 | Neural ODE (continuous-time) | Continuous-time dynamics instead of discrete layers | Niche research technique, slow, unstable complex training (ODE solvers) | Rarely production-ready, not clinically validated |
 | Graph Neural Network (GNN) | Models patient-patient or hospital network relationships | Requires graph structure, not sequences or grids; operates on node/edges | Inapplicable to independent patient time-series |
-| WaveNet (autoregressive) | Deep, heavy convolutional autoregressive model for audio | Designed for massive datasets (speech), computationally huge | Impractical and slow for 100-patient clinical dataset |
+| WaveNet (Autoregressive) | Deep, heavy convolutional autoregressive model for audio | Designed for massive datasets (speech), computationally huge | Impractical and slow for 100-patient clinical dataset |
 
 #### Decision: TCN (Temporal Convolutional Neural Network)
 - handles long sequences efficiently Ideal for time-series vitals data with sequential trends, Compatible with timestamp-level features and missingness flags.
