@@ -563,11 +563,175 @@ This outlines how dual-architectures could be integrated into a real-world clini
 `prepare_tcn_dataset.py`
 `tcn_model.py`
 `tcn_training_script.py`
+
+**End Products of Phase 4**
+- `trained_models/tcn_best.pt`→ best-performing model checkpoint.
+- `trained_models/config.json` → hyperparameter and architecture record.
+- `trained_models/training_history.json` → epoch-wise loss tracking.
+- `plots/loss_curve.png` → visualisation of training vs validation loss.
+- Debugged and reproducible training + validation pipeline.
+
 ### 7.2 Preprocessing Pipeline 
+**Purpose:** produces fixed-length, ordered patient sequences with masks from raw timestamps → clean, leakage-free, reproducibly scaled inputs for the TCN.
+
+```text
+                  Input Files:
+                  - news2_features_timestamp.csv
+                  - news2_features_patient.csv
+                                 │
+                                 ▼
+            Preprocessing (prepare_tcn_dataset.py)
+            - Chronological ordering
+            - Merge patient-level outcomes
+            - Binary target creation (same as LightGBM)
+            - Patient-level stratified splits (train/val/test)
+            - Feature cleaning + type enforcement
+            - Z-score scaling (normalisation)
+            - Per-patient sequence grouping
+            - Padding/truncation to MAX_SEQ_LEN + mask creation
+                                 │
+             ┌───────────────────┴────────────────────┐
+             │                                        │
+             ▼                                        ▼
+  Padded sequences and masks                Preprocessing artifacts
+  - train.pt / train_masks.pt               - standard_scaler.pkl
+  - val.pt / val_masks.pt                   - padding_config.json
+  - test.pt / test_masks.pt                 - patient_splits.json
+             │                                        │
+             ▼                                        ▼
+  Used by TCN training/validation/testing   Used at inference for identical preprocessing
+```
+
+#### Key Steps
+1. **Chronological Ordering & Merge Outcomes**
+  - Sort timestamps by `subject_id` and `charttime` to ensure correct temporal flow.
+  - Add `max_risk`, `median_risk`, `pct_time_high` from patient-level data
+2. **Patient-level Stratified Split**
+  - Split: Train/validation/test → 70/15/15
+	-	Stratified by the same binary risk labels used for LightGBM (see Section 6.2) → stratification prevents class imbalance, random state fixed for reproducibility 
+	-	Splitting by patient prevents leakage across sequences
+3. **Feature Cleaning**
+	-	Identify all feature columns (exclude IDs and targets), remove unused categorical fields, convert certain labels to binary → 171 timestamp-level feaures
+	-	Separate continuous (for z-score scaling) vs binary (no scaling needed) features.
+4. **Normalisation**
+  - Apply z-scoring to continuous variables (categorical features unchanged) on train/val/test splits → ensures features are on comparable scales, preserving trends.
+	- Fit `StandardScaler()` on training patients only (avoids information leakage).
+5. **Sequence Construction**
+	-	Group rows per patient.
+	-	Convert each patient to (timesteps × features) 2D NumPy arrays.
+6. **Sequence Padding/Truncation and Masking**
+	-	Use fixed length 96 hours → `MAX_SEQ_LEN = 96` for uniform input sizes
+	-	Short sequences → zero-pad; long sequences → truncate.
+	-	Masks mark real (1) vs padded (0) timesteps for loss computation.
+7. **Stack Sequences + Mask tensors For Each Split (train/val/test):**
+  -	Sequences → `(num_patients, 96, num_features)`
+	-	Masks → `(num_patients, 96)`
+8. **Save Preprocessed Artifacts**
+  - `patient_splits.json` → dictionary of patient IDs train/val/test split
+  -	`standard_scaler.pkl` → z-scoring scalar (training-set mean/std)
+  -	`padding_config.json` → sequence length (`max_seq_len`) + feature/target columns (`feature_cols`, `target_cols`)
 
 ### 7.3 Network Architecture
+**Purpose:** full TCN model architecture that is fully convolutional and causal, outputting patient-level predictions through multi-task heads 
+
+2. **Model Architecture (TCN) `tcn_model.py`**
+  - **Base**: Temporal Convolutional Network (stacked causal dilated 1D convolutions).  
+  - **Design**:
+    - **Input**: `(batch, sequence_length, features)` → permuted to `(batch, channels, sequence_length)` for Conv1d.  
+    - **Residual blocks**: 3 TemporalBlocks, each with:  
+      - 2 causal convolutions (dilated, length-preserving).  
+      - LayerNorm → stabilises training.  
+      - ReLU activation → non-linearity.  
+      - Dropout → regularisation.  
+      - Residual/skip connection → stable gradient flow.  
+    - **Stacking with dilation**: each block doubles dilation (1, 2, 4) → exponentially increasing receptive field.  
+    - **Masked mean pooling**: collapses variable-length sequences into a single patient-level vector, ignoring padding.  
+    - **Optional dense head**: Linear → ReLU → Dropout → mixes pooled features before output.  
+    - **Task-specific heads**:  
+      - Classification: `classifier_max`, `classifier_median` (binary logits).  
+      - Regression: `regressor` (continuous `pct_time_high`).  
+  - **Targets**:  
+    - Binary classification → `max_risk`, `median_risk`.  
+    - Regression → `pct_time_high`.  
+
+#### Architectural Structure
+1. **Causal Convolution (CausalConv1d)**
+  -	1D convolutions padded only on the left so the model never sees future values.
+  -	Ensures strict temporal causality for ICU forecasting.
+  -	Each kernel learns a local temporal pattern (e.g., sudden HR spike, BP drop).
+2. **Temporal Residual Block**
+The core computational unit. Each block contains:
+	•	Two causal convolutions (local feature extraction).
+	•	LayerNorm (stabilises activations and prevents gradient instability).
+	•	ReLU (non-linearity).
+	•	Dropout (regularisation).
+	•	Residual connection to maintain gradient flow in deep stacks.
+	•	1×1 convolution to match channel dimensions where required.
+
+This structure allows deep temporal processing without vanishing gradients.
+
+3. **Dilated, Stacked TCN Layers**
+	•	Blocks are stacked with exponentially increasing dilations (1 → 2 → 4 → …).
+	•	Expands the receptive field efficiently, enabling modelling of:
+	•	short-range changes (first layers),
+	•	medium-range trends,
+	•	long-range deterioration patterns (deeper layers).
+	•	The final block outputs a tensor of shape (B, C_last, L).
+
+4. Masked Mean Pooling
+	•	Patient sequences have variable lengths; padding is required.
+	•	Masked pooling computes the mean over only real (non-padded) timesteps.
+	•	Produces a fixed-size patient vector (B, C_last) for downstream heads.
+
+5. Optional Dense Head
+	•	Linear → ReLU → Dropout.
+	•	Used to mix pooled features before prediction when additional representational capacity is helpful.
+	•	Can be disabled for a direct connection from pooled features → task heads.
+
+6. Multi-Task Output Heads
+
+Separate linear heads generate patient-level outputs:
+	•	Binary classification:
+	•	classifier_max (max risk)
+	•	classifier_median (median risk)
+	•	Regression:
+	•	regressor (percentage of high-risk time)
+
+Each head outputs shape (B,) after squeezing.
+
+#### Design Rationale
+	•	Causality prevents future leakage and preserves clinical realism.
+	•	Residual blocks + LayerNorm ensure stable optimisation even with deep stacks.
+	•	Dilations give wide temporal coverage without large kernels.
+	•	Masked pooling ensures correct handling of variable-length ICU sequences.
+	•	Multi-task heads align with the project’s three patient-level targets.
+	•	Optional dense head allows flexible complexity without changing core TCN behaviour.
+
+This architecture balances temporal modelling power, training stability, and clarity of implementation, making it well suited for small clinical datasets.
+
+  - **Reasoning**:  
+    - TCNs are causal by design → no future leakage.  
+    - Dilated convolutions give long temporal memory without very deep stacks.  
+    - Residual connections + LayerNorm = stable training, even with many blocks.  
+    - Chosen as a modern, efficient alternative to RNNs (LSTM/GRU) and Transformers, showing a deliberate design choice.  
+
+
+
+
+
+
+
+
+
+
+
+    
 
 ### 7.4 Training Configuration
+
+
+
+
 
 ### 7.5 Model Training & Validation
 	•	Initial evaluation metrics and subsequent diagnostics exposed two issues:
@@ -579,9 +743,33 @@ This outlines how dual-architectures could be integrated into a real-world clini
 	•	Retraining the model end-to-end
 	•	The training curves presented in this section correspond to the final corrected training run.
 
+3. **Model Training `tcn_training_script.py`**
+	- **Loss functions**: Binary cross-entropy (for classification heads), MSE (regression).
+	-	**Optimiser**: Adam with learning-rate scheduler (reduce on plateau).
+	-	**Regularisation**: dropout within TCN, gradient clipping, early stopping (patience=7).
+	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
+  - **Reproducibility controls**: Fixed seeds for Python/NumPy/PyTorch, enforced deterministic CuDNN ops, saved hyperparameter config (`config.json`) and training/validation loss history (`training_history.json`) to ensure bit-for-bit reproducibility.
+  - **Reasoning**: This phase ensures the model learns from patient sequences in a stable, controlled way. Shows deep learning maturity (correct loss functions, imbalance handling, monitoring).
+4. **Validation (during training)**
+	-	**Setup**: Patient-level validation split (not seen during training).
+	-	**Metrics tracked**: Validation loss per epoch.
+	-	**Logic**:
+    -	When validation loss improves (validation loss ↓) → save checkpoint (`tcn_best.pt`).
+    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
+    -	Training stops early when overfitting begins (after 7 epochs of no improvement).
+  - **Reasoning**: Validation ensures the model generalises and doesn’t just memorise training data.
 
 ### 7.6 Generate Visualisations
 
+  - **Features**:
+    -	Plots Training vs Validation loss curves across epochs.
+    -	Highlights the best epoch (red dashed line + dot).
+    -	Text annotation shows epoch and validation loss value.
+    -	Optional “overfitting region” annotation marks where validation loss rises.
+    -	Grid and layout optimised for clarity and interpretability.
+  - **Reasonings**: 
+    - Transforms numerical loss logs into a visual understanding of model learning behaviour.
+    - Focus on training behaviour and convergence, show whether the model converged, generalisation, where early stopping kicked in, whether overfitting started.
 ---
 
 
