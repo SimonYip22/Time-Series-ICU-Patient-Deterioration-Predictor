@@ -392,8 +392,10 @@ This outlines how dual-architectures could be integrated into a real-world clini
 **Temporal awareness**:
 -	Causal convolutions → at each time step, the model only looks backwards in time (no data leakage from the future).
 -	Dilated convolutions → skip connections expand the receptive field exponentially, captures long-range temporal patterns without deep stacking (without needing hundreds of layers).
+
 **Stable training**:
 - Residual blocks → stabilise gradient flow, prevent vanishing/exploding gradients, making the deep temporal model easier to optimise.
+
 **From sequences to predictions**:
 -	Global pooling → compresses full sequence into a single fixed-length representation.
 
@@ -478,6 +480,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 -	**Feature importance:** Generated fold-averaged LightGBM feature importance to confirm model signal (later superseded by Phase 6 SHAP).
 -	**Final models:** Trained full-cohort deployment-style final models using tuned hyperparameters (later superseded by Phase 5 retraining).
 
+##
 ### 6.2 Baseline Cross-Validation 
 - A 5-fold CV LightGBM baseline was run to validate pipeline correctness, expose dataset issues, and establish a minimal working baseline before tuning.
 - **Models were trained on `news2_features_patient.csv` for 3 targets:**
@@ -497,6 +500,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 | **max_risk**   | 0, 1, 2, 3               | 0/1/2 → 2 (not high risk), 3 → 3 (high risk) | 2 → 0, 3 → 1                     |
 | **median_risk**| 0, 1, 2, 3               | 0+1 → 1 (low), 2 → 2 (medium), 3 removed (no high risk in data) | 1 → 0, 2 → 1                     |
 
+##
 ### 6.3 Hyperparameter Tuning
 - This is the only Phase 3 component used in later phases (Phase 5 LightGBM evaluation).
 - Tuned the four parameters with the highest impact on stability and generalisation for small tabular datasets:
@@ -521,18 +525,20 @@ This outlines how dual-architectures could be integrated into a real-world clini
 | **median_risk**    | 0.05          | 5         | 100          | 5                 |
 | **pct_time_high**  | 0.1           | 3         | 200          | 5                 |
 
-
+##
 ### 6.4 Feature Importance
 - Fold-level LightGBM feature importance was generated to confirm that models were learning meaningful clinical signal and to verify early pipeline sanity.
 - Provided an initial interpretability check and highlighted key predictors per target.
 - These plots served as exploratory, legacy interpretability and were later superseded by SHAP analysis in Phase 6.
 
+##
 ### 6.5 Deployment-style LightGBM models 
 -	Trained one final model per target (3 total) on the full cohort using tuned hyperparameters.
 -	Maximised use of all available data and produced deployment-ready artefacts for demonstration of real-world deployment practice.
 - These models served as complete baseline artefacts, although final benchmarking used the unified evaluation pipeline in phase 5, not these models.
 - These final models validate pipeline completeness and full ML workflow coverage (baseline → tuning → deployment) even if later superseded by retraining in phase 5.
 
+##
 ### 6.6 Summary 
 #### Retained Outputs
 
@@ -548,12 +554,14 @@ This outlines how dual-architectures could be integrated into a real-world clini
 | Fold-level feature importance       | Phase 6 SHAP (model-consistent interpretability)              |
 | Full-cohort final models            | Phase 5 retrained models on same split as TCN                 |
 
-### Why Phase 3 Matters
+##
+### 6.7 Why Phase 3 Matters
 - Phase 3 established the first credible classical ML baseline, exposed the dataset’s true behaviour, and produced the validated LightGBM hyperparameters reused in final benchmarking. 
 - **It delivered the two foundations that shaped all later phases:**
 	-	Target binarisation (after diagnosing rare-event imbalance).
 	-	Stable tuned hyperparameters (ensuring fair LightGBM vs TCN comparison).
-- Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing, confirmed learnable signal, and grounded the project in rigorous baseline modelling before moving to temporal architectures.
+- Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing and confirmed learnable signal.
+- Grounds the project in rigorous baseline modelling before moving to temporal architectures.
 
 ---
 
@@ -632,112 +640,51 @@ This outlines how dual-architectures could be integrated into a real-world clini
   -	`padding_config.json` → sequence length (`max_seq_len`) + feature/target columns (`feature_cols`, `target_cols`)
 
 ### 7.3 Network Architecture
-**Purpose:** fully convolutional, causal TCN for patient-level predictions with multi-task heads (classification + regression).
+**Purpose:** fully convolutional, causal TCN for patient-level predictions with multi-task heads (classification + regression). 
 
-
-2. **Model Architecture (TCN) `tcn_model.py`**
-  - **Base**: Temporal Convolutional Network (stacked causal dilated 1D convolutions).  
-  - **Design**:
-    - **Input**: `(batch, sequence_length, features)` → permuted to `(batch, channels, sequence_length)` for Conv1d.  
-    - **Residual blocks**: 3 TemporalBlocks, each with:  
-      - 2 causal convolutions (dilated, length-preserving).  
-      - LayerNorm → stabilises training.  
-      - ReLU activation → non-linearity.  
-      - Dropout → regularisation.  
-      - Residual/skip connection → stable gradient flow.  
-    - **Stacking with dilation**: each block doubles dilation (1, 2, 4) → exponentially increasing receptive field.  
-    - **Masked mean pooling**: collapses variable-length sequences into a single patient-level vector, ignoring padding, to summarise patient-level features.  
-    - **Optional dense head**: Linear → ReLU → Dropout → mixes/refines pooled features before output.  
-    - **Task-specific heads**:  
-      - Classification: `classifier_max`, `classifier_median` (binary logits).  
-      - Regression: `regressor` (continuous `pct_time_high`).  
-  - **Targets**:  
-    - Binary classification → `max_risk`, `median_risk`.  
-    - Regression → `pct_time_high`.  
-                         ┌──────────────────────────────┐
-                     │ Input: (B, L, F)             │
-                     │ sequence tensor              │
-                     └───────────────┬──────────────┘
-                                     │
-                                     ▼
-                     ┌──────────────────────────────┐
-                     │ Permute: (B, F, L)           │
-                     │ for Conv1d input             │
-                     └───────────────┬──────────────┘
-                                     │
-                                     ▼
-              ┌─────────────────────────────────────────────┐
-              │ Stacked Temporal Residual Blocks (3 blocks) │
-              │ Each block:                                  │
-              │  • 2x CausalConv1d (dilated, length-preserving) │
-              │  • LayerNorm                                 │
-              │  • ReLU                                     │
-              │  • Dropout                                  │
-              │  • Residual/skip connection                 │
-              │ Dilation doubles per block: 1 → 2 → 4       │
-              └─────────────────────────┬──────────────────┘
-                                        │
-                                        ▼
-                     ┌──────────────────────────────┐
-                     │ Masked Mean Pooling           │
-                     │ → collapses variable-length   │
-                     │ sequences to (B, C_last)     │
-                     └───────────────┬──────────────┘
-                                     │
-                                     ▼
-                     ┌──────────────────────────────┐
-                     │ Optional Dense Head           │
-                     │ Linear → ReLU → Dropout       │
-                     └───────────────┬──────────────┘
-                                     │
-                                     ▼
-                     ┌──────────────────────────────┐
-                     │ Task-Specific Output Heads    │
-                     │ Classification:               │
-                     │  • classifier_max            │
-                     │  • classifier_median         │
-                     │ Regression:                   │
-                     │  • regressor (pct_time_high) │
-                     └──────────────────────────────┘
-
-
-#### Chronological flow
-**Forward Pass**
-1. Input tensor `(batch, channels, seq_len)` → **BCL format**.
-2. Layer 1 (Conv1 → LayerNorm → ReLU → Dropout): 
-  - **Causal conv**: extract first layer of temporal patterns.
-  - **LayerNorm**: normalise across channels at each timestep (convert to BLC format just for this step).
-  - **ReLU activation**: add non-linearity.
-  - **Dropout (during training only)**: randomly zero some outputs.
-3. Layer 2 (Conv2 → LayerNorm → ReLU → Dropout): combine previous patterns into more complex ones.
-4. **Downsample (1×1 conv)**: reshapes channels for residual addition.
-5. **Residual addition**: adds original input (or downsampled input) to output. Give gradients a shortcut path back.
-6. Output tensor `(batch, out_channels, seq_len)` → ready for next block or pooling or final classifier.
-**Backward pass (not in this script)** 
-1. Compute loss at the very end (prediction vs label).
-2. Backprop starts: compute gradients of loss wrt outputs.
-3. Gradients flow backward through residual add, then through conv2, conv1, etc.
-4. Optimiser updates the weights (kernels, 1×1 conv, etc.) a little bit.
-**Then you repeat this whole forward+backward cycle many times over the dataset.**
-Forward pass → Loss → Backward pass (gradients) → Weight update (repeat many epochs until convergence)
-**Intuition**:
-- Each block learns a set of temporal detectors.
-- Stacking multiple blocks increases the **effective receptive field**, combining short-term and long-term patterns.
-- Works with **causal convolutions** to ensure predictions never “peek into the future”.
-
-**Flow of Data**
-1. Input: `(B, L, F)` (batch, sequence length, features per timestep).  
-2. Permute → `(B, F, L)` for Conv1d.  
-3. Pass through stacked TemporalBlocks → `(B, C_last, L)`.  
-4. Permute back → `(B, L, C_last)`.  
-5. Apply **masked mean pooling** → `(B, C_last)`.  
-6. Optional dense head (if enabled) → `(B, head_hidden)`.  
-7. Pass to **task-specific heads**:  
-   - `classifier_max`: `(B,)`  
-   - `classifier_median`: `(B,)`  
-   - `regressor`: `(B,)`.  
-8. Return dictionary of predictions (ready for loss functions).
-
+```text
+                             ┌──────────────────────────────┐
+                             │ Input:                       │
+                             │ sequence tensor (B, L, F)    │
+                             └───────────────┬──────────────┘
+                                             │
+                                             ▼
+                             ┌──────────────────────────────┐
+                             │ Permute: to shape (B, F, L)  │
+                             │ for Conv1d input             │
+                             └───────────────┬──────────────┘
+                                             │
+                                             ▼
+            ┌─────────────────────────────────────────────────────────────────┐
+            │ Stacked Temporal Residual Blocks (3 blocks)                     │
+            │ Each TemporalBlock:                                             │
+            │  • 2x CausalConv1d (dilated 1D convolutions, length preserving) │
+            │  • LayerNorm (stabilises training)                              │
+            │  • ReLU activation (non-linearity)                              │
+            │  • Dropout (regularisation)                                     │
+            │  • Residual / skip connection (stable gradient flow)            │
+            │ Dilation doubles per block (1 → 2 → 4) → exponentially          │
+            │ increasing receptive field.                                     │
+            └────────────────────────────────┬────────────────────────────────┘
+                                             │
+                                             ▼
+                        ┌─────────────────────────────────────────┐        
+                        │ Masked Mean Pooling                     │          
+                        │  • Collapses variable-length sequences  ├────────────────────────────┐
+                        │  into a single-patientvector (B, C_last)│                            │
+                        │  • Summarise patient-level features     │                            ▼
+                        └────────────────────┬────────────────────┘       ┌────────────────────────────────────────┐
+                                             │                            │ Optional Dense Head                    │
+                                             ▼                            │  • Linear → ReLU → Dropout             │
+                              ┌──────────────────────────────┐            │  • Mixes pooled features before output │
+                              │ Task-Specific Output Heads   │            └────────────────────┬───────────────────┘
+                              │ Classification (binary):     │                                 │
+                              │  • classifier_max            │                                 │
+                              │  • classifier_median         │ ◀───────────────────────────────┘ 
+                              │ Regression:                  │
+                              │  • regressor (pct_time_high) │
+                              └──────────────────────────────┘
+```
 
 #### Architectural Structure
 1. **Causal Convolution (`CausalConv1d`) Layer**
@@ -777,6 +724,43 @@ Forward pass → Loss → Backward pass (gradients) → Weight update (repeat ma
 hyperparaemters 
 
 #### Forward Pass
+
+#### Chronological flow
+**Forward Pass**
+1. Input tensor `(batch, channels, seq_len)` → **BCL format**.
+2. Layer 1 (Conv1 → LayerNorm → ReLU → Dropout): 
+  - **Causal conv**: extract first layer of temporal patterns.
+  - **LayerNorm**: normalise across channels at each timestep (convert to BLC format just for this step).
+  - **ReLU activation**: add non-linearity.
+  - **Dropout (during training only)**: randomly zero some outputs.
+3. Layer 2 (Conv2 → LayerNorm → ReLU → Dropout): combine previous patterns into more complex ones.
+4. **Downsample (1×1 conv)**: reshapes channels for residual addition.
+5. **Residual addition**: adds original input (or downsampled input) to output. Give gradients a shortcut path back.
+6. Output tensor `(batch, out_channels, seq_len)` → ready for next block or pooling or final classifier.
+**Backward pass (not in this script)** 
+1. Compute loss at the very end (prediction vs label).
+2. Backprop starts: compute gradients of loss wrt outputs.
+3. Gradients flow backward through residual add, then through conv2, conv1, etc.
+4. Optimiser updates the weights (kernels, 1×1 conv, etc.) a little bit.
+**Then you repeat this whole forward+backward cycle many times over the dataset.**
+Forward pass → Loss → Backward pass (gradients) → Weight update (repeat many epochs until convergence)
+**Intuition**:
+- Each block learns a set of temporal detectors.
+- Stacking multiple blocks increases the **effective receptive field**, combining short-term and long-term patterns.
+- Works with **causal convolutions** to ensure predictions never “peek into the future”.
+
+**Flow of Data**
+1. Input: `(B, L, F)` (batch, sequence length, features per timestep).  
+2. Permute → `(B, F, L)` for Conv1d.  
+3. Pass through stacked TemporalBlocks → `(B, C_last, L)`.  
+4. Permute back → `(B, L, C_last)`.  
+5. Apply **masked mean pooling** → `(B, C_last)`.  
+6. Optional dense head (if enabled) → `(B, head_hidden)`.  
+7. Pass to **task-specific heads**:  
+   - `classifier_max`: `(B,)`  
+   - `classifier_median`: `(B,)`  
+   - `regressor`: `(B,)`.  
+8. Return dictionary of predictions (ready for loss functions).
 
 
 #### Design Rationale
