@@ -47,7 +47,7 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 
 ## 1. Clinical Background & Motivation
 
-### 1.1 The Problem
+### 1.1 The Problem With NEWS2
 ICU patient deterioration often emerges through subtle physiological changes hours before critical events. The National Early Warning Score 2 (NEWS2) is widely used in UK hospitals to detect and escalate care for deteriorating patients. Accurate, real-time scoring and risk stratification can:
 - Enable earlier intervention and ICU escalation
 - Support clinical decision-making with actionable, interpretable metrics
@@ -65,6 +65,7 @@ Although the national standard for deterioration detection, NEWS2 has well-recog
 
 ##
 ### 1.2 Clinical Escalation Context
+### 1.2.1 How NEWS2 Scoring Is Used
 NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
 | NEWS2 Score                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
@@ -75,11 +76,11 @@ NEWS2 scoring bands map directly to clinical monitoring frequency and escalation
 | **5–6**                           | Medium        | Minimum every 1h                               | Urgent review by ward-based doctor or acute team nurse; consider critical care team review.   |
 | **≥7**                            | High          | Continuous monitoring                              | Emergent assessment by clinical/critical-care team; usually transfer to HDU/ICU. |
 
-#### Why this matters
+#### 1.2.2 Why This Matters
 - Transitions between these risk categories directly influence clinical workload and resource allocation, including urgent reviews and ICU involvement.  
 - Predicting imminent transitions into these categories (e.g., entering high risk within the next 4–6 hours) enables earlier intervention, reducing delayed escalations and improving critical-care resource planning.  
 
-#### Why NEWS2 is the reference standard
+#### 1.2.3 Why NEWS2 Is The Reference Standard
 - NEWS2 is the national standard for ward-based clinical deterioration assessment and provides a clinically validated ground-truth for model training and evaluation. 
 - The ML models predict summary outcomes derived from NEWS2 clinical-risk categories:
   - `max_risk`: Maximum risk attained during stay 
@@ -96,19 +97,19 @@ ICU deterioration involves complex and often subtle, multivariate temporal patte
 | **LightGBM** | Gradient-Boosted Decision Tree (GBDT) | Aggregated patient-level | Static | Fast, interpretable, good calibration | Cannot capture sequential dynamics | SHAP |
 | **TCN** | Temporal Convolutional Network | Timestamp-level sequential | Temporal | Captures temporal trends, slopes, variability | More computationally intensive than tree-based, less interpretable, requires careful hyperparameter tuning | Saliency (grad×input) |
 
-#### LightGBM (Classical ML)
+#### 1.3.1 LightGBM (Classical ML)
 - Strong baseline for structured, tabular data like patient-level aggregations of vitals and summary statistics.
 - Captures non-linear interactions between vital signs  
 - Fast to train and tune, handles missing values natively
 - Highly interpretable via SHAP, critical for clinician understanding  
 - Often competitive or superior when temporal structure is weak  
 
-#### TCN (Temporal Deep Learning)
+#### 1.3.2 TCN (Temporal Deep Learning)
 - Models long-range temporal context and time-dependent patterns
 - Robust to irregular sampling frequency (measurement intervals)
 - Learns patterns in timestamp-level features, detecting short-term deterioration trends and acute changes that static models may miss.
 
-#### Why Compare Both?
+#### 1.3.3 Why Compare Both?
 - LightGBM evaluates performance on static, aggregated patient-level data.
 - TCN uses temporal modelling to capture complex, sequential patterns from timestamp-level data.
 - Comparison reflects realistic deployment: classical ML may suffice for long-term sustained deterioration patterns, whereas temporal models exploit high-resolution monitoring to detect early deterioration.
@@ -174,7 +175,7 @@ This project therefore systematically evaluates temporal vs. non-temporal ML app
 
 The pipeline extracts all NEWS2-relevant physiological variables using universal encoding labels, including custom CO2 retainer logic implementation. NEWS2 parameter scoring and total scoring is implemented, with both timestamp-level and patient-level files being created.
 
-#### Core Vital Parameters
+#### 3.3.1 Core Vital Parameters
 | Parameter               | Range                        | NEWS2 Points |
 |-------------------------|-----------------------------|--------------|
 | Respiratory Rate        | ≤8 → ≥25                    | 0–3          |
@@ -188,7 +189,7 @@ The pipeline extracts all NEWS2-relevant physiological variables using universal
 
 (Discrete NHS NEWS2 bands are applied in code; the table above shows compressed min–max ranges.)
 
-#### Clinical Logic Implementation
+#### 3.3.2 Clinical Logic Implementation
 1. **CO₂ Retainer Identification**
 ```text 
 All ABG measurements in `chartevents.csv` examined. Criteria (all must be met):
@@ -211,7 +212,7 @@ FiO₂ can be identified via `Inspired O2 Fraction` in CSV and converted to bina
 - >0.21 = on supplemental O₂ (1)
 → Any supplemental O₂ adds +2 to NEWS2
 ```
-#### Output Format
+#### 3.3.3 Output Format
 **Timestamp-level: `news2_scores.csv`**
 - One row per observation timestamp
 - Raw vitals, individual parameter scores, total NEWS2 score
@@ -263,22 +264,22 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 ### 4.2 Timestamp-Level Features (for TCN)
 **Purpose:** Capture temporal dynamics for sequential modeling
 
-#### Imputation Strategy
+#### 4.2.1 Imputation Strategy
 - **Missingness flags:** Binary indicators (1/0) for each vital parameter (value carried forward=1) so models can learn from missing patterns. Before carried-forward so that it is known which values were originally missing.
 - **LOCF (Last Observation Carried Forward) flags:** Propagate previous valid measurement, and create a binary carried-forward flag (binary 1/0). 
 
-#### Rolling Window Features (1/4/24h)
+#### 4.2.2 Rolling Window Features (1/4/24h)
 - **Mean:** Average value
 - **Min/Max:** Range boundaries
 - **Std**: Variability
 - **Slope:** Linear trend coefficient
 - **AUC (Area Under Curve):** Integral of value over time
 
-#### Other Features
+#### 4.2.3 Other Features
 - **Staleness:** Time since last observation (staleness per vital)
 - **Numeric risk encoding:** Encoded as 0 (low), 1 (medium-low), 2 (medium), 3 (high)
 
-#### Output Format
+#### 4.2.4 Output Format
 - **Timestamp-level:** `news2_features_timestamp.csv`
 - ML-ready per patient per timestamp features (ordered by `subject_id` and by `charttime`).
 - Full time-series per patient allows modelling of temporal patterns, trends, dynamics
@@ -295,7 +296,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 ### 4.3 Patient-Level Features (for LightGBM)
 **Purpose:** Aggregated risk profile for interpretable tree-based modeling
 
-#### Feature Computation
+#### 4.3.1 Feature Computation
 - **Vital sign aggregations (per parameter):** Median, mean, min, max
 - **Patient-specific median imputation**: Fill missing values for each vital (preserves patient-specific patterns), if a patient never had a vital recorded, fall back to population median.
 - **% Missingness per vital:** track proportion of missing values pre-imputation, data quality indicator, signal from incomplete measurement pattern.
@@ -304,7 +305,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
   - `median_risk`= average sustained risk
   - `pct_time_high` = % time spent in high-risk state
 
-#### Output Format
+#### 4.3.2 Output Format
 - **Patient-level:** `news2_features_patient.csv`
 - ML-ready per patient aggregated summary features (ordered by `subject_id`)
 - One row per patient (fixed-length vector).
@@ -320,23 +321,23 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 ## 5. ML Modelling Strategy
 
 ### 5.1 Bimodal Architecture Rationale
-#### Overview Table
+#### 5.1.1 Overview Table
 | Model      | Input Resolution                | Architecture Type                | Mechanism                                                                 | Primary Strength                                        | Clinical Application                                             |
 |------------|---------------------------------|---------------------------------|---------------------------------------------------------------------------|--------------------------------------------------------|-----------------------------------------------------------------|
 | **LightGBM** | Patient-aggregated (40 features) | Gradient-boosted decision trees | Builds an ensemble of decision trees sequentially using gradient-based optimization; each tree corrects residual errors of previous trees to minimize loss | Calibrated probability estimates, strong interpretability, robust baseline | Sustained risk stratification, resource allocation, triage scoring |
 | **TCN**      | Timestamp-sequential (96×171 tensor) | Temporal convolutional network | Applies causal, dilated convolutions with residual connections over sequential inputs to capture long-range temporal dependencies efficiently | Temporal pattern detection, high acute-event sensitivity | Real-time monitoring, rapid deterioration alerts, dynamic forecasting |
 
-#### Narrative Motivation
+#### 5.1.2 Narrative Motivation
 - **LightGBM (Classical ML):** Establishes transparent, clinician-interpretable baseline and identifies which vitals matter most at the patient-level.
 - **TCN (Deep Learning):** Advances to time-series modeling which captures temporal dependencies, demonstrating how deterioration unfolds dynamically over time, which captures dynamics that aggregated features can’t.
 - Combining the two showcases progression from classical tabular ML → modern sequence-level deep learning, proving competence across both paradigms.
 
-#### Clinical Motivation
+#### 5.1.3 Clinical Motivation
 - **Acute detection:** Requires high-sensitivity to short-term trend changes (TCN advantage)
 - **Sustained risk:** Requires calibrated probability estimates over full stay (LightGBM advantage)
 - Dual architecture approach represents two distinct clinical tasks; sustained risk assessment + acute monitoring, pipeline leverages each model's inherent strengths by aligning to its optimal prediction task.
 
-#### Future Clinical Deployment Strategy
+#### 5.1.4 Future Clinical Deployment Strategy
 1. LightGBM runs at admission → baseline, interpretable risk stratification (resource planning)
 2. TCN runs continuously → real-time continuous temporal monitoring (acute alerts)
 3. Ensemble logic → hybrid alert triggers if either model exceeds threshold (maximizes sensitivity)
@@ -346,7 +347,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ##
 ### 5.2 Baseline Classical ML Model Selection
-#### Classical Models Considered
+#### 5.2.1 Classical Models Considered
 | Model   | Strengths                              | Limitations                                      | Decision Rationale                                     |
 |------------------|----------------------------------------|-------------------------------------------------|------------------------------------------------------------|
 | Logistic Regression (Linear) | Simple, fast, easy to deploy, interpretable coefficients | Linear assumptions; cannot model non-linear vital-sign interactions, tends to underperform on raw time-series vitals | Insufficient for complex ICU physiological patterns |
@@ -355,7 +356,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 | CatBoost (Boosted Trees) | Excellent handling of categorical features; stable training | Benefits irrelevant when features are already numeric | No categorical variables → added complexity gives no gain |
 | LightGBM (Boosted Trees) | Fastest GBDT, highly efficient, handles NaNs natively, efficient SHAP integration | Requires careful hyperparameter tuning to avoid overfitting on small samples | Best choice for small tabular datasets with missingness |
 
-#### Decision: LightGBM (Gradient Boosted Decision Tree (GBDT) library)
+#### 5.2.2 Decision: LightGBM (Gradient Boosted Decision Tree (GBDT) library)
 - Most efficient GBDT for small tabular datasets → faster and lighter than XGBoost/CatBoost, ideal for a 100-patient regime.
 - Native missing-value handling (NaNs) → tree-splitting logic automatically routes missing values, avoiding imputation pipelines (beyond simple patient-median fallback).
 - Rapid training/evaluation → enables fast experimentation and iteration across multiple targets and CV folds.
@@ -364,7 +365,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ##
 ### 5.3 Advanced Deep Learning Model Selection
-#### Neural Architectures Considered
+#### 5.3.1 Neural Architectures Considered
 | Standard / Core              | Strengths                                       | Limitations                                                      | Decision Rationale                          |
 |--------------------|-------------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------|
 | LSTM/GRU (Recurrent) | Well-suited for sequences, handles variable-length inputs | Vanishing gradients on long sequences, slow sequential training | Unstable gradients on long ICU sequences, computationally inefficient, dataset too small for deep RNN stacks |
@@ -377,7 +378,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 | Graph Neural Network (GNN) | Models patient-patient similarity or hospital network relationships | Requires graph structure, not sequences or grids; operates on node/edges | Inapplicable to independent patient time-series |
 | WaveNet (Autoregressive) | Deep, heavy convolutional autoregressive model for audio | Designed for massive datasets (speech), computationally huge | Impractical and slow for 100-patient clinical dataset |
 
-#### Decision: TCN (Temporal Convolutional Neural Network)
+#### 5.3.2 Decision: TCN (Temporal Convolutional Neural Network)
 - Modern, credible sequence architecture → advanced enough to demonstrate deep-learning capability without appearing niche or experimental.
 - Dilated causal convolutions → capture long physiological context windows while preventing future leakage.
 - Fully parallel convolutional operations → train faster and more efficiently than sequential RNNs.
@@ -388,7 +389,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 - Temporal saliency maps → reveal when features influenced predictions, enabling time-aware interpretability.
 - Strong empirical support → consistently outperforms RNNs on moderate-length clinical sequences; well-validated in medical ML literature (unlike Neural ODEs, GNNs, WaveNet).
 
-#### Mechanism 
+#### 5.3.3 Mechanism of TCN
 **Temporal awareness**:
 -	Causal convolutions → at each time step, the model only looks backwards in time (no data leakage from the future).
 -	Dilated convolutions → skip connections expand the receptive field exponentially, captures long-range temporal patterns without deep stacking (without needing hundreds of layers).
@@ -502,6 +503,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ##
 ### 6.3 Hyperparameter Tuning
+### 6.3.1 Tuning Process
 - This is the only Phase 3 component used in later phases (Phase 5 LightGBM evaluation).
 - Tuned the four parameters with the highest impact on stability and generalisation for small tabular datasets:
 	- `learning_rate` → controls step size; balances speed vs overfitting.
@@ -517,7 +519,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 	-	Ensures LightGBM is fairly compared against TCN models in later phases.
 - Generates stable, reproducible, validated parameter sets that optimise baseline performance without overfitting, especially critical with only 100 patients.
 
-#### Best hyperparameters
+#### 6.3.2 Best hyperparameters
 
 | Target         | learning_rate | max_depth | n_estimators | min_data_in_leaf |
 |----------------|---------------|-----------|--------------|-------------------|
@@ -540,13 +542,13 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ##
 ### 6.6 Summary 
-#### Retained Outputs
+#### 6.6.1 Retained Outputs
 
 | Item                                | Rationale                                                     |
 |-------------------------------------|----------------------------------------------------------------|
 | **Hyperparameters (`best_params.json`)** | Used in Phase 5 LightGBM–TCN fair comparison                  |
 
-#### Superseded Outputs
+#### 6.6.2 Superseded Outputs
 
 | Item                                | Replaced By / Reason                                          |
 |-------------------------------------|----------------------------------------------------------------|
@@ -579,7 +581,9 @@ This outlines how dual-architectures could be integrated into a real-world clini
 - `plots/loss_curve.png` → visualisation of training vs validation loss.
 - Debugged and reproducible training + validation pipeline.
 
+##
 ### 7.2 Preprocessing Pipeline 
+#### 7.2.1 Overview
 **Purpose:** produces fixed-length, ordered patient sequences with masks from raw timestamps → clean, leakage-free, reproducibly scaled inputs for the TCN.
 
 ```text
@@ -610,7 +614,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
   Used by TCN training/validation/testing   Used at inference for identical preprocessing
 ```
 
-#### Key Steps
+#### 7.2.2 Key Steps
 1. **Chronological Ordering & Merge Outcomes**
   - Sort timestamps by `subject_id` and `charttime` to ensure correct temporal flow.
   - Add `max_risk`, `median_risk`, `pct_time_high` from patient-level data
@@ -639,54 +643,60 @@ This outlines how dual-architectures could be integrated into a real-world clini
   -	`standard_scaler.pkl` → z-scoring scalar (training-set mean/std)
   -	`padding_config.json` → sequence length (`max_seq_len`) + feature/target columns (`feature_cols`, `target_cols`)
 
+##
 ### 7.3 Network Architecture
 **Purpose:** fully convolutional, causal TCN for patient-level predictions with multi-task heads (classification + regression). 
 
 ```text
-                             ┌──────────────────────────────┐
-                             │ Input:                       │
-                             │ sequence tensor (B, L, F)    │
-                             └───────────────┬──────────────┘
-                                             │
-                                             ▼
-                             ┌──────────────────────────────┐
-                             │ Permute: to shape (B, F, L)  │
-                             │ for Conv1d input             │
-                             └───────────────┬──────────────┘
-                                             │
-                                             ▼
-            ┌─────────────────────────────────────────────────────────────────┐
-            │ Stacked Temporal Residual Blocks (3 blocks)                     │
-            │ Each TemporalBlock:                                             │
-            │  • 2x CausalConv1d (dilated 1D convolutions, length preserving) │
-            │  • LayerNorm (stabilises training)                              │
-            │  • ReLU activation (non-linearity)                              │
-            │  • Dropout (regularisation)                                     │
-            │  • Residual / skip connection (stable gradient flow)            │
-            │ Dilation doubles per block (1 → 2 → 4) → exponentially          │
-            │ increasing receptive field.                                     │
-            └────────────────────────────────┬────────────────────────────────┘
-                                             │
-                                             ▼
-                        ┌─────────────────────────────────────────┐        
-                        │ Masked Mean Pooling                     │          
-                        │  • Collapses variable-length sequences  ├────────────────────────────┐
-                        │  into a single-patientvector (B, C_last)│                            │
-                        │  • Summarise patient-level features     │                            ▼
-                        └────────────────────┬────────────────────┘       ┌────────────────────────────────────────┐
-                                             │                            │ Optional Dense Head                    │
-                                             ▼                            │  • Linear → ReLU → Dropout             │
-                              ┌──────────────────────────────┐            │  • Mixes pooled features before output │
-                              │ Task-Specific Output Heads   │            └────────────────────┬───────────────────┘
-                              │ Classification (binary):     │                                 │
-                              │  • classifier_max            │                                 │
-                              │  • classifier_median         │ ◀───────────────────────────────┘ 
+                             ┌──────────────────────────────┐                      ┌────────────────────┐                  
+                             │ Input:                       │                      │ Input:             │
+                             │ sequence tensor (B, L, F)    │                      │ mask tensor (B, L) │
+                             └───────────────┬──────────────┘                      └──────────┬─────────┘
+                                             │                                                │
+                             ┌──────────────────────────────┐                                 │
+                             │ Permute: to shape (B, F, L)  │                                 │
+                             │ for Conv1d input             │                                 │
+                             └───────────────┬──────────────┘                                 │
+                                             │                                                │
+                                             ▼                                                │
+            ┌─────────────────────────────────────────────────────────────────┐               │
+            │ Stacked Temporal Residual Blocks (3 blocks)                     │               │
+            │ Temporal feature extraction; Each TemporalBlock:                │               │
+            │  • 2x CausalConv1d (dilated 1D convolutions, length preserving) │               │
+            │  • 2x LayerNorm (stabilises training)                           │               │
+            │  • 2x ReLU activation (non-linearity)                           │               │
+            │  • 2x Dropout (regularisation)                                  │               │
+            │  • Downsample (1×1 convolution) if input ≠ output channels      │               │
+            │  • Residual / skip connection (stable gradient flow)            │               │
+            │ Dilation doubles per block (1 → 2 → 4) → exponentially          │               │
+            │ increasing receptive field.                                     │               │
+            └────────────────────────────────┬────────────────────────────────┘               │
+                                             │                                                │
+                             ┌──────────────────────────────┐                                 │
+                             │ Permute: back to shape       │                                 │
+                             │ (B, L, C_last)               │                                 │
+                             └───────────────┬──────────────┘                                 │
+                                             │                                                │
+                                             ▼                                                │                    
+                       ┌──────────────────────────────────────────┐                           │
+                       │ Masked Mean Pooling                      │ ◀─────────────────────────┘         
+                       │  • Collapses variable-length sequences   │
+                       │  into a single-patient vector (B, C_last)├───────────────────────────┐
+                       │  • Summarise patient-level features      │                           │
+                       └─────────────────────┬────────────────────┘                           ▼
+                                             │                           ┌────────────────────────────────────────┐
+                                             ▼                           │ Optional Dense Head                    │
+                              ┌──────────────────────────────┐           │  • Linear → ReLU → Dropout             │
+                              │ Task-Specific Output Heads   │           │  • Mixes pooled features before output │
+                              │ Classification (binary):     │           └────────────────────┬───────────────────┘
+                              │  • classifier_max            │                                │
+                              │  • classifier_median         │ ◀──────────────────────────────┘ 
                               │ Regression:                  │
                               │  • regressor (pct_time_high) │
                               └──────────────────────────────┘
 ```
 
-#### Architectural Structure
+#### 7.3.1 Architectural Structure
 1. **Causal Convolution (`CausalConv1d`) Layer**
   -	1D convolutions padded only on the left, trims the right → avoids future data leakage.
   -	Each kernel learns a local temporal pattern (e.g., sudden HR spike, BP drop).
@@ -697,8 +707,9 @@ This outlines how dual-architectures could be integrated into a real-world clini
     -	LayerNorm (stabilises activations → prevents exploding/vanishing gradients)
     - ReLU activation (non-linear feature learning → model learns complex patterns)
     -	Dropout (regularisation → avoids overfitting by randomly zeroing some activations)
+    -	Downsample (via 1×1 convolution) to match input and output channel dimensions where required, to allow for residual
     -	Residual connection (adds input back to output → maintain gradient flow in deep stacks)
-  -	Downsample (via 1×1 convolution) to match channel dimensions where required
+  - Purpose is for feature extraction
 3. **Dilated, Stacked TCN Layers**
 	-	TemporalBlocks stacked with exponentially increasing dilations (1 → 2 → 4 → …).
 	-	Expands the receptive field efficiently, enabling modelling of: short-range changes (first layers) →	medium-range trends → long-range deterioration patterns (deeper layers) without huge kernels
@@ -707,7 +718,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
   - Aggregates variable-length (padded) patient sequences into a fixed-size vector `(B, C_last)` per patient for downstream heads
   - Masked pooling computes the mean over only real (non-padded) timesteps → ignores padded timesteps to prevent gradient/feature distortion
 5. **Dense Head (Optional)**
-	-	Linear → ReLU → Dropout.
+	-	Patient vector: Linear → ReLU (non-linearity) → Dropout.
 	-	Used to mix pooled features → adds extra representational capacity before task heads
 	-	Can be disabled for a direct connection from pooled features → task heads.
 6. **Multi-Task Output Heads**
@@ -715,114 +726,190 @@ This outlines how dual-architectures could be integrated into a real-world clini
     - Classification: `classifier_max` (max risk), `classifier_median` (median risk)
     - Regression: `regressor` → (percentage of high-risk time)
   - Outputs shape `(B,)` for all heads after squeezing.
-  - These outputs go into loss functions during training.
 
- 
+#### 7.3.2 Model Initialisation
+**Purpose:** Defines the model configuration (channel sizes, kernel width, dilations, dropout, and optional dense head), builds the full TCN stack (TemporalBlocks), then attaches the pooling/dense/output heads.
 
+**Input Hyperparameters**
+- `num_features` (int) → Number of input variables per timestep (feature dimension).
+- `num_channels` (list[int]) → Output channel sizes for each TemporalBlock e.g. [64, 128, 128].
+- `kernel_size` (int) → Width of causal convolutions. Controls local temporal context (number of timesteps each kernel sees locally).
+- `dropout` (float) → Dropout rate, probability of randomly zeroing an activation during training (regularisation)
+- `head_hidden` (int or None) → Size of optional dense hidden layer applied after pooling. If None → pooled features go directly into output heads.
 
-#### Model Initialisation
-hyperparaemters 
+**Flow of Initialisation**
+1. Initialise `TemporalBlock` with parameters + `dilation`
+2. **Stack temporal blocks:** Builds TCN layers with exponentially increasing dilations (1, 2, 4, …).
+2. Sets feature dimension = last blocks channel size → ready for dense head.
+3. **Creates optional dense head if `head_hidden` is provided:** Linear → ReLU → Dropout
+4. Defines three final linear heads for multi-task prediction → one scalar prediction per patient.
+  - `classifier_max`
+  - `classifier_median`
+  - `regressor`
 
-#### Forward Pass
+#### 7.3.3 Forward Pass (Data Flow)
+**Purpose:** Defines flow of input data through the architecture
+```text
+         Input (B, L, F)         Mask (B, L)
+               │                      │
+         Permute (B, F, L)            │
+               │                      │
+  ┌──────────────────────────┐        │
+  │ 3 Stacked TCN Blocks     │        │
+  │ (causal + dilated convs) │        │
+  │                          │        │
+  │ TCN Block 1 (dilation=1) │        │
+  │            ▼             │        │ 
+  │ TCN Block 2 (dilation=2) │        │
+  │            ▼             │        │
+  │ TCN Block 3 (dilation=4) │        │
+  └──────────────────────────┘        │ 
+               │                      │
+      Permute Back (B, L, F)          │
+               │                      │
+      Masked Mean Pooling ◀───────────┘
+               │
+               │──────────▶ Optional Dense Head ─────────┐
+               │                                         ▼
+               └───────────────────────────────▶ Multi-Task Output 
+                                                 Heads (3)
+```
 
-#### Chronological flow
-**Forward Pass**
-1. Input tensor `(batch, channels, seq_len)` → **BCL format**.
-2. Layer 1 (Conv1 → LayerNorm → ReLU → Dropout): 
-  - **Causal conv**: extract first layer of temporal patterns.
-  - **LayerNorm**: normalise across channels at each timestep (convert to BLC format just for this step).
-  - **ReLU activation**: add non-linearity.
-  - **Dropout (during training only)**: randomly zero some outputs.
-3. Layer 2 (Conv2 → LayerNorm → ReLU → Dropout): combine previous patterns into more complex ones.
-4. **Downsample (1×1 conv)**: reshapes channels for residual addition.
-5. **Residual addition**: adds original input (or downsampled input) to output. Give gradients a shortcut path back.
-6. Output tensor `(batch, out_channels, seq_len)` → ready for next block or pooling or final classifier.
-**Backward pass (not in this script)** 
-1. Compute loss at the very end (prediction vs label).
-2. Backprop starts: compute gradients of loss wrt outputs.
-3. Gradients flow backward through residual add, then through conv2, conv1, etc.
-4. Optimiser updates the weights (kernels, 1×1 conv, etc.) a little bit.
-**Then you repeat this whole forward+backward cycle many times over the dataset.**
-Forward pass → Loss → Backward pass (gradients) → Weight update (repeat many epochs until convergence)
-**Intuition**:
-- Each block learns a set of temporal detectors.
-- Stacking multiple blocks increases the **effective receptive field**, combining short-term and long-term patterns.
-- Works with **causal convolutions** to ensure predictions never “peek into the future”.
+**Chronological Flow**
+1. **Input formatting:**
+  - Input: `(B, L, F)` (batch, sequence length, features per timestep) 
+  - Permute → `(B, F, L)` for Conv1d (expects channels-first)  
+2. **Pass through 3 stacked `TemporalBlocks` for feature extraction:**
+  - Each TemporalBlock learns temporal patterns; performs: 
+    - 2x Layers (CausalConv1d → LayerNorm → ReLU → Dropout)
+    - Downsample (1×1 conv): reshapes channels for residual addition
+    - Residual/skip connection: add original input, gradient shortcut path back
+    - Output tensor `(B, C_last, L)` → ready for next block or pooling or final classifier
+	-	Dilations increase per block (1 → 2 → 4), expanding receptive field
+3. Permute back for pooling → `(B, L, C_last)`
+4. Apply masked mean pooling → `(B, C_last)`
+  - If mask provided, ignore padding, average over real timestamps.  
+6. **Optional dense head (if enabled)**
+  - Linear → ReLU → Dropout
+	- Adds non-linearity and regularisation after pooling
+  - Output `(B, head_hidden)`
+7. **Pass to task-specific heads:**
+  - `classifier_max`: binary logit `(B,)`  
+  - `classifier_median`: binary logit `(B,)`  
+  - `regressor`: continuous risk `(B,)`
+8. **Output:** 
+  - Return dictionary of patient-level predictions (ready for loss functions).
+    - `logit_max`, `logit_median` → binary classification logits
+    - `regressor` → continuous regression output
 
-**Flow of Data**
-1. Input: `(B, L, F)` (batch, sequence length, features per timestep).  
-2. Permute → `(B, F, L)` for Conv1d.  
-3. Pass through stacked TemporalBlocks → `(B, C_last, L)`.  
-4. Permute back → `(B, L, C_last)`.  
-5. Apply **masked mean pooling** → `(B, C_last)`.  
-6. Optional dense head (if enabled) → `(B, head_hidden)`.  
-7. Pass to **task-specific heads**:  
-   - `classifier_max`: `(B,)`  
-   - `classifier_median`: `(B,)`  
-   - `regressor`: `(B,)`.  
-8. Return dictionary of predictions (ready for loss functions).
+#### 7.3.4 Design Rationale
+- Causal convolutions → causality ensures no future information leaks into predictions, preserving clinical validity.
+- Dilated convolutions → expand the temporal receptive field efficiently, without excessively deep networks (less kernels).
+- Residual blocks with: 
+  -	LayerNorm (normalisation) → stabilises activation scales across feature timestampes (stable optimisation)
+  - ReLU (activation) → non-linearity allows the block to model complex temporal patterns
+  - Dropout → regularisation reduces overfitting by randomly zeroing units during training
+  - Downsampling (1x1 convolutions) → adjusts input/output dimensions dimensions to allow for residual addition
+  - Residual/skip connection → addition of original input sequence provides a direct gradient pathway which prevents vanishing/exploding gradients and supports deeper stacks.
+- Masked mean pooling → correctly handles variable-length ICU sequences by ignoring padded timesteps.
+- Optional dense head → adds additional feature mixing after pooling (higher-level interactions between features) without altering the core TCN structure.
+- Multi-task output heads → map naturally onto the three patient-level targets (max risk, median risk, % high-risk time).
 
+This architecture balances temporal modelling capacity, training stability, and implementation clarity, making it suitable for small, noisy clinical datasets.
 
-#### Design Rationale
-	•	Causality prevents future leakage and preserves clinical realism.
-	•	Residual blocks + LayerNorm ensure stable optimisation even with deep stacks.
-	•	Dilations give wide temporal coverage without large kernels.
-	•	Masked pooling ensures correct handling of variable-length ICU sequences.
-	•	Multi-task heads align with the project’s three patient-level targets.
-	•	Optional dense head allows flexible complexity without changing core TCN behaviour.
-
-This architecture balances temporal modelling power, training stability, and clarity of implementation, making it well suited for small clinical datasets.
-
-  - **Reasoning**:  
-    - TCNs are causal by design → no future leakage.  
-    - Dilated convolutions give long temporal memory without very deep stacks.  
-    - Residual connections + LayerNorm = stable training, even with many blocks. 
-
-6. Inputs / Outputs
-	•	Inputs: sequence (batch, seq_len, num_features), mask (batch, seq_len)
-	•	Outputs: dictionary of patient-level predictions:
-	•	logit_max, logit_median → binary classification logits
-	•	regressor → continuous regression output
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+##
 ### 7.4 Training Configuration
+The following hyperparameters were used when training the final TCN model and stored in `config_refined.json` to fully determine reproducibility. 
+
+#### 7.4.1 Core Training Parameters
+| Component | Value | Notes |
+|----------|--------|-------|
+| Device | `cuda` (if available) or `cpu` | GPU acceleration |
+| Batch size | `32` | Number of patient sequences processed in one pass |
+| Epochs | `50` | Number of complete passes through the training dataset before stopping; more epochs → more weight adjustments to reduce loss |
+| Learning rate | `1e-3` | Learning rate for the Adam optimizer. Controls how much to change the model in response to estimated error each time the model weights are updated |
+| Early stopping patience | `7` | Monitors a validation metric, if no improvement for 7 epochs, training stops early to avoid overfitting |
+
+#### 7.4.2 Model Hyperparameters (Used During Training)
+| Parameter | Value | Purpose |
+|----------|--------|---------|
+| `num_channels` | `[64, 64, 128]` | Filters per TCN block; controls depth/width |
+| `kernel_size` | `3` | Temporal receptive window for each convolution |
+| `dropout` | `0.2` | Regularisation in all residual blocks + dense head |
+| `head_hidden` | `64` | Size of optional dense mixing layer before outputs |
+
+#### 7.4.3 Optimiser & Scheduler
+| Component | Parameter | Value | Notes |
+|-----------|-----------|--------|-------|
+| Optimiser | Type | `Adam` | Adaptive gradient descent |
+|           | Learning rate | `1e-3` | Base LR |
+| Scheduler | Type | `ReduceLROnPlateau` | Adjusts LR when validation loss stagnates |
+|           | Mode | `min` | Looks for decreasing validation loss |
+|           | Patience | `3` | Number of epochs without improvement before reducing LR |
+|           | Factor | `0.5` | Multiplier applied to LR when triggered |
+
+#### 7.4.4 Loss Functions
+| Task | Loss | Notes |
+|------|-------|-------|
+| `max_risk` | BCEWithLogitsLoss (unweighted) | Standard binary classification |
+| `median_risk` | BCEWithLogitsLoss (with `pos_weight`) | Adjusts for class imbalance |
+| `pct_time_high` | MSELoss (on `log1p(y)`) | Regression stabilised via log-transform |
+
+#### 7.4.5 Data Transformations Applied During Training
+| Transformation | Description |
+|----------------|-------------|
+| Log-transform regression target | `pct_time_high → log1p(y)` to stabilise gradients |
+| Inference inverse-transform | `expm1(y_pred)` |
+| Class weighting | `pos_weight = num_neg / num_pos` for median-risk |
+
+#### 7.4.6 Reproducibility Controls
+| Setting | Value |
+|---------|--------|
+| Python seed | `42` → fixes randomness in Python built-in `random` module |
+| NumPy seed | `42` → ensure deterministic NumPy operations |
+| PyTorch CPU/GPU seed | `42` → controls randomness in weight initialisation, dropout pattern and sampling |
+| Deterministic CuDNN | Enabled → PyTorch uses deterministic convolution algorithms, kernel selection|
+| `config_refined.json` | Saved full configuration |
+| `training_history_refined.json` | Saved train/val loss curve for reproducibility |
+
+
+
 
 
 
 
 
 ### 7.5 Model Training & Validation
-	•	Initial evaluation metrics and subsequent diagnostics exposed two issues:
-	1.	Label misalignment in the evaluation script
-	2.	Poor learning on regression + median-risk due to scale imbalance and class imbalance
-	•	These were resolved by:
-	•	Log-transforming the regression target
-	•	Applying class weighting (pos_weight) for median risk
-	•	Retraining the model end-to-end
-	•	The training curves presented in this section correspond to the final corrected training run.
+
+news2_features_patient.csv
+patient_splits.json
+
+train.pt train_mask.pt
+
+Output files: loss_curve_refined.png 
+tcn_best_refined.pt = Best-performing model (lowest validation loss) for phase 5 and 6
+training_history_refined.json = train/validation losses per epoch (train_loss, val_loss)
+
+
+
+- Initial evaluation metrics and subsequent diagnostics exposed two issues:
+	1. Label misalignment in the evaluation script
+	2. Poor learning on median-risk → class imbalance and poor calibration
+  3. Poor learning on regression → underfitting; skewed target limits variance
+- These were resolved by implementing minimal controlled fixes while keeping architecture/hyperparameters constant:
+  1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew (deterministic), stabilise variance
+  2. Applying class weighting (`pos_weight` = 2.889) for median risk BCE loss → correct class imbalance (dynamic)
+- All outputs and visualisations represent final model outputs
+  - `tcn_best_refined.pt` → best model weights, saved at lowest validation loss.  
+  - `config_refined.json` → metadata with transformations, loss setup, and metrics. 
+
 
 3. **Model Training `tcn_training_script.py`**
-	- **Loss functions**: Binary cross-entropy (for classification heads), MSE (regression).
-	-	**Optimiser**: Adam with learning-rate scheduler (reduce on plateau).
-	-	**Regularisation**: dropout within TCN, gradient clipping, early stopping (patience=7).
+
 	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
   - **Reproducibility controls**: Fixed seeds for Python/NumPy/PyTorch, enforced deterministic CuDNN ops, saved hyperparameter config (`config.json`) and training/validation loss history (`training_history.json`) to ensure bit-for-bit reproducibility.
   - **Reasoning**: This phase ensures the model learns from patient sequences in a stable, controlled way. Shows deep learning maturity (correct loss functions, imbalance handling, monitoring).
+
 4. **Validation (during training)**
 	-	**Setup**: Patient-level validation split (not seen during training).
 	-	**Metrics tracked**: Validation loss per epoch.
@@ -832,18 +919,153 @@ This architecture balances temporal modelling power, training stability, and cla
     -	Training stops early when overfitting begins (after 7 epochs of no improvement).
   - **Reasoning**: Validation ensures the model generalises and doesn’t just memorise training data.
 
+
+**Completed Full Temporal Convolutional Network (TCN) Training Loop Script `tcn_training_script.py`**
+#### Summary
+- Built a **complete PyTorch training pipeline** for the TCN model.  
+- Covered **data loading, dataset preparation, target construction, model definition, training, validation, early stopping, and checkpoint saving**.  
+- **Introduced key deep learning concepts**: loss functions, optimisers, gradient flow, overfitting prevention, early stopping, and learning rate scheduling.
+- This script forms the core of **Phase 4**, moving from data preparation into real deep learning training.
+### Output
+- `trained_models/tcn_best.pt` — the best-performing model weights (lowest validation loss).  
+- Console logs of **training and validation loss per epoch**, with early stopping.
+- **Debug prints confirming**:
+	-	Binary targets (`y_train_max`, `y_train_median`) are clean.
+	-	Regression target (`y_train_reg`) is bounded, no NaNs/Infs.
+-	Confirmed the pipeline runs end-to-end with no runtime errors.
+### Step-by-Step Flow
+1. **Imports & Config**
+	-	Import PyTorch, Pandas, JSON, and our custom TCNModel.
+	-	**Define hyperparameters**:
+    -	`DEVICE` (GPU/CPU)
+    -	`BATCH_SIZE`, `EPOCHS`, `LR` (learning rate)
+    -	`EARLY_STOPPING_PATIENCE` (stop when val loss doesn’t improve).
+  -	Create `MODEL_SAVE_DIR` → ensures trained models are stored.
+2. **Load Prepared Data**
+	-	Use `torch.load()` to bring in padded sequence tensors (`x_train, mask_train` etc.) created from `prepare_tcn_dataset.py`.
+	-	These are the time-series features per patient, already standardised + padded to equal length.
+	-	Masks mark valid timesteps vs padding (prevents model from “learning noise”).
+3. **Build Target Tensors (Patient Labels)**
+	-	Load patient-level CSV (`news2_features_patient.csv`).
+	-	**Recreate binary labels**:
+    -	**max_risk_binary**: high vs not-high risk.
+    -	**median_risk_binary**: low vs medium.
+	-	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
+	-	Define `get_targets()`:
+    -	Pulls the right patients.
+    -	Converts labels into PyTorch tensors (`y_train_max, y_train_median, y_train_reg`) for each split.
+  - **Rationale**: features (time-series) and labels (patient outcomes) are stored separately. We need to align them so that each input sequence (x_train) has its corresponding target outcome (ground-truth) to train on. This ensures you have paired data: (`x_train[i], mask_train[i]`) → (`y_train_max[i], y_train_median[i], y_train_reg[i]`).
+4. **TensorDatasets & DataLoaders**
+	-	TensorDataset groups together (inputs, masks, targets) into one dataset object.
+	-	**DataLoader breaks this dataset into mini-batches**:
+    -	batch_size=32 → model sees 32 patients per step.
+    -	shuffle=True for training → prevents learning artefacts from patient order.
+  - **Rationale**: mini-batching improves GPU efficiency and stabilises gradient descent.
+5. **Model Setup**
+  - Defines the architecture (what the model looks like, how it processes inputs).
+	-	**Instantiate TCNModel with**:
+    -	Input dimension = 171 features.
+    -	**Residual conv blocks**: [64, 64, 128] → 3 conv blocks with number of channels (filters/kernels). Residual is defined within the block.
+    -	**Dense head**: 64 neurons → mixes all features before final outputs (comes once, after the stack finishes)
+	-	Send model to GPU/CPU (.to(DEVICE)).
+6. **Loss Functions**
+  - We train on three parallel tasks (multi-task learning). 
+  - Each target needs its own loss, calculated by the loss function:
+    -	`criterion_max / criterion_median`: BCEWithLogitsLoss → binary classification.
+    -	`criterion_reg`: MSELoss → regression task.
+7. **Optimiser + Scheduler**
+  - Uses batch-by-batch output heads from the dense head to optimise parameters. 
+	-	Optimiser = Adam with LR=1e-3.
+	-	Scheduler = ReduceLROnPlateau (halves LR if val loss plateaus).
+  - **Rationale**: 
+    - Adam adapts learning rate per parameter → faster convergence. 
+    - Scheduler prevents the model from “getting stuck”.
+8. **Training Loop**
+	-	Loop over epochs (one full pass through the entire training dataset).
+  - Network jointly learns classification and regression.
+	-	**For each batch**:
+    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`).
+    -	Compute losses with loss functions for all 3 tasks → compare predictions to true labels (`y_max, y_median, y_reg`).
+    - Combine losses into 1 (`loss = loss_max + loss_median + loss_reg`) → one scalar loss value means each task contributes equally (multi-task learning).
+    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter.
+    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients so their norm ≤ 1, keeps training stable).
+    -	Optimiser step → updates weights in opposite direction of the gradients.
+	-	**Track average training loss per epoch**:
+    - Loss for batch * batch size, then sum these values for every batch, then divide by number of patients in dataset = average loss across all patients in training set → no matter how batch sizes vary we ensure the epoch loss is the mean loss per patient. 
+    - Logged and compared with validation loss for analysis → this is how you see if your model is learning.
+  - **This is the heart of deep learning**: forward → loss → backward → update.
+9. **Validation Loop**
+	-	Run the model on validation set (no gradients).
+	-	Compute average validation loss.
+	-	Update LR scheduler.
+	-	Print progress.
+  - **Rationale**: validation loss tells us if the model is generalising or just memorising.
+10. **Early Stopping**
+	-	If validation loss improves → save model (`tcn_best.pt`).
+	-	If no improvement for 7 epochs → stop training early.
+  - **Rationale**: protects against overfitting and wasted compute.
+11. **Debug Prints**
+  - Sanity checks ensure training data is valid:
+    -	Show unique values of targets.
+    - Binary targets are present (0 and 1).
+    -	Show regression range is healthy (min/max).
+    -	Check for NaN/Inf in inputs (pipeline clean)
+### Summary of Flow
+**Inputs → Targets → Training → Validation → Early stopping → Saved best model**
+1. **Forward pass**: model computes predictions for the batch.
+2. **Loss computation (BCE, MSE)**: predictions are compared to true labels → gives `loss_max, loss_median, loss_reg`.
+3. **Combine losses**: summed to get overall batch loss.
+4. **Backward pass**: compute gradients → tells how to adjust weights to reduce loss.
+5. **Optimizer step**: update weights using the gradients, gradients determine direction, learning rate determines size.
+6. Repeat until early stoppage to prevent overfitting.
+### Next Steps
+- **Finish Phase 4**: generate visualisations → only the training vs validation loss curves (step 5).
+- **Start Phase 5: Evaluation**
+  -	Perform final evaluation on test set using `tcn_best.pt`
+  -	**Compute metrics**: ROC-AUC, F1, accuracy (classification); RMSE, R² (regression)
+  -	**Generate visualisations**: ROC curves, calibration plots, Regression scatter & residual histogram.
+-	Compare TCN performance to LightGBM baseline and NEWS2 baseline for clinical and technical validation.
+
+
+
 ### 7.6 Generate Visualisations
 
+Training/validation losses were monitored each epoch. Early stopping (patience=7) selected the best checkpoint (epoch ~3), easrly stopping at eopch 10
+
+src/prediction_diagnostics/loss_plots/loss_curve_refined.png
   - **Features**:
     -	Plots Training vs Validation loss curves across epochs.
-    -	Highlights the best epoch (red dashed line + dot).
+    -	Highlights the best epoch (red dashed line + dot) which is minima.
     -	Text annotation shows epoch and validation loss value.
     -	Optional “overfitting region” annotation marks where validation loss rises.
     -	Grid and layout optimised for clarity and interpretability.
   - **Reasonings**: 
     - Transforms numerical loss logs into a visual understanding of model learning behaviour.
     - Focus on training behaviour and convergence, show whether the model converged, generalisation, where early stopping kicked in, whether overfitting started.
+
 ---
 
+evaluation 
+
+	1. Label misalignment in the evaluation script
+  **Patient ID Misalignment**
+- Initial evaluation (`evaluate_tcn_testset.py`) used CSV filtering without enforcing JSON split order.  
+- ROC-AUC metrics were sensitive to this ordering, causing artificially low Max Risk AUC (0.577 → 0.923 after fix).  
+- Threshold-based metrics (F1, Accuracy) were less affected.
+
+2. **Fix Evaluation Script (`evaluate_tcn_testset.py`)**
+  - **Purpose:** Correct ROC-AUC inconsistencies caused by misaligned test patient ordering.  
+  - **Process:**  
+    - Replaced unordered `set()` indexing with ordered `.loc[test_ids]` for perfect alignment.  
+    - Recomputed metrics with corrected label order.  
+  - **Outputs:**  
+    - Accurate and reproducible metrics (ROC-AUC), consistent across all scripts:  
+      - Max Risk: AUC = 0.923, F1 = 0.929  
+      - Median Risk: AUC = 0.778, F1 = 0.000  
+      - Regression: RMSE = 0.077, R² = 0.166 
+  - **Reasoning:**  
+    - Ensured **true one-to-one matching** between predictions and ground truths; restoring metric validity and confirming earlier diagnostic interpretations.
+
+  - **Predictions and ground-truth labels** are fully aligned, ensuring **reproducible metrics** across runs.  
 
 
