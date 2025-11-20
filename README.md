@@ -632,7 +632,8 @@ This outlines how dual-architectures could be integrated into a real-world clini
   -	`padding_config.json` → sequence length (`max_seq_len`) + feature/target columns (`feature_cols`, `target_cols`)
 
 ### 7.3 Network Architecture
-**Purpose:** full TCN model architecture that is fully convolutional and causal, outputting patient-level predictions through multi-task heads 
+**Purpose:** fully convolutional, causal TCN for patient-level predictions with multi-task heads (classification + regression).
+
 
 2. **Model Architecture (TCN) `tcn_model.py`**
   - **Base**: Temporal Convolutional Network (stacked causal dilated 1D convolutions).  
@@ -645,59 +646,138 @@ This outlines how dual-architectures could be integrated into a real-world clini
       - Dropout → regularisation.  
       - Residual/skip connection → stable gradient flow.  
     - **Stacking with dilation**: each block doubles dilation (1, 2, 4) → exponentially increasing receptive field.  
-    - **Masked mean pooling**: collapses variable-length sequences into a single patient-level vector, ignoring padding.  
-    - **Optional dense head**: Linear → ReLU → Dropout → mixes pooled features before output.  
+    - **Masked mean pooling**: collapses variable-length sequences into a single patient-level vector, ignoring padding, to summarise patient-level features.  
+    - **Optional dense head**: Linear → ReLU → Dropout → mixes/refines pooled features before output.  
     - **Task-specific heads**:  
       - Classification: `classifier_max`, `classifier_median` (binary logits).  
       - Regression: `regressor` (continuous `pct_time_high`).  
   - **Targets**:  
     - Binary classification → `max_risk`, `median_risk`.  
     - Regression → `pct_time_high`.  
+                         ┌──────────────────────────────┐
+                     │ Input: (B, L, F)             │
+                     │ sequence tensor              │
+                     └───────────────┬──────────────┘
+                                     │
+                                     ▼
+                     ┌──────────────────────────────┐
+                     │ Permute: (B, F, L)           │
+                     │ for Conv1d input             │
+                     └───────────────┬──────────────┘
+                                     │
+                                     ▼
+              ┌─────────────────────────────────────────────┐
+              │ Stacked Temporal Residual Blocks (3 blocks) │
+              │ Each block:                                  │
+              │  • 2x CausalConv1d (dilated, length-preserving) │
+              │  • LayerNorm                                 │
+              │  • ReLU                                     │
+              │  • Dropout                                  │
+              │  • Residual/skip connection                 │
+              │ Dilation doubles per block: 1 → 2 → 4       │
+              └─────────────────────────┬──────────────────┘
+                                        │
+                                        ▼
+                     ┌──────────────────────────────┐
+                     │ Masked Mean Pooling           │
+                     │ → collapses variable-length   │
+                     │ sequences to (B, C_last)     │
+                     └───────────────┬──────────────┘
+                                     │
+                                     ▼
+                     ┌──────────────────────────────┐
+                     │ Optional Dense Head           │
+                     │ Linear → ReLU → Dropout       │
+                     └───────────────┬──────────────┘
+                                     │
+                                     ▼
+                     ┌──────────────────────────────┐
+                     │ Task-Specific Output Heads    │
+                     │ Classification:               │
+                     │  • classifier_max            │
+                     │  • classifier_median         │
+                     │ Regression:                   │
+                     │  • regressor (pct_time_high) │
+                     └──────────────────────────────┘
+
+
+#### Chronological flow
+**Forward Pass**
+1. Input tensor `(batch, channels, seq_len)` → **BCL format**.
+2. Layer 1 (Conv1 → LayerNorm → ReLU → Dropout): 
+  - **Causal conv**: extract first layer of temporal patterns.
+  - **LayerNorm**: normalise across channels at each timestep (convert to BLC format just for this step).
+  - **ReLU activation**: add non-linearity.
+  - **Dropout (during training only)**: randomly zero some outputs.
+3. Layer 2 (Conv2 → LayerNorm → ReLU → Dropout): combine previous patterns into more complex ones.
+4. **Downsample (1×1 conv)**: reshapes channels for residual addition.
+5. **Residual addition**: adds original input (or downsampled input) to output. Give gradients a shortcut path back.
+6. Output tensor `(batch, out_channels, seq_len)` → ready for next block or pooling or final classifier.
+**Backward pass (not in this script)** 
+1. Compute loss at the very end (prediction vs label).
+2. Backprop starts: compute gradients of loss wrt outputs.
+3. Gradients flow backward through residual add, then through conv2, conv1, etc.
+4. Optimiser updates the weights (kernels, 1×1 conv, etc.) a little bit.
+**Then you repeat this whole forward+backward cycle many times over the dataset.**
+Forward pass → Loss → Backward pass (gradients) → Weight update (repeat many epochs until convergence)
+**Intuition**:
+- Each block learns a set of temporal detectors.
+- Stacking multiple blocks increases the **effective receptive field**, combining short-term and long-term patterns.
+- Works with **causal convolutions** to ensure predictions never “peek into the future”.
+
+**Flow of Data**
+1. Input: `(B, L, F)` (batch, sequence length, features per timestep).  
+2. Permute → `(B, F, L)` for Conv1d.  
+3. Pass through stacked TemporalBlocks → `(B, C_last, L)`.  
+4. Permute back → `(B, L, C_last)`.  
+5. Apply **masked mean pooling** → `(B, C_last)`.  
+6. Optional dense head (if enabled) → `(B, head_hidden)`.  
+7. Pass to **task-specific heads**:  
+   - `classifier_max`: `(B,)`  
+   - `classifier_median`: `(B,)`  
+   - `regressor`: `(B,)`.  
+8. Return dictionary of predictions (ready for loss functions).
+
 
 #### Architectural Structure
-1. **Causal Convolution (CausalConv1d)**
-  -	1D convolutions padded only on the left so the model never sees future values.
-  -	Ensures strict temporal causality for ICU forecasting.
+1. **Causal Convolution (`CausalConv1d`) Layer**
+  -	1D convolutions padded only on the left, trims the right → avoids future data leakage.
   -	Each kernel learns a local temporal pattern (e.g., sudden HR spike, BP drop).
+  -	Preserves temporal causality critical for ICU time series.
 2. **Temporal Residual Block**
-The core computational unit. Each block contains:
-	•	Two causal convolutions (local feature extraction).
-	•	LayerNorm (stabilises activations and prevents gradient instability).
-	•	ReLU (non-linearity).
-	•	Dropout (regularisation).
-	•	Residual connection to maintain gradient flow in deep stacks.
-	•	1×1 convolution to match channel dimensions where required.
-
-This structure allows deep temporal processing without vanishing gradients.
-
+  - Core computational unit `TemporalBlock` contains:
+    -	Two causal convolutions (local feature extraction).
+    -	LayerNorm (stabilises activations → prevents exploding/vanishing gradients)
+    - ReLU activation (non-linear feature learning → model learns complex patterns)
+    -	Dropout (regularisation → avoids overfitting by randomly zeroing some activations)
+    -	Residual connection (adds input back to output → maintain gradient flow in deep stacks)
+  -	Downsample (via 1×1 convolution) to match channel dimensions where required
 3. **Dilated, Stacked TCN Layers**
-	•	Blocks are stacked with exponentially increasing dilations (1 → 2 → 4 → …).
-	•	Expands the receptive field efficiently, enabling modelling of:
-	•	short-range changes (first layers),
-	•	medium-range trends,
-	•	long-range deterioration patterns (deeper layers).
-	•	The final block outputs a tensor of shape (B, C_last, L).
+	-	TemporalBlocks stacked with exponentially increasing dilations (1 → 2 → 4 → …).
+	-	Expands the receptive field efficiently, enabling modelling of: short-range changes (first layers) →	medium-range trends → long-range deterioration patterns (deeper layers) without huge kernels
+	- Final block outputs tensor `(B, C_last, L)`
+4. **Masked Mean Pooling**
+  - Aggregates variable-length (padded) patient sequences into a fixed-size vector `(B, C_last)` per patient for downstream heads
+  - Masked pooling computes the mean over only real (non-padded) timesteps → ignores padded timesteps to prevent gradient/feature distortion
+5. **Dense Head (Optional)**
+	-	Linear → ReLU → Dropout.
+	-	Used to mix pooled features → adds extra representational capacity before task heads
+	-	Can be disabled for a direct connection from pooled features → task heads.
+6. **Multi-Task Output Heads**
+  - Separate linear heads generate patient-level outputs:
+    - Classification: `classifier_max` (max risk), `classifier_median` (median risk)
+    - Regression: `regressor` → (percentage of high-risk time)
+  - Outputs shape `(B,)` for all heads after squeezing.
+  - These outputs go into loss functions during training.
 
-4. Masked Mean Pooling
-	•	Patient sequences have variable lengths; padding is required.
-	•	Masked pooling computes the mean over only real (non-padded) timesteps.
-	•	Produces a fixed-size patient vector (B, C_last) for downstream heads.
+ 
 
-5. Optional Dense Head
-	•	Linear → ReLU → Dropout.
-	•	Used to mix pooled features before prediction when additional representational capacity is helpful.
-	•	Can be disabled for a direct connection from pooled features → task heads.
 
-6. Multi-Task Output Heads
+#### Model Initialisation
+hyperparaemters 
 
-Separate linear heads generate patient-level outputs:
-	•	Binary classification:
-	•	classifier_max (max risk)
-	•	classifier_median (median risk)
-	•	Regression:
-	•	regressor (percentage of high-risk time)
+#### Forward Pass
 
-Each head outputs shape (B,) after squeezing.
 
 #### Design Rationale
 	•	Causality prevents future leakage and preserves clinical realism.
@@ -712,8 +792,14 @@ This architecture balances temporal modelling power, training stability, and cla
   - **Reasoning**:  
     - TCNs are causal by design → no future leakage.  
     - Dilated convolutions give long temporal memory without very deep stacks.  
-    - Residual connections + LayerNorm = stable training, even with many blocks.  
-    - Chosen as a modern, efficient alternative to RNNs (LSTM/GRU) and Transformers, showing a deliberate design choice.  
+    - Residual connections + LayerNorm = stable training, even with many blocks. 
+
+6. Inputs / Outputs
+	•	Inputs: sequence (batch, seq_len, num_features), mask (batch, seq_len)
+	•	Outputs: dictionary of patient-level predictions:
+	•	logit_max, logit_median → binary classification logits
+	•	regressor → continuous regression output
+  
 
 
 
@@ -725,7 +811,10 @@ This architecture balances temporal modelling power, training stability, and cla
 
 
 
-    
+
+
+
+
 
 ### 7.4 Training Configuration
 
