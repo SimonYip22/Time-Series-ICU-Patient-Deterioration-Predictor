@@ -337,14 +337,6 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 - **Sustained risk:** Requires calibrated probability estimates over full stay (LightGBM advantage)
 - Dual architecture approach represents two distinct clinical tasks; sustained risk assessment + acute monitoring, pipeline leverages each model's inherent strengths by aligning to its optimal prediction task.
 
-#### 5.1.4 Future Clinical Deployment Strategy
-1. LightGBM runs at admission → baseline, interpretable risk stratification (resource planning)
-2. TCN runs continuously → real-time continuous temporal monitoring (acute alerts)
-3. Ensemble logic → hybrid alert triggers if either model exceeds threshold (maximizes sensitivity)
-4. Calibration layer → Map TCN probabilities to LightGBM-aligned scale via isotonic regression
-
-This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
-
 ##
 ### 5.2 Baseline Classical ML Model Selection
 #### 5.2.1 Classical Models Considered
@@ -562,7 +554,7 @@ This outlines how dual-architectures could be integrated into a real-world clini
 - **It delivered the two foundations that shaped all later phases:**
 	-	Target binarisation (after diagnosing rare-event imbalance).
 	-	Stable tuned hyperparameters (ensuring fair LightGBM vs TCN comparison).
-- Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing and confirmed learnable signal.
+- Even though most intermediate outputs were superseded, Phase 3 remains essential because it validated the problem framing and confirmed learnable signal before evolution of the project.
 - Grounds the project in rigorous baseline modelling before moving to temporal architectures.
 
 ---
@@ -805,16 +797,16 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 #### 7.3.4 Design Rationale
 - Causal convolutions → causality ensures no future information leaks into predictions, preserving clinical validity.
-- Dilated convolutions → expand the temporal receptive field efficiently, without excessively deep networks (less kernels).
+- Dilated convolutions → expand the temporal receptive field exponentially, without excessively deep networks (less kernels).
 - Residual blocks with: 
-  -	LayerNorm (normalisation) → stabilises activation scales across feature timestampes (stable optimisation)
+  -	LayerNorm (normalisation) → stabilises activation scales across feature timestampes (stable optimisation training)
   - ReLU (activation) → non-linearity allows the block to model complex temporal patterns
   - Dropout → regularisation reduces overfitting by randomly zeroing units during training
   - Downsampling (1x1 convolutions) → adjusts input/output dimensions dimensions to allow for residual addition
   - Residual/skip connection → addition of original input sequence provides a direct gradient pathway which prevents vanishing/exploding gradients and supports deeper stacks.
 - Masked mean pooling → correctly handles variable-length ICU sequences by ignoring padded timesteps.
-- Optional dense head → adds additional feature mixing after pooling (higher-level interactions between features) without altering the core TCN structure.
-- Multi-task output heads → map naturally onto the three patient-level targets (max risk, median risk, % high-risk time).
+- Optional dense head → adds additional feature mixing after pooling (higher-level interactions between features) and non-linearity without altering the core TCN structure.
+- Multi-task output heads → matches the three patient-level targets (max risk, median risk, % high-risk time).
 
 This architecture balances temporal modelling capacity, training stability, and implementation clarity, making it suitable for small, noisy clinical datasets.
 
@@ -875,133 +867,189 @@ The following hyperparameters were used when training the final TCN model and st
 
 ### 7.5 Training Pipeline Setup
 
-`tcn_training_script_refined.py`
-news2_features_patient.csv
-patient_splits.json
-padding_config.json
-patient_splits.json
-tcn_model.py TCNModel
-
-training loop: train.pt train_mask.pt
-
-validation loop: val.pt val_mask.pt
-
+```text
+                                                    ┌───────────────────────────────┐
+                                                    │            Inputs             │
+                                                    │  • news2_features_patient.csv │
+                                                    │  • padding_config.json        │
+                                                    │  • train/val/test sequences   │
+                                                    │  • train/val/test masks       │
+                                                    │  • patient_splits.json        │
+                                                         TCNModel (tcn_model.py)
+                                                    │  • config_refined.json        │
+                                                    └──────────────┬────────────────┘
+                                                                   │
+                                                                   ▼
+               ┌──────────────────────────────────┬─────────────────────────────────┬────────────────────────────────┐
+               │                                  │                                 │                                │
+  ┌─────────────────────────┐    ┌────────────────────────────────┐    ┌─────────────────────────┐    ┌────────────────────────────┐
+  │ Load patient-level CSV  │    │ Load patient splits            │    │ Load padded sequences   │    │ Load feature configuration │
+  │ and padding config for  │    │  • Map rows from CSV to        │    │  • (N, 96, 171) tensors │    │ • Contains parameters to   │
+  │ features and targets    │    │  train/val/test target tensors │    │  • (N, 96) masks        │    │ initialise model           │
+  └────────────┬────────────┘    └────────────────┬───────────────┘    └────────────┬────────────┘    └──────────────┬─────────────┘
+               │                                  │                                 │                                │
+               ▼                                  ▼                                 │                                │
+  ┌─────────────────────────┐    ┌─────────────────────────────────────────────┐    │                                │              
+  │ Recreate binary targets │    │ Build target tensors per split (train/val)  │    │                                │
+  │  • max/median binary    │    │  • y_train_max, y_train_median, y_train_reg │◀───┘                                │
+  │  • pct_time_high        │    │  • y_val_max, y_val_median, y_val_reg       │                                     │
+  └────────────┬────────────┘    └────────────────┬────────────────────────────┘                                     │
+               │                    ▲             │                                                                  │
+               ▼                    │             ▼                                                                  │
+  ┌─────────────────────────┐       │     ┌────────────────────────────────────────────────────────────┐             │                                                 
+  │ Data transformations    │       │     │ TensorDataset                                              │             │                                                  
+  │  • log1p regression     ├───────┘     │  • Handles all data per sample (input, mask, targets)      │             │     
+  │  • compute pos_weight   │             │  • (x, mask, y_max, y_median, y_reg) bundled per-patient   │             │
+  └─────────────────────────┘             │  for train/val                                             │             │
+                                          └──────────────────────────────┬─────────────────────────────┘             │                          
+                                                                         │                                           │
+                                                                         ▼                                           │
+                                          ┌────────────────────────────────────────────────────────────┐             │
+                                          │ DataLoader                                                 │             │
+                                          │  • Wraps TensorDataset and handles batching, shuffling     │             │
+                                          │  • Create shuffled mini-batches (batch_size=32)            │             │
+                                          └──────────────────────────────┬─────────────────────────────┘             │
+                                                                         │                                           │
+                                                                         ▼                                           │
+                                          ┌────────────────────────────────────────────────────────────┐             │
+                                          │ Model Setup                                                │             │
+                                          │  • TCNModel (171 features)                                 │             │
+                                          │  • Channels: [64, 64, 128]                                 │             │
+                                          │  • Dense head: 64                                          │◀────────────┘
+                                          │  • Losses: BCE (max), weighted BCE (median), MSE (log reg) │            
+                                          │  • Optimiser: Adam                                         │
+                                          │  • Scheduler: ReduceLROnPlateau                            │
+                                          └──────────────────────────────┬─────────────────────────────┘
+                                                                         │
+                                                                         ▼
+                                                         ┌──────────────────────────────┐
+                                                         │      READY FOR TRAINING      │
+                                                         └──────────────────────────────┘
+```
 
 #### 7.5.1 Pre-Training Refinements
-- Initial evaluation metrics and subsequent diagnostics identified issues:
-	1. Label misalignment in the evaluation script
-	2. Poor learning on median-risk → class imbalance; poor calibration
-  3. Poor regression pefromance → underfitting; skewed targets
+- Initial evaluation metrics and subsequent diagnostics identified issues with model performance:
+	1. Poor learning on median-risk → class imbalance; poor calibration
+  2. Poor regression peformance → underfitting; skewed targets
 - Implemented minimal controlled fixes, keeping architecture/hyperparameters constant:
   1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew and stabilise variance
   2. Applying class weighting (`pos_weight = 2.889`) for median-risk BCE loss → correct class imbalance
 
 #### 7.5.2 Setup Flow
 1. **Imports & Config**
-	-	Import PyTorch, Pandas, JSON, and our custom TCNModel.
-	-	**Define hyperparameters**:
-    -	`DEVICE` (GPU/CPU)
-    -	`BATCH_SIZE`, `EPOCHS`, `LR` (learning rate)
-    -	`EARLY_STOPPING_PATIENCE` (stop when val loss doesn’t improve).
-  -	Create `MODEL_SAVE_DIR` → ensures trained models are stored.
-2. **Load Prepared Data**
-	-	Use `torch.load()` to bring in padded sequence tensors (`x_train, mask_train` etc.) created from `prepare_tcn_dataset.py`.
-	-	These are the time-series features per patient, already standardised + padded to equal length.
-	-	Masks mark valid timesteps vs padding (prevents model from “learning noise”).
+	-	Import custom `TCNModel` from `tcn_model.py`
+	-	**Define hyperparameters**: `DEVICE`, `BATCH_SIZE`, `EPOCHS`, `LR`, `EARLY_STOPPING_PATIENCE`
+2. **Load Prepared Sequence Data**
+	-	Load padded tensors (`train.pt`, `val.pt`, `test.pt`) and their corresponding masks (valid timesteps vs padding)
+	-	These are the time-series features per patient, already standardised + padded to equal length by the preprocessing pipeline.
 3. **Build Target Tensors (Patient Labels)**
 	-	Load patient-level CSV (`news2_features_patient.csv`).
-	-	**Recreate binary labels (same as LightGBM)**:
-    -	**max_risk_binary**: high vs not-high risk.
-    -	**median_risk_binary**: low vs medium.
+	-	**Recreate binary labels (same as LightGBM):** `max_risk_binary` (high vs not-high risk), `median_risk_binary` (low vs medium)
 	-	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
-	-	Define function `get_targets()`: Build target tensors (with regression log-transform)
-    -	Pulls the right patients.
-    - log-transform regression target np.log1p()
-    -	Converts labels into PyTorch tensors (`y_<split>_max, y_<split>_median, y_<split>_reg`) for each split (train/val/test).
-  - Create tensors for all 3 targets in all 3 splits (with the log transformed regression)
-  - Compute class weights (for median_risk), pos_weight = num_neg / num_pos = 2.889
-  - **Rationale**: features (time-series) and labels (patient outcomes) are stored separately. We need to align them so that each input sequence (x_train) has its corresponding target outcome (ground-truth) to train on. This ensures you have paired data: (`x_train[i], mask_train[i]`) → (`y_train_max[i], y_train_median[i], y_train_reg[i]`).
-4. **TensorDatasets & DataLoaders**
-	-	TensorDataset groups together (inputs, masks, targets) into one dataset object.
-	-	**DataLoader breaks this dataset into mini-batches**:
-    -	batch_size=32 → model sees 32 patients per step.
-    -	shuffle=True for training → prevents learning artefacts from patient order.
-  - **Rationale**: mini-batching improves GPU efficiency and stabilises gradient descent.
-5. **Model Setup**
-  - Defines the architecture (what the model looks like, how it processes inputs).
-	-	**Instantiate TCNModel with**:
-    -	Input dimension = 171 features.
-    -	**Residual conv blocks**: [64, 64, 128] → 3 conv blocks with number of channels (filters/kernels). Residual is defined within the block.
-    -	**Dense head**: 64 neurons → mixes all features before final outputs (comes once, after the stack finishes)
-	-	Send model to GPU/CPU (.to(DEVICE)).
-7. **Loss Functions**
-  - We train on three parallel tasks (multi-task learning). 
-  - Each target needs its own loss, calculated by the loss function:
-    -	`criterion_max` = `BCEWithLogitsLoss` → binary classification.
-    - `criterion_median` = `BCEWithLogitsLoss(pos_weight=2.889)` → binary classification with weighted BCE
-    -	`criterion_reg` = `MSELoss` → regression task.
-8. **Optimiser + Scheduler**
-  - Uses batch-by-batch output heads from the dense head to optimise parameters. 
-	-	Optimiser = Adam with LR=1e-3.
-	-	Scheduler = ReduceLROnPlateau (halves LR if val loss plateaus).
-  - **Rationale**: 
-    - Adam adapts learning rate per parameter → faster convergence. 
-    - Scheduler prevents the model from “getting stuck”.
-    
+4. **Apply Target Transformations**
+  - Log-transform regression target → `log1p()` for variance stabilisation
+  - Compute class weights for `median_risk` weighted BCE loss → `pos_weight = num_neg / num_pos` → `2.889`
+5. **Build Target Tensors**
+  - Create PyTorch tensors for all 3 targets in all 3 splits (train/val/test) → `y_<split>_max, y_<split>_median, y_<split>_reg`
+6. **Construct Datasets & Dataloaders**
+	-	`TensorDataset` groups together (inputs, masks, targets) into one dataset object per patient.
+	-	`DataLoader` creates shuffled mini-batches:
+    -	`batch_size=32` (32 patients per step) → improves GPU efficiency; stabilises gradient descent.
+    -	`shuffle=True` → prevents learning artefacts from patient order.
+7. **Model Initialisation**
+  - Instantiate `TCNModel(num_features=171, num_channels=[64,64,128], head_hidden=64)`
+	-	Move model to GPU/CPU device.
+8. **Loss Functions**
+  -	`criterion_max` = `BCEWithLogitsLoss` → binary classification.
+  - `criterion_median` = `BCEWithLogitsLoss(pos_weight=2.889)` → binary classification with weighted BCE
+  -	`criterion_reg` = `MSELoss` → log-transformed regression task.
+9. **Optimiser + Scheduler**
+	-	Optimiser = `Adam` (LR=1e-3) adapts learning rate per parameter → faster convergence
+	-	Scheduler = `ReduceLROnPlateau` (patience=3, factor=0.5) → halves LR on plateau
+10. **Reproducibility Controls**
+	-	Fixed seeds for Python, NumPy, and PyTorch.
+	-	Deterministic CuDNN convolution settings.
 
 ##
 ### 7.6 Training & Validation Loop
-#### 7.6.1 Summary
-- training pipeline for the TCN model Covering data loading, dataset preparation, target construction, model definition, training, validation, early stopping, and checkpoint saving  
+#### 7.6.1 Summary of Loop
+```text
+  ┌─────────────◀──────────── OUTER LOOP (per epoch) ──────────────◀─────────────┐
+  │                                                                              │
+  │   (1) Training loop → deep learning algorithm                                │
+  │                                                                              │
+  │   ┌──────────◀─────────── INNER LOOP (per batch) ────────────◀──────────┐    │
+  │   │ forward pass → 3× loss computation → combine losses → backward pass │    │
+  │   │ → gradient clipping → optimiser step                                │    │
+  │   └──────────▶───────────────────────────────────────────────▶──────────┘    │
+  ▼                                                                              ▲
+  │   (2) Compute mean epoch training loss per patient                           │
+  │   (3) Validation loop (no gradients) → compute average validation loss       │
+  │   (4) Scheduler step (ReduceLROnPlateau) → modify LR based on val loss       │
+  │   (5) Checkpoint saving                                                      │
+  │        • If val loss improved → save checkpoint (best model)                 │
+  │        • Else patience += 1                                                  │
+  │                                                                              │
+  │           (6) Early stopping                                                 │
+  └────▶─────      • Repeat next epoch until patience ≥ 7 → terminate ─────▶─────┘
+                  • Prevents overfitting
+```                 
 
-
-	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
-
-#### 7.6.2 Training & Validation Loop Flow
-
-9. **Training Loop**
-	-	Loop over epochs (one full pass through the entire training dataset).
-  - Network jointly learns classification and regression.
-	-	**For each batch**:
-    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`).
-    -	Compute losses with loss functions for all 3 tasks → compare predictions to true labels (`y_max, y_median, y_reg`).
-    - Combine losses into 1 (`loss = loss_max + loss_median + loss_reg`) → one scalar loss value means each task contributes equally (multi-task learning).
-    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter.
-    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients so their norm ≤ 1, keeps training stable).
-    -	Optimiser step → updates weights in opposite direction of the gradients.
-	-	**Track average training loss per epoch**:
-    - Loss for batch * batch size, then sum these values for every batch, then divide by number of patients in dataset = average loss across all patients in training set → no matter how batch sizes vary we ensure the epoch loss is the mean loss per patient. 
-    - Logged and compared with validation loss for analysis → this is how you see if your model is learning.
-  - **This is the heart of deep learning**: forward → loss → backward → update.
-9. **Validation Loop**
-  - set model to evaluation mode (disables dropout, batch norm updates, etc.)
-	-	Run the model on validation split (no gradients or optimiser step).
-  -	**Metrics tracked**: Validation loss per epoch.
-	-	Compute average validation loss.
-	-	Scheduler step: Update LR scheduler.
-	-	**Logic**:
-    -	When validation loss improves (validation loss ↓) → save model, final model state will be best one
-    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
-    -	early stopping: Training stops early when overfitting begins (after 7 epochs of no improvement).
-  - **Rationale**: validation loss tells us if the model is generalising or just memorising training data .
-10. **Early Stopping**
-	-	If validation loss improves → save model (`tcn_best.pt`).
-	-	If no improvement for 7 epochs → stop training early.
-  - **Rationale**: protects against overfitting and wasted compute.
-
-
-### Summary of Flow
-**Inputs → Targets → Training → Validation → Early stopping → Saved best model**
+**Inner Loop (per batch) - Learning and Optimisation Cycle**
+This is the fundamental algorithm that performs the learning; gradient optimisation and weight modifying that runs once per batch:
 1. **Forward pass**: model computes predictions for the batch.
 2. **Loss computation (BCE, MSE)**: predictions are compared to true labels → gives `loss_max, loss_median, loss_reg`.
 3. **Combine losses**: summed to get overall batch loss.
 4. **Backward pass**: compute gradients → tells how to adjust weights to reduce loss.
+5. **Gradient clipping**: prevent exploding gradients, stabilises updates.
 5. **Optimizer step**: update weights using the gradients, gradients determine direction, learning rate determines size.
-6. Repeat until early stoppage to prevent overfitting.
+**Outer Loop (per epoch) - Training Controller**
+Runs once per epoch, and controls the training process by supervising the inner loop to prevent overfitting:
+1. **Call inner loop:** goes through all training batches, updates weights, returns average training loss
+2. **Validation loop:** evaluates the model’s generalisation (no updates, no gradients), returns average validation loss
+3. **Learning rate scheduler:** modifies learning rate based on validation loss (`ReduceLROnPlateau`).
+4. **Early stopping logic:** if validation hasn't improved for 7 epochs, terminate training to prevent overfitting
+5. **Checkpoint saving:** if validation improves, save best model; once training ends we are left with best model.
+Repeat until early stoppage to prevent overfitting, the inner loop runs many times per epoch.
 
+#### 7.6.2 Flow of Logic
+1. **Training Loop**
+	-	Loop over epochs (one full pass through the entire training dataset)
+  - Each epoch allows the model to adjust weights progressively per batch
+	-	**For each batch**:
+    - Move input sequences (`x_batch`) and masks to device
+    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`).
+    -	Compute individual losses with loss functions → compare predictions to true labels (`y_max, y_median, y_reg`).
+    - Combine losses into 1 (`loss = loss_max + loss_median + loss_reg`) → one scalar loss value means each task contributes equally (multi-task learning).
+    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter.
+    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients, keeps training stable).
+    -	Optimiser step → updates weights in opposite direction of the gradients.
+  - **This is the deep learning itself**: forward pass → loss → backward pass → update weights.
+3. **Track Average Training Loss per Epoch**
+  - Weighted average over batch sizes → mean epoch training loss per patient 
+  - Logged and compared with validation loss for analysis → see if model is learning.
+2. **Validation Loop**
+  - Set model to evaluation mode → disable dropout, batch norm updates
+	-	Run the model on validation split (no gradients or optimiser step).
+	-	Compute and track average validation loss per epoch .
+	-	Scheduler step → Update LR scheduler based on validation loss.
+	-	**Logic**:
+    -	When validation loss improves (validation loss ↓) → save model, final model state will be best one
+    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
+    -	Early stopping: Training stops early when overfitting begins (after 7 epochs of no improvement).
+  - **Rationale**: validation loss tells us if the model is generalising or just memorising training data .
+10. **Early Stopping**
+	-	If validation loss improves → save .pt model
+	-	If no improvement for 7 epochs → stop training early.
+  - **Rationale**: protects against overfitting and wasted compute.
 
+#### 7.6.3 Loop Rationale
+- **Multi-task learning:** Losses from 3 outputs combined for joint learning.
+- **Gradient clipping:** Prevents exploding gradients.
+- **Learning rate scheduler:** Fine-tunes optimisation if validation plateaus.
+- **Early stopping:** Protects against overfitting and wasted compute.
 
-#### Loss Curve Visualisation  
+#### 7.6.4 Loss Curve Visualisation  
 
 ![TCN Training vs Validation Loss](src/prediction_diagnostics/loss_plots/loss_curve_refined.png)
 
@@ -1009,9 +1057,9 @@ validation loop: val.pt val_mask.pt
 - Highlights best epoch (red dashed line + dot) and optionally overfitting region.  
 - Provides insight into model convergence, generalisation, and early stopping behaviour.
 
-
-
+##
 ### 7.7 Pipeline Outputs & Artifacts
+This section summarises all persistent artifacts generated across the preprocessing, modelling, configuration, and training phases
 
 | Phase | Files | Purpose |
 |-------|-------|----------------|
@@ -1050,4 +1098,248 @@ evaluation
 
   - **Predictions and ground-truth labels** are fully aligned, ensuring **reproducible metrics** across runs.  
 
+Threshold tuning for median risk
+Median-risk is imbalanced, so the default threshold = 0.5 is suboptimal.
+Tuning threshold affects fairness and performance → belongs here.
 
+Regression inverse-transform (expm1)
+
+Comparability across models
+Both models use the same patient-level splits,
+	•	Same targets,
+	•	Same evaluation metrics,
+	•	Same test set.
+This validates the comparison scientifically.
+
+For a fair head-to-headcomparison, LightGBM models were retrained and evaluated using the exact same patient-level splits generated in Phase 4. Earlier 5-fold CV baselines and deployment models from Phase 3 were retained for documentation but not used for final comparison because they do not match the TCN train/val/test split.
+
+conceptual inference flow, i.e.:
+	•	Model receives padded sequences + masks
+	•	Runs forward pass
+	•	Produces logits for classification + regression outputs
+	•	Apply sigmoid to logits for probabilities
+	•	Apply threshold (for classification)
+	•	Apply inverse log-transform (for regression)
+
+	3.	What metrics were computed
+	4.	Visualisations
+	5.	Interpretation of results
+	6.	Comparison between LightGBM and TCN
+---
+
+Interpretability 
+
+---
+
+Deployment Inference
+
+---
+
+11. Project Summary
+	•	Developed reproducible data → baseline → TCN → evaluation → deployment pipeline.
+	•	Diagnosed and corrected label misalignment, class imbalance, and regression skew.
+	•	Implemented causal TCN architecture with masking, dilation, residual blocks, and multi-task heads.
+	•	Achieved stable training with early stopping and LR scheduling.
+	•	Produced final evaluation metrics, visualisations, and interpretable outputs.
+	•	Implemented deployable per-patient inference workflow.
+
+This project delivers a clinically grounded, technically rigorous, fully reproducible machine learning system for ICU patient deterioration prediction. The dual-architecture approach reveals complementary strengths
+
+Core Achievements:
+
+NHS-compliant NEWS2 computation with validated clinical rules
+Reproducible temporal evaluation methodology preventing data leakage
+Model-agnostic interpretability enabling clinical transparency
+Deployment-ready inference pipeline with batch and per-patient modes
+
+Clinical Impact Potential:
+
+Early intervention through TCN's superior sensitivity
+Resource optimization via LightGBM's calibrated risk scores
+Continuous monitoring with automated risk assessment
+
+Production Readiness:
+
+✅ Reproducible end-to-end pipeline
+✅ Comprehensive documentation
+✅ Interpretability for clinical adoption
+
+---
+
+Repository Structure
+
+---
+
+How to Run 
+
+### Environment Setup
+- clone repo
+- pip or conda 
+### Pipeline Execution
+Phase 1: NEWS2 Computation
+Phase 2: Feature Engineering
+Phase 3: Train LightGBM
+Phase 4: Train TCN
+Phase 7A: Deployment-Lite Inference
+
+---
+
+Requirements / Dependencies
+
+# Core scientific stack
+numpy>=1.26.0
+pandas>=2.1.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Machine learning (baseline, more later)
+scikit-learn>=1.3.0
+
+# Deep learning
+torch>=2.2.0
+
+# Utilities and file handling
+tqdm>=4.66.0
+pathlib>=1.0.1
+jsonschema>=4.19.0
+
+# Model interpretability
+shap>=0.44.0
+joblib>=1.3.2
+
+# Gradient boosting
+lightgbm>=4.0.0
+
+---
+
+Limitations
+
+- Limited dataset size
+The deep model (TCN) operates close to the lower bound of data required for stable temporal learning. This restricts generalisation and contributes to early stopping at very early epochs.
+- NEWS2-only feature space
+All features are derived from NEWS2, with no labs, medications, or high-frequency vital streams. This caps signal richness and reduces temporal model advantage.
+- Padded sequence truncation
+All patient timelines are padded/truncated to a common length. Extreme short or long ICU stays may lose information.
+- Regression target skew
+The outcome pct_time_high was heavily right-skewed. Although log-transform stabilised training, the true clinical distribution remains narrow, limiting learnable variance.
+- Class imbalance
+Median-risk classification required explicit pos_weight. Imbalance still reduces calibration reliability.
+- Single-centre dataset
+Trained and validated on a single hospital dataset → external generalisation unknown.
+- Temporal receptive field capped
+With 3 dilated blocks and small kernel size, the model does not fully exploit long-range ICU dependencies that larger TCN/Transformer models could learn.
+
+Current Limitations
+Dataset Constraints
+
+Small sample (100 patients) insufficient for robust deep learning
+Synthetic data may not reflect real distributions
+Limited high-risk events (class imbalance)
+Single institution (generalization unvalidated)
+
+Modeling Decisions
+
+Binary conversion collapsed multi-class risk
+Fixed prediction horizon (any high-risk event during stay)
+No ensemble (LightGBM and TCN evaluated independently)
+
+Clinical Integration
+
+No prospective validation on real-time patient data
+Missing external validation on holdout institutions
+Interpretability not reviewed by clinicians
+
+---
+
+Future Work
+
+Model Architecture
+- Expand TCN depth and receptive field
+Add more blocks or larger kernels to capture longer clinical trajectories.
+-	Move from patient-level → timestamp-level outputs
+Enable early warning behaviour by predicting risk dynamically over time.
+- Integrate attention or Transformer layers
+Combine causal convolutions with learned temporal weighting.
+
+Feature Set Extensions
+- Add richer clinical features
+Incorporate labs, comorbidities, medication events, and device parameters to unlock TCN advantages.
+- Use irregular time-series modelling
+Replace padding with continuous-time architectures or learnable positional embeddings.
+
+Training Pipeline
+- Better imbalance handling
+Evaluate focal loss and dynamic re-weighting for median risk.
+- Improved regression modelling
+Model uncertainty (e.g., Gaussian likelihood) for skewed clinical targets.
+- Cross-validation rather than one split
+Strengthen generalisation assessment.
+
+Evaluation
+- External validation on another hospital dataset.
+- Calibration analysis (isotonic regression, temperature scaling).
+- Compare with sequence models beyond TCN (Transformers, RNNs, Temporal Fusion Networks).
+
+Phase 7B: Cloud Deployment
+
+Real-time API (Flask/FastAPI)
+Database integration (PostgreSQL + Redis)
+Monitoring dashboard (Grafana)
+
+Phase 8: Ensemble Modeling
+
+Stacking meta-learner combining LightGBM + TCN
+Multi-horizon models (1h, 4h, 24h risk windows)
+Calibration layer (isotonic regression for TCN)
+
+Phase 9: Extended Features
+
+Laboratory values (lactate, creatinine, WBC)
+Medication data (vasopressors, sedation)
+Text data (nursing notes via NLP)
+
+Phase 10: External Validation
+
+Multi-site study (3-5 hospitals)
+Prospective trial (shadow mode)
+Health equity analysis (stratified by demographics)
+
+---
+
+Potential Clinical Integration
+
+- Real-time inference pipeline for early warning.
+- Alert threshold optimisation using decision curves and cost-sensitive metrics.
+- Human–machine collaboration design: how clinicians consume outputs.
+
+Future Clinical Deployment Strategy
+1. LightGBM runs at admission → baseline, interpretable risk stratification (resource planning)
+2. TCN runs continuously → real-time continuous temporal monitoring (acute alerts)
+3. Ensemble logic → hybrid alert triggers if either model exceeds threshold (maximizes sensitivity)
+4. Calibration layer → Map TCN probabilities to LightGBM-aligned scale via isotonic regression
+
+This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
+
+---
+
+License
+MIT License - See LICENSE file for details.
+
+---
+
+Acknowledgments
+
+MIMIC-IV: Johnson, A., et al. (2023). MIMIC-IV (version 2.2). PhysioNet.
+NHS NEWS2: Royal College of Physicians (2017). National Early Warning Score (NEWS) 2.
+PyTorch: Paszke, A., et al. (2019). PyTorch: An Imperative Style, High-Performance Deep Learning Library.
+LightGBM: Ke, G., et al. (2017). LightGBM: A Highly Efficient Gradient Boosting Decision Tree.
+TCN
+ChatGPT
+
+---
+
+Project Status: ✅ Core Development Complete
+Last Updated: November 2025
+
+---
