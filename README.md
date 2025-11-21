@@ -569,17 +569,18 @@ This outlines how dual-architectures could be integrated into a real-world clini
 
 ## 7. Phase 4 — Temporal Convolutional Network (TCN) Pipeline: Architecture & Training
 ### 7.1 Pipeline Overview
-**Purpose:** Build, configure, and train an advanced sequential model, leveraging temporal patterns beyond classical ML.
-`prepare_tcn_dataset.py`
-`tcn_model.py`
-`tcn_training_script.py`
-
+**Purpose:**
+- Build, configure, and train a causal deep-learning model that captures temporal deterioration patterns beyond what classical ML can learn.
+- Deliver a fully reproducible end-to-end pipeline: data preparation → model design → training → validation → diagnostics → refinement
+**Why This Phase Matters**
+- Classical models (e.g., LightGBM) cannot model temporal dynamics; the TCN extends the system to sequence-level reasoning
+- Initial TCN runs revealed class imbalance and regression skew, requiring corrective steps (pos-weighting, log-transform)
+- This phase demonstrates mature ML workflow: identify issues → diagnose → correct → retrain
 **End Products of Phase 4**
-- `trained_models/tcn_best.pt`→ best-performing model checkpoint.
-- `trained_models/config.json` → hyperparameter and architecture record.
-- `trained_models/training_history.json` → epoch-wise loss tracking.
-- `plots/loss_curve.png` → visualisation of training vs validation loss.
-- Debugged and reproducible training + validation pipeline.
+- Clean model-ready preprocessed data and patient splits
+- Clean padded/masked tensor datasets for sequence modelling
+- Fully defined multi-task causal TCN architecture
+- Stable, reproducible training pipeline with saved configs, history and loss curve plot
 
 ##
 ### 7.2 Preprocessing Pipeline 
@@ -636,8 +637,8 @@ This outlines how dual-architectures could be integrated into a real-world clini
 	-	Short sequences → zero-pad; long sequences → truncate.
 	-	Masks mark real (1) vs padded (0) timesteps for loss computation.
 7. **Stack Sequences + Mask tensors For Each Split (train/val/test):**
-  -	Sequences → `(num_patients, 96, num_features)`
-	-	Masks → `(num_patients, 96)`
+  -	Sequences: `train.pt`, `val.pt`, `test.pt` → shape `(num_patients, 96, num_features)`
+	-	Masks: `train_mask.pt`, `val_mask.pt`, `test_mask.pt` → shape `(num_patients, 96)`
 8. **Save Preprocessed Artifacts**
   - `patient_splits.json` → dictionary of patient IDs train/val/test split
   -	`standard_scaler.pkl` → z-scoring scalar (training-set mean/std)
@@ -872,68 +873,30 @@ The following hyperparameters were used when training the final TCN model and st
 | `config_refined.json` | Saved full configuration |
 | `training_history_refined.json` | Saved train/val loss curve for reproducibility |
 
+### 7.5 Training Pipeline Setup
 
-
-
-
-
-
-
-### 7.5 Model Training & Validation
-
+`tcn_training_script_refined.py`
 news2_features_patient.csv
 patient_splits.json
+padding_config.json
+patient_splits.json
+tcn_model.py TCNModel
 
-train.pt train_mask.pt
+training loop: train.pt train_mask.pt
 
-Output files: loss_curve_refined.png 
-tcn_best_refined.pt = Best-performing model (lowest validation loss) for phase 5 and 6
-training_history_refined.json = train/validation losses per epoch (train_loss, val_loss)
+validation loop: val.pt val_mask.pt
 
 
-
-- Initial evaluation metrics and subsequent diagnostics exposed two issues:
+#### 7.5.1 Pre-Training Refinements
+- Initial evaluation metrics and subsequent diagnostics identified issues:
 	1. Label misalignment in the evaluation script
-	2. Poor learning on median-risk → class imbalance and poor calibration
-  3. Poor learning on regression → underfitting; skewed target limits variance
-- These were resolved by implementing minimal controlled fixes while keeping architecture/hyperparameters constant:
-  1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew (deterministic), stabilise variance
-  2. Applying class weighting (`pos_weight` = 2.889) for median risk BCE loss → correct class imbalance (dynamic)
-- All outputs and visualisations represent final model outputs
-  - `tcn_best_refined.pt` → best model weights, saved at lowest validation loss.  
-  - `config_refined.json` → metadata with transformations, loss setup, and metrics. 
+	2. Poor learning on median-risk → class imbalance; poor calibration
+  3. Poor regression pefromance → underfitting; skewed targets
+- Implemented minimal controlled fixes, keeping architecture/hyperparameters constant:
+  1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew and stabilise variance
+  2. Applying class weighting (`pos_weight = 2.889`) for median-risk BCE loss → correct class imbalance
 
-
-3. **Model Training `tcn_training_script.py`**
-
-	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
-  - **Reproducibility controls**: Fixed seeds for Python/NumPy/PyTorch, enforced deterministic CuDNN ops, saved hyperparameter config (`config.json`) and training/validation loss history (`training_history.json`) to ensure bit-for-bit reproducibility.
-  - **Reasoning**: This phase ensures the model learns from patient sequences in a stable, controlled way. Shows deep learning maturity (correct loss functions, imbalance handling, monitoring).
-
-4. **Validation (during training)**
-	-	**Setup**: Patient-level validation split (not seen during training).
-	-	**Metrics tracked**: Validation loss per epoch.
-	-	**Logic**:
-    -	When validation loss improves (validation loss ↓) → save checkpoint (`tcn_best.pt`).
-    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
-    -	Training stops early when overfitting begins (after 7 epochs of no improvement).
-  - **Reasoning**: Validation ensures the model generalises and doesn’t just memorise training data.
-
-
-**Completed Full Temporal Convolutional Network (TCN) Training Loop Script `tcn_training_script.py`**
-#### Summary
-- Built a **complete PyTorch training pipeline** for the TCN model.  
-- Covered **data loading, dataset preparation, target construction, model definition, training, validation, early stopping, and checkpoint saving**.  
-- **Introduced key deep learning concepts**: loss functions, optimisers, gradient flow, overfitting prevention, early stopping, and learning rate scheduling.
-- This script forms the core of **Phase 4**, moving from data preparation into real deep learning training.
-### Output
-- `trained_models/tcn_best.pt` — the best-performing model weights (lowest validation loss).  
-- Console logs of **training and validation loss per epoch**, with early stopping.
-- **Debug prints confirming**:
-	-	Binary targets (`y_train_max`, `y_train_median`) are clean.
-	-	Regression target (`y_train_reg`) is bounded, no NaNs/Infs.
--	Confirmed the pipeline runs end-to-end with no runtime errors.
-### Step-by-Step Flow
+#### 7.5.2 Setup Flow
 1. **Imports & Config**
 	-	Import PyTorch, Pandas, JSON, and our custom TCNModel.
 	-	**Define hyperparameters**:
@@ -947,13 +910,16 @@ training_history_refined.json = train/validation losses per epoch (train_loss, v
 	-	Masks mark valid timesteps vs padding (prevents model from “learning noise”).
 3. **Build Target Tensors (Patient Labels)**
 	-	Load patient-level CSV (`news2_features_patient.csv`).
-	-	**Recreate binary labels**:
+	-	**Recreate binary labels (same as LightGBM)**:
     -	**max_risk_binary**: high vs not-high risk.
     -	**median_risk_binary**: low vs medium.
 	-	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
-	-	Define `get_targets()`:
+	-	Define function `get_targets()`: Build target tensors (with regression log-transform)
     -	Pulls the right patients.
-    -	Converts labels into PyTorch tensors (`y_train_max, y_train_median, y_train_reg`) for each split.
+    - log-transform regression target np.log1p()
+    -	Converts labels into PyTorch tensors (`y_<split>_max, y_<split>_median, y_<split>_reg`) for each split (train/val/test).
+  - Create tensors for all 3 targets in all 3 splits (with the log transformed regression)
+  - Compute class weights (for median_risk), pos_weight = num_neg / num_pos = 2.889
   - **Rationale**: features (time-series) and labels (patient outcomes) are stored separately. We need to align them so that each input sequence (x_train) has its corresponding target outcome (ground-truth) to train on. This ensures you have paired data: (`x_train[i], mask_train[i]`) → (`y_train_max[i], y_train_median[i], y_train_reg[i]`).
 4. **TensorDatasets & DataLoaders**
 	-	TensorDataset groups together (inputs, masks, targets) into one dataset object.
@@ -968,19 +934,32 @@ training_history_refined.json = train/validation losses per epoch (train_loss, v
     -	**Residual conv blocks**: [64, 64, 128] → 3 conv blocks with number of channels (filters/kernels). Residual is defined within the block.
     -	**Dense head**: 64 neurons → mixes all features before final outputs (comes once, after the stack finishes)
 	-	Send model to GPU/CPU (.to(DEVICE)).
-6. **Loss Functions**
+7. **Loss Functions**
   - We train on three parallel tasks (multi-task learning). 
   - Each target needs its own loss, calculated by the loss function:
-    -	`criterion_max / criterion_median`: BCEWithLogitsLoss → binary classification.
-    -	`criterion_reg`: MSELoss → regression task.
-7. **Optimiser + Scheduler**
+    -	`criterion_max` = `BCEWithLogitsLoss` → binary classification.
+    - `criterion_median` = `BCEWithLogitsLoss(pos_weight=2.889)` → binary classification with weighted BCE
+    -	`criterion_reg` = `MSELoss` → regression task.
+8. **Optimiser + Scheduler**
   - Uses batch-by-batch output heads from the dense head to optimise parameters. 
 	-	Optimiser = Adam with LR=1e-3.
 	-	Scheduler = ReduceLROnPlateau (halves LR if val loss plateaus).
   - **Rationale**: 
     - Adam adapts learning rate per parameter → faster convergence. 
     - Scheduler prevents the model from “getting stuck”.
-8. **Training Loop**
+    
+
+##
+### 7.6 Training & Validation Loop
+#### 7.6.1 Summary
+- training pipeline for the TCN model Covering data loading, dataset preparation, target construction, model definition, training, validation, early stopping, and checkpoint saving  
+
+
+	-	**Training loop logic**: forward → compute loss for all 3 tasks → backward → gradient clipping → optimiser update → validation → LR schedule.
+
+#### 7.6.2 Training & Validation Loop Flow
+
+9. **Training Loop**
 	-	Loop over epochs (one full pass through the entire training dataset).
   - Network jointly learns classification and regression.
 	-	**For each batch**:
@@ -995,21 +974,22 @@ training_history_refined.json = train/validation losses per epoch (train_loss, v
     - Logged and compared with validation loss for analysis → this is how you see if your model is learning.
   - **This is the heart of deep learning**: forward → loss → backward → update.
 9. **Validation Loop**
-	-	Run the model on validation set (no gradients).
+  - set model to evaluation mode (disables dropout, batch norm updates, etc.)
+	-	Run the model on validation split (no gradients or optimiser step).
+  -	**Metrics tracked**: Validation loss per epoch.
 	-	Compute average validation loss.
-	-	Update LR scheduler.
-	-	Print progress.
-  - **Rationale**: validation loss tells us if the model is generalising or just memorising.
+	-	Scheduler step: Update LR scheduler.
+	-	**Logic**:
+    -	When validation loss improves (validation loss ↓) → save model, final model state will be best one
+    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
+    -	early stopping: Training stops early when overfitting begins (after 7 epochs of no improvement).
+  - **Rationale**: validation loss tells us if the model is generalising or just memorising training data .
 10. **Early Stopping**
 	-	If validation loss improves → save model (`tcn_best.pt`).
 	-	If no improvement for 7 epochs → stop training early.
   - **Rationale**: protects against overfitting and wasted compute.
-11. **Debug Prints**
-  - Sanity checks ensure training data is valid:
-    -	Show unique values of targets.
-    - Binary targets are present (0 and 1).
-    -	Show regression range is healthy (min/max).
-    -	Check for NaN/Inf in inputs (pipeline clean)
+
+
 ### Summary of Flow
 **Inputs → Targets → Training → Validation → Early stopping → Saved best model**
 1. **Forward pass**: model computes predictions for the batch.
@@ -1018,30 +998,32 @@ training_history_refined.json = train/validation losses per epoch (train_loss, v
 4. **Backward pass**: compute gradients → tells how to adjust weights to reduce loss.
 5. **Optimizer step**: update weights using the gradients, gradients determine direction, learning rate determines size.
 6. Repeat until early stoppage to prevent overfitting.
-### Next Steps
-- **Finish Phase 4**: generate visualisations → only the training vs validation loss curves (step 5).
-- **Start Phase 5: Evaluation**
-  -	Perform final evaluation on test set using `tcn_best.pt`
-  -	**Compute metrics**: ROC-AUC, F1, accuracy (classification); RMSE, R² (regression)
-  -	**Generate visualisations**: ROC curves, calibration plots, Regression scatter & residual histogram.
--	Compare TCN performance to LightGBM baseline and NEWS2 baseline for clinical and technical validation.
 
 
 
-### 7.6 Generate Visualisations
+#### Loss Curve Visualisation  
 
-Training/validation losses were monitored each epoch. Early stopping (patience=7) selected the best checkpoint (epoch ~3), easrly stopping at eopch 10
+![TCN Training vs Validation Loss](src/prediction_diagnostics/loss_plots/loss_curve_refined.png)
 
-src/prediction_diagnostics/loss_plots/loss_curve_refined.png
-  - **Features**:
-    -	Plots Training vs Validation loss curves across epochs.
-    -	Highlights the best epoch (red dashed line + dot) which is minima.
-    -	Text annotation shows epoch and validation loss value.
-    -	Optional “overfitting region” annotation marks where validation loss rises.
-    -	Grid and layout optimised for clarity and interpretability.
-  - **Reasonings**: 
-    - Transforms numerical loss logs into a visual understanding of model learning behaviour.
-    - Focus on training behaviour and convergence, show whether the model converged, generalisation, where early stopping kicked in, whether overfitting started.
+- `loss_curve_refined.png` plots training vs validation loss across epochs.  
+- Highlights best epoch (red dashed line + dot) and optionally overfitting region.  
+- Provides insight into model convergence, generalisation, and early stopping behaviour.
+
+
+
+### 7.7 Pipeline Outputs & Artifacts
+
+| Phase | Files | Purpose |
+|-------|-------|----------------|
+| **Preprocessing** | `patient_splits.json` | Dictionary of patient IDs for train/validation/test splits |
+|                   | `padding_config.json` | Sequence length (`max_seq_len`) + feature columns (`feature_cols`) + target columns (`target_cols`) |
+|                   | `standard_scaler.pkl` | Reproducible z-scoring scalar (training-set mean/std)  |
+|                   | `train.pt` + `train_mask.pt`, `val.pt` + `val_mask.pt`, `test.pt` + `test_mask.pt` | Padded sequence + mask tensors per-split for TCN input |
+| **Architecture** | `tcn_model.py` | Defines `TCNModel` class; required for training and inference |
+| **Training Configuration** | `config_refined.json` | Hyperparameters, optimizer & scheduler setup, loss functions, data transformations, and reproducibility metadata |
+| **Training & Validation** | `tcn_best_refined.pt` | Best model weights (saved at lowest validation loss) |
+|                           | `training_history_refined.json` | Epoch-wise training/validation loss history (`train_loss`, `val_loss`) |
+|                           | `loss_curve_refined.png` | Training vs validation loss plot (across epochs) |
 
 ---
 
