@@ -65,7 +65,7 @@ Although the national standard for deterioration detection, NEWS2 has well-recog
 
 ##
 ### 1.2 Clinical Escalation Context
-### 1.2.1 How NEWS2 Scoring Is Used
+#### 1.2.1 How NEWS2 Scoring Is Used
 NEWS2 scoring bands map directly to clinical monitoring frequency and escalation actions; these operational consequences define the clinical targets we aim to predict:
 
 | NEWS2 Score                      | Clinical Risk | Monitoring Frequency                                  | Clinical Response                                                                 |
@@ -264,22 +264,24 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 ### 4.2 Timestamp-Level Features (for TCN)
 **Purpose:** Capture temporal dynamics for sequential modeling
 
-#### 4.2.1 Imputation Strategy
+#### 4.2.1 Feature Computation
+
+**Imputation Strategy**
 - **Missingness flags:** Binary indicators (1/0) for each vital parameter (value carried forward=1) so models can learn from missing patterns. Before carried-forward so that it is known which values were originally missing.
 - **LOCF (Last Observation Carried Forward) flags:** Propagate previous valid measurement, and create a binary carried-forward flag (binary 1/0). 
 
-#### 4.2.2 Rolling Window Features (1/4/24h)
+**Rolling Window Features (1/4/24h)**
 - **Mean:** Average value
 - **Min/Max:** Range boundaries
 - **Std**: Variability
 - **Slope:** Linear trend coefficient
 - **AUC (Area Under Curve):** Integral of value over time
 
-#### 4.2.3 Other Features
+**Other Features**
 - **Staleness:** Time since last observation (staleness per vital)
 - **Numeric risk encoding:** Encoded as 0 (low), 1 (medium-low), 2 (medium), 3 (high)
 
-#### 4.2.4 Output Format
+#### 4.2.2 Output Format
 - **Timestamp-level:** `news2_features_timestamp.csv`
 - ML-ready per patient per timestamp features (ordered by `subject_id` and by `charttime`).
 - Full time-series per patient allows modelling of temporal patterns, trends, dynamics
@@ -402,7 +404,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 - **Targets:** Patient-level outcomes (`max_risk`, `median_risk`, `pct_time_high`).  
 - **Training approach:** Each timestep inherits the patient label → TCN maps whole sequence → patient-level prediction.  
 
-**Why not per-timestep prediction:**  
+**Why not per-timestep prediction**  
 - True sequence-to-sequence labeling would predict risk per timestep for richer early-warning capability.
 - Challenges: require detailed labels for every timestamp (rare in ICU datasets), per-timestep prediction in a small dataset is prone to overfitting and instability; and evaluation is complex.
 
@@ -495,7 +497,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 
 ##
 ### 6.3 Hyperparameter Tuning
-### 6.3.1 Tuning Process
+#### 6.3.1 Tuning Process
 - This is the only Phase 3 component used in later phases (Phase 5 LightGBM evaluation).
 - Tuned the four parameters with the highest impact on stability and generalisation for small tabular datasets:
 	- `learning_rate` → controls step size; balances speed vs overfitting.
@@ -564,11 +566,13 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 **Purpose:**
 - Build, configure, and train a causal deep-learning model that captures temporal deterioration patterns beyond what classical ML can learn.
 - Deliver a fully reproducible end-to-end pipeline: data preparation → model design → training → validation → diagnostics → refinement
-**Why This Phase Matters**
+
+**Why This Phase Matters:**
 - Classical models (e.g., LightGBM) cannot model temporal dynamics; the TCN extends the system to sequence-level reasoning
 - Initial TCN runs revealed class imbalance and regression skew, requiring corrective steps (pos-weighting, log-transform)
 - This phase demonstrates mature ML workflow: identify issues → diagnose → correct → retrain
-**End Products of Phase 4**
+
+**End Products of Phase 4:**
 - Clean model-ready preprocessed data and patient splits
 - Clean padded/masked tensor datasets for sequence modelling
 - Fully defined multi-task causal TCN architecture
@@ -613,24 +617,24 @@ Maintaining both feature sets ensures flexibility and robustness in model select
   - Add `max_risk`, `median_risk`, `pct_time_high` from patient-level data
 2. **Patient-level Stratified Split**
   - Split: Train/validation/test → 70/15/15
-	-	Stratified by the same binary risk labels used for LightGBM (see Section 6.2) → stratification prevents class imbalance, random state fixed for reproducibility 
-	-	Splitting by patient prevents leakage across sequences
+  -	Stratified by the same binary risk labels used for LightGBM (see Section 6.2) → stratification prevents class imbalance, random state fixed for reproducibility 
+  -	Splitting by patient prevents leakage across sequences
 3. **Feature Cleaning**
-	-	Identify all feature columns (exclude IDs and targets), remove unused categorical fields, convert certain labels to binary → 171 timestamp-level feaures
-	-	Separate continuous (for z-score scaling) vs binary (no scaling needed) features.
+  -	Identify all feature columns (exclude IDs and targets), remove unused categorical fields, convert certain labels to binary → 171 timestamp-level feaures
+  -	Separate continuous (for z-score scaling) vs binary (no scaling needed) features.
 4. **Normalisation**
   - Apply z-scoring to continuous variables (categorical features unchanged) on train/val/test splits → ensures features are on comparable scales, preserving trends.
-	- Fit `StandardScaler()` on training patients only (avoids information leakage).
+  - Fit `StandardScaler()` on training patients only (avoids information leakage).
 5. **Sequence Construction**
-	-	Group rows per patient.
-	-	Convert each patient to (timesteps × features) 2D NumPy arrays.
+  -	Group rows per patient.
+  -	Convert each patient to (timesteps × features) 2D NumPy arrays.
 6. **Sequence Padding/Truncation and Masking**
-	-	Use fixed length 96 hours → `MAX_SEQ_LEN = 96` for uniform input sizes
-	-	Short sequences → zero-pad; long sequences → truncate.
-	-	Masks mark real (1) vs padded (0) timesteps for loss computation.
+  -	Use fixed length 96 hours → `MAX_SEQ_LEN = 96` for uniform input sizes
+  -	Short sequences → zero-pad; long sequences → truncate.
+  -	Masks mark real (1) vs padded (0) timesteps for loss computation.
 7. **Stack Sequences + Mask tensors For Each Split (train/val/test):**
   -	Sequences: `train.pt`, `val.pt`, `test.pt` → shape `(num_patients, 96, num_features)`
-	-	Masks: `train_mask.pt`, `val_mask.pt`, `test_mask.pt` → shape `(num_patients, 96)`
+  -	Masks: `train_mask.pt`, `val_mask.pt`, `test_mask.pt` → shape `(num_patients, 96)`
 8. **Save Preprocessed Artifacts**
   - `patient_splits.json` → dictionary of patient IDs train/val/test split
   -	`standard_scaler.pkl` → z-scoring scalar (training-set mean/std)
@@ -704,16 +708,16 @@ Maintaining both feature sets ensures flexibility and robustness in model select
     -	Residual connection (adds input back to output → maintain gradient flow in deep stacks)
   - Purpose is for feature extraction
 3. **Dilated, Stacked TCN Layers**
-	-	TemporalBlocks stacked with exponentially increasing dilations (1 → 2 → 4 → …).
-	-	Expands the receptive field efficiently, enabling modelling of: short-range changes (first layers) →	medium-range trends → long-range deterioration patterns (deeper layers) without huge kernels
-	- Final block outputs tensor `(B, C_last, L)`
+  -	TemporalBlocks stacked with exponentially increasing dilations (1 → 2 → 4 → …).
+  -	Expands the receptive field efficiently, enabling modelling of: short-range changes (first layers) →	medium-range trends → long-range deterioration patterns (deeper layers) without huge kernels
+  - Final block outputs tensor `(B, C_last, L)`
 4. **Masked Mean Pooling**
   - Aggregates variable-length (padded) patient sequences into a fixed-size vector `(B, C_last)` per patient for downstream heads
   - Masked pooling computes the mean over only real (non-padded) timesteps → ignores padded timesteps to prevent gradient/feature distortion
 5. **Dense Head (Optional)**
-	-	Patient vector: Linear → ReLU (non-linearity) → Dropout.
-	-	Used to mix pooled features → adds extra representational capacity before task heads
-	-	Can be disabled for a direct connection from pooled features → task heads.
+  -	Patient vector: Linear → ReLU (non-linearity) → Dropout.
+  -	Used to mix pooled features → adds extra representational capacity before task heads
+  -	Can be disabled for a direct connection from pooled features → task heads.
 6. **Multi-Task Output Heads**
   - Separate linear heads generate patient-level outputs:
     - Classification: `classifier_max` (max risk), `classifier_median` (median risk)
@@ -735,7 +739,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 2. **Stack temporal blocks:** Builds TCN layers with exponentially increasing dilations (1, 2, 4, …).
 2. Sets feature dimension = last blocks channel size → ready for dense head.
 3. **Creates optional dense head if `head_hidden` is provided:** Linear → ReLU → Dropout
-4. Defines three final linear heads for multi-task prediction → one scalar prediction per patient.
+4. Defines three final linear heads for multi-task prediction → one scalar prediction per patient:
   - `classifier_max`
   - `classifier_median`
   - `regressor`
@@ -778,13 +782,13 @@ Maintaining both feature sets ensures flexibility and robustness in model select
     - Downsample (1×1 conv): reshapes channels for residual addition
     - Residual/skip connection: add original input, gradient shortcut path back
     - Output tensor `(B, C_last, L)` → ready for next block or pooling or final classifier
-	-	Dilations increase per block (1 → 2 → 4), expanding receptive field
+  -	Dilations increase per block (1 → 2 → 4), expanding receptive field
 3. Permute back for pooling → `(B, L, C_last)`
 4. Apply masked mean pooling → `(B, C_last)`
   - If mask provided, ignore padding, average over real timestamps.  
 6. **Optional dense head (if enabled)**
   - Linear → ReLU → Dropout
-	- Adds non-linearity and regularisation after pooling
+  - Adds non-linearity and regularisation after pooling
   - Output `(B, head_hidden)`
 7. **Pass to task-specific heads:**
   - `classifier_max`: binary logit `(B,)`  
@@ -816,7 +820,7 @@ The following hyperparameters were used when training the final TCN model and st
 
 #### 7.4.1 Core Training Parameters
 | Component | Value | Notes |
-|----------|--------|-------|
+|----------|-------------|-------|
 | Device | `cuda` (if available) or `cpu` | GPU acceleration |
 | Batch size | `32` | Number of patient sequences processed in one pass |
 | Epochs | `50` | Number of complete passes through the training dataset before stopping; more epochs → more weight adjustments to reduce loss |
@@ -875,7 +879,7 @@ The following hyperparameters were used when training the final TCN model and st
                                                     │  • train/val/test sequences   │
                                                     │  • train/val/test masks       │
                                                     │  • patient_splits.json        │
-                                                         TCNModel (tcn_model.py)
+                                                    │  • TCNModel (tcn_model.py)    │
                                                     │  • config_refined.json        │
                                                     └──────────────┬────────────────┘
                                                                    │
