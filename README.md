@@ -12,7 +12,7 @@ This project implements a dual-architecture early warning system comparing gradi
 
 Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset (100 patients), using dual feature engineering pipelines: 171 timestamp-level temporal features (24-hour windows) for TCN, and 40 patient-level aggregated features for LightGBM.
 
-The hybrid approach reveals complementary strengths: LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment, while TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration. Together, they characterise short-term instability and longer-term exposure to physiological risk.
+**The hybrid approach reveals complementary strengths:** LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment, while TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration. Together, they characterise short-term instability and longer-term exposure to physiological risk.
 
 The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, robust evaluation, and model-specific interpretability (SHAP for LightGBM; gradient×input saliency for TCN).
 
@@ -786,15 +786,15 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 3. Permute back for pooling → `(B, L, C_last)`
 4. Apply masked mean pooling → `(B, C_last)`
   - If mask provided, ignore padding, average over real timestamps.  
-6. **Optional dense head (if enabled)**
+5. **Optional dense head (if enabled)**
   - Linear → ReLU → Dropout
   - Adds non-linearity and regularisation after pooling
   - Output `(B, head_hidden)`
-7. **Pass to task-specific heads:**
+6. **Pass to task-specific heads:**
   - `classifier_max`: binary logit `(B,)`  
   - `classifier_median`: binary logit `(B,)`  
   - `regressor`: continuous risk `(B,)`
-8. **Output:** 
+7. **Output:** 
   - Return dictionary of patient-level predictions (ready for loss functions).
     - `logit_max`, `logit_median` → binary classification logits
     - `regressor` → continuous regression output
@@ -932,47 +932,51 @@ The following hyperparameters were used when training the final TCN model and st
 ```
 
 #### 7.5.1 Pre-Training Refinements
-- Initial evaluation metrics and subsequent diagnostics identified issues with model performance:
-	1. Poor learning on median-risk → class imbalance; poor calibration
-  2. Poor regression peformance → underfitting; skewed targets
-- Implemented minimal controlled fixes, keeping architecture/hyperparameters constant:
-  1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew and stabilise variance
-  2. Applying class weighting (`pos_weight = 2.889`) for median-risk BCE loss → correct class imbalance
+
+Initial evaluation metrics and subsequent diagnostics identified issues with model performance:
+
+1. Poor learning on median-risk → class imbalance; poor calibration
+2. Poor regression peformance → underfitting; skewed targets
+
+Implemented minimal controlled fixes, keeping architecture/hyperparameters constant:
+
+1. Log-transform regression target → `log1p(y)` before tensor creation to reduce regression skew and stabilise variance
+2. Applying class weighting (`pos_weight = 2.889`) for median-risk BCE loss → correct class imbalance
 
 #### 7.5.2 Setup Flow
 1. **Imports & Config**
-	-	Import custom `TCNModel` from `tcn_model.py`
-	-	**Define hyperparameters**: `DEVICE`, `BATCH_SIZE`, `EPOCHS`, `LR`, `EARLY_STOPPING_PATIENCE`
+  -	Import custom `TCNModel` from `tcn_model.py`
+  -	**Define hyperparameters**: `DEVICE`, `BATCH_SIZE`, `EPOCHS`, `LR`, `EARLY_STOPPING_PATIENCE`
 2. **Load Prepared Sequence Data**
-	-	Load padded tensors (`train.pt`, `val.pt`, `test.pt`) and their corresponding masks (valid timesteps vs padding)
-	-	These are the time-series features per patient, already standardised + padded to equal length by the preprocessing pipeline.
+  -	Load padded tensors (`train.pt`, `val.pt`, `test.pt`) and their corresponding masks (valid timesteps vs padding)
+  -	These are the time-series features per patient, already standardised + padded to equal length by the preprocessing pipeline.
 3. **Build Target Tensors (Patient Labels)**
-	-	Load patient-level CSV (`news2_features_patient.csv`).
-	-	**Recreate binary labels (same as LightGBM):** `max_risk_binary` (high vs not-high risk), `median_risk_binary` (low vs medium)
-	-	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
+  -	Load patient-level CSV (`news2_features_patient.csv`).
+  -	**Recreate binary labels (same as LightGBM):** `max_risk_binary` (high vs not-high risk), `median_risk_binary` (low vs medium)
+  -	Load splits (`patient_splits.json`) so each patient is consistently assigned to train/val/test.
 4. **Apply Target Transformations**
   - Log-transform regression target → `log1p()` for variance stabilisation
   - Compute class weights for `median_risk` weighted BCE loss → `pos_weight = num_neg / num_pos` → `2.889`
 5. **Build Target Tensors**
   - Create PyTorch tensors for all 3 targets in all 3 splits (train/val/test) → `y_<split>_max, y_<split>_median, y_<split>_reg`
 6. **Construct Datasets & Dataloaders**
-	-	`TensorDataset` groups together (inputs, masks, targets) into one dataset object per patient.
-	-	`DataLoader` creates shuffled mini-batches:
+  -	`TensorDataset` groups together (inputs, masks, targets) into one dataset object per patient.
+  -	`DataLoader` creates shuffled mini-batches:
     -	`batch_size=32` (32 patients per step) → improves GPU efficiency; stabilises gradient descent.
     -	`shuffle=True` → prevents learning artefacts from patient order.
 7. **Model Initialisation**
   - Instantiate `TCNModel(num_features=171, num_channels=[64,64,128], head_hidden=64)`
-	-	Move model to GPU/CPU device.
+  -	Move model to GPU/CPU device.
 8. **Loss Functions**
   -	`criterion_max` = `BCEWithLogitsLoss` → binary classification.
   - `criterion_median` = `BCEWithLogitsLoss(pos_weight=2.889)` → binary classification with weighted BCE
   -	`criterion_reg` = `MSELoss` → log-transformed regression task.
 9. **Optimiser + Scheduler**
-	-	Optimiser = `Adam` (LR=1e-3) adapts learning rate per parameter → faster convergence
-	-	Scheduler = `ReduceLROnPlateau` (patience=3, factor=0.5) → halves LR on plateau
+  -	Optimiser = `Adam` (LR=1e-3) adapts learning rate per parameter → faster convergence
+  -	Scheduler = `ReduceLROnPlateau` (patience=3, factor=0.5) → halves LR on plateau
 10. **Reproducibility Controls**
-	-	Fixed seeds for Python, NumPy, and PyTorch.
-	-	Deterministic CuDNN convolution settings.
+  -	Fixed seeds for Python, NumPy, and PyTorch.
+  -	Deterministic CuDNN convolution settings.
 
 ##
 ### 7.6 Training & Validation Loop
@@ -1000,52 +1004,58 @@ The following hyperparameters were used when training the final TCN model and st
 ```                 
 
 **Inner Loop (per batch) - Learning and Optimisation Cycle**
+
 This is the fundamental algorithm that performs the learning; gradient optimisation and weight modifying that runs once per batch:
+
 1. **Forward pass**: model computes predictions for the batch.
 2. **Loss computation (BCE, MSE)**: predictions are compared to true labels → gives `loss_max, loss_median, loss_reg`.
 3. **Combine losses**: summed to get overall batch loss.
 4. **Backward pass**: compute gradients → tells how to adjust weights to reduce loss.
 5. **Gradient clipping**: prevent exploding gradients, stabilises updates.
 5. **Optimizer step**: update weights using the gradients, gradients determine direction, learning rate determines size.
+
 **Outer Loop (per epoch) - Training Controller**
+
 Runs once per epoch, and controls the training process by supervising the inner loop to prevent overfitting:
+
 1. **Call inner loop:** goes through all training batches, updates weights, returns average training loss
 2. **Validation loop:** evaluates the model’s generalisation (no updates, no gradients), returns average validation loss
 3. **Learning rate scheduler:** modifies learning rate based on validation loss (`ReduceLROnPlateau`).
 4. **Early stopping logic:** if validation hasn't improved for 7 epochs, terminate training to prevent overfitting
 5. **Checkpoint saving:** if validation improves, save best model; once training ends we are left with best model.
+
 Repeat until early stoppage to prevent overfitting, the inner loop runs many times per epoch.
 
 #### 7.6.2 Flow of Logic
 1. **Training Loop**
-	-	Loop over epochs (one full pass through the entire training dataset)
+  -	Loop over epochs (one full pass through the entire training dataset)
   - Each epoch allows the model to adjust weights progressively per batch
-	-	**For each batch**:
+  -	**For each batch**:
     - Move input sequences (`x_batch`) and masks to device
-    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`).
-    -	Compute individual losses with loss functions → compare predictions to true labels (`y_max, y_median, y_reg`).
+    -	Forward pass → model predicts 3 outputs (`logit_max, logit_median, regression`)
+    -	Compute individual losses with loss functions → compare predictions to true labels (`y_max, y_median, y_reg`)
     - Combine losses into 1 (`loss = loss_max + loss_median + loss_reg`) → one scalar loss value means each task contributes equally (multi-task learning).
-    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter.
-    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients, keeps training stable).
-    -	Optimiser step → updates weights in opposite direction of the gradients.
-  - **This is the deep learning itself**: forward pass → loss → backward pass → update weights.
+    -	Backward pass → calculate gradients of this total loss w.r.t. every model parameter
+    -	Gradient clipping (`clip_grad_norm_`) → prevents exploding gradients (if gradients get too large, clipping rescales gradients, keeps training stable)
+    -	Optimiser step → updates weights in opposite direction of the gradients
+  - **This is the deep learning itself**: forward pass → loss → backward pass → update weights
 3. **Track Average Training Loss per Epoch**
   - Weighted average over batch sizes → mean epoch training loss per patient 
-  - Logged and compared with validation loss for analysis → see if model is learning.
+  - Logged and compared with validation loss for analysis → see if model is learning
 2. **Validation Loop**
   - Set model to evaluation mode → disable dropout, batch norm updates
-	-	Run the model on validation split (no gradients or optimiser step).
-	-	Compute and track average validation loss per epoch .
-	-	Scheduler step → Update LR scheduler based on validation loss.
-	-	**Logic**:
+  -	Run the model on validation split (no gradients or optimiser step)
+  -	Compute and track average validation loss per epoch 
+  -	Scheduler step → Update LR scheduler based on validation loss
+  -	**Logic**:
     -	When validation loss improves (validation loss ↓) → save model, final model state will be best one
-    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases.
-    -	Early stopping: Training stops early when overfitting begins (after 7 epochs of no improvement).
-  - **Rationale**: validation loss tells us if the model is generalising or just memorising training data .
+    -	When validation loss stagnates/gets worse (validation loss ↑) → patience counter increases
+    -	Early stopping: Training stops early when overfitting begins (after 7 epochs of no improvement)
+  - **Rationale**: validation loss tells us if the model is generalising or just memorising training data 
 10. **Early Stopping**
-	-	If validation loss improves → save .pt model
-	-	If no improvement for 7 epochs → stop training early.
-  - **Rationale**: protects against overfitting and wasted compute.
+  -	If validation loss improves → save .pt model
+  -	If no improvement for 7 epochs → stop training early
+  - **Rationale**: protects against overfitting and wasted compute
 
 #### 7.6.3 Loop Rationale
 - **Multi-task learning:** Losses from 3 outputs combined for joint learning.
