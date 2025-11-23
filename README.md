@@ -1089,60 +1089,222 @@ This section summarises all persistent artifacts generated across the preprocess
 
 ---
 
-evaluation 
+## 8. Phase 5 – Evaluation: Metrics & Interpretation
+### 8.1 Evaluation Methodology & Adjustments
 
-	1. Label misalignment in the evaluation script
-  **Patient ID Misalignment**
-- Initial evaluation (`evaluate_tcn_testset.py`) used CSV filtering without enforcing JSON split order.  
-- ROC-AUC metrics were sensitive to this ordering, causing artificially low Max Risk AUC (0.577 → 0.923 after fix).  
-- Threshold-based metrics (F1, Accuracy) were less affected.
+#### 8.2.1 Overview & Rationale
 
-2. **Fix Evaluation Script (`evaluate_tcn_testset.py`)**
-  - **Purpose:** Correct ROC-AUC inconsistencies caused by misaligned test patient ordering.  
-  - **Process:**  
-    - Replaced unordered `set()` indexing with ordered `.loc[test_ids]` for perfect alignment.  
-    - Recomputed metrics with corrected label order.  
-  - **Outputs:**  
-    - Accurate and reproducible metrics (ROC-AUC), consistent across all scripts:  
-      - Max Risk: AUC = 0.923, F1 = 0.929  
-      - Median Risk: AUC = 0.778, F1 = 0.000  
-      - Regression: RMSE = 0.077, R² = 0.166 
-  - **Reasoning:**  
-    - Ensured **true one-to-one matching** between predictions and ground truths; restoring metric validity and confirming earlier diagnostic interpretations.
+- These adjustments produce fair, aligned, and reproducible metrics
+- Enable direct, methodologically sound comparison between the TCN model and LightGBM models  
+- Serves as the foundation for Phase 6 comparative analysis and visualization, ensuring all metrics reflect true model performance under identical conditions. 
 
-  - **Predictions and ground-truth labels** are fully aligned, ensuring **reproducible metrics** across runs.  
+#### 8.2.1 Core Implimentations
 
-Threshold tuning for median risk
-Median-risk is imbalanced, so the default threshold = 0.5 is suboptimal.
-Tuning threshold affects fairness and performance → belongs here.
+**Unified Metrics**
+- All models use a **single, centralized metrics module (`evaluation_metrics.py`)** to compute classification and regression metrics  
+- Guarantees **identical computation** across TCN and LightGBM, avoiding metric drift or implementation bias
 
-Regression inverse-transform (expm1)
+**LightGBM Retraining**
+- LightGBM models were retrained on the same 70/15/15 patient split as the TCN model for a fair, out-of-sample comparison
+- Three retrained LightGBM models were produced for each target 
+- **Ensures comparability across models:**
+  - Same patients in train and test sets  
+  - Same feature inputs and target definitions  
+  - Identical evaluation metrics
+- **Reasoning:**  
+  - Phase 3 LightGBM models were trained on all 100 patients (deployment-ready) and are not directly comparable to the TCN evaluation  
+  - Retraining aligns patient inclusion, data splits, and feature sets, enabling a scientifically valid head-to-head comparison while preserving Phase 3 optimized hyperparameters
 
-Comparability across models
-Both models use the same patient-level splits,
-	•	Same targets,
-	•	Same evaluation metrics,
-	•	Same test set.
-This validates the comparison scientifically.
+**TCN Median-Risk Classification**
+- Median-risk predictions were highly imbalanced; default threshold (0.5) led to low F1 despite good AUC  
+- Validation-based threshold tuning was applied to maximize F1 (optimal threshold = 0.43)
+- Ensures fairer performance assessment for imbalanced targets while preserving model rank ordering
 
-For a fair head-to-headcomparison, LightGBM models were retrained and evaluated using the exact same patient-level splits generated in Phase 4. Earlier 5-fold CV baselines and deployment models from Phase 3 were retained for documentation but not used for final comparison because they do not match the TCN train/val/test split.
+**TCN Regression**
+- Outputs were trained in log-space (`log1p`) to stabilise training
+- **Post-processing includes:**
+  - Inverse log transform (`np.expm1`) to restore raw percentages for clinical interpretation 
+  - Linear calibration in log-space** to correct systemic bias
+- Calibration improved alignment with ground truth, restoring R² > 0.5 and substantially reducing RMSE, without retraining
 
-conceptual inference flow, i.e.:
-	•	Model receives padded sequences + masks
-	•	Runs forward pass
-	•	Produces logits for classification + regression outputs
-	•	Apply sigmoid to logits for probabilities
-	•	Apply threshold (for classification)
-	•	Apply inverse log-transform (for regression)
+**Patient ID Alignment**
+- Both evaluation scripts enforce ordered patient IDs from the predefined splits
+- Corrects ROC-AUC inconsistencies caused by misaligned labels, ensuring true one-to-one correspondence between predictions and ground truth
+- Guarantees reproducible metrics across runs and scripts
 
-	3.	What metrics were computed
-	4.	Visualisations
-	5.	Interpretation of results
-	6.	Comparison between LightGBM and TCN
+##
+### 8.2 Evaluation Metrics Rationale
+
+#### 8.2.1 Overview
+**Purpose**
+- This section explains the metrics used for evaluation and the rationale for their inclusion
+- Metrics were chosen to capture both threshold-independent performance and threshold-dependent performance for classification tasks, as well as prediction accuracy and variance explanation for regression tasks
+
+**Rationale**
+- Classification metrics include threshold-independent (ROC–AUC) and threshold-dependent metrics (F1, Accuracy, Precision, Recall) to capture both ranking ability and decision boundary behaviour
+- Regression metrics are computed in raw-space for clinical interpretability and comparability across models (log-space metrics used internally to validate training)
+
+#### 8.2.2 Classification Metrics
+
+| Metric       | Purpose / Rationale |
+|-------------|------------------|
+| **ROC–AUC** | Measures model’s ability to rank positive vs negative cases independent of threshold; reflects discrimination capacity |
+| **F1-score** | Harmonic mean of precision and recall; balances false positives and false negatives especially for imbalanced targets |
+| **Accuracy** | Overall proportion of correct predictions; provides general performance overview |
+| **Precision** | Fraction of predicted positives that are true positives; important for avoiding unnecessary clinical alerts |
+| **Recall** | Fraction of true positives correctly identified; critical for sensitive detection of high-risk cases |
+
+#### 8.2.3 Regression Metrics
+
+| Metric       | Purpose / Rationale |
+|-------------|------------------|
+| **RMSE**    | Measures average magnitude of prediction errors; sensitive to large deviations |
+| **R²**      | Fraction of variance explained by the model; indicates how well predictions track true outcomes |
+
+##
+### 8.3 LightGBM Evaluation Metrics
+
+#### 8.3.1 Results
+
+**Classification Metrics**
+
+| Target       | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
+|--------------|---------|----------|----------|-----------|--------|----------------|
+| `max_risk`   | 0.846   | 0.929    | 0.867    | 0.867     | 1.000  | High recall ensures all high-risk patients are captured; some false positives slightly reduce precision |
+| `median_risk`| 0.972   | 0.857    | 0.933    | 0.750     | 1.000  | Excellent discrimination (ROC AUC). Perfect recall captures all medium-risk patients; lower precision due to some over-predictions |
+
+**Regression Metrics**
+
+| Target         | RMSE     | R²      | Interpretation |
+|----------------|----------|---------|----------------|
+| `pct_time_high`| 0.0382   | 0.793   | Predictions closely match true values (~79% variance explained). RMSE indicates average prediction error ≈3.8% of time high |
+
+#### 8.3.2 Interpretation
+
+**Max Risk Classification** 
+- The model prioritises high recall (100%) to ensure all high-risk patients are identified, which is critical in ICU early warning contexts
+- Slightly reduced precision (86.7%) indicates some false positives, generally acceptable given the clinical priority of recall
+
+**Median Risk Classification** 
+- High ROC AUC (0.972) shows strong separation between medium-risk and non-medium-risk patients. 
+- Perfect recall indicates no medium-risk patient is missed
+- Reduced precision reflects a small number of false positives, consistent with imbalanced data distribution
+
+**% Time High Regression** 
+- R² = 0.793 indicates strong predictive capability for continuous risk exposure 
+- RMSE = 0.038 indicates tight alignmnet of predictions around true values
+- Minor deviations reflect natural patient-level variability
+
+**Overall Interpretation** 
+- LightGBM models achieve robust classification and regression performance
+- They produce clinically meaningful predictions, with strong discriminative power and acceptable error levels
+- Metrics provide a baseline for comparison with TCN models in subsequent analyses
+
+##
+### 8.4 TCN Evaluation Metrics
+
+#### 8.4.1 Results
+
+**Classification Metrics**
+
+| Task          | Threshold | ROC AUC | F1 Score | Accuracy | Interpretation |
+|---------------|-----------|---------|----------|----------|----------------|
+| `max_risk` | 0.5       | 0.923   | 0.929    | 0.867    | Excellent discrimination and balance of precision–recall. Robust identification of high-risk patients with few false negatives |
+| `median_risk` | 0.43      | 0.833   | 0.545    | 0.667    | Good ranking ability (AUC) and improved F1 via threshold tuning, capturing more medium-risk cases while maintaining reasonable precision |
+
+**Regression Metrics (`% Time High`)**
+
+| Metric     | Value  | Interpretation |
+|-----------|--------|----------------|
+| **RMSE**  | 0.056  | Predictions closely match true values; small average absolute error (~5.6%) |
+| **R²**    | 0.548  | Explains ~55% of variance in continuous risk exposure; good alignment with true trend |
+
+#### 8.4.2 Interpretation
+
+**Max Risk Classification**
+- ROC AUC = 0.923 indicates excellent ability to rank patients by high-risk probability
+- F1 = 0.929 shows strong balance between precision and recall
+- Accuracy = 0.867 confirms correct classification for most patients, with very few false negatives
+
+**Median Risk Classification**
+- ROC AUC = 0.833 confirms reasonable separability between medium-risk and non-medium-risk patients  
+- F1 = 0.545 demonstrates improved detection of medium-risk cases after threshold tuning (optimal 0.43)  
+- Accuracy = 0.667 reflects some misclassifications due to class imbalance, mitigated by threshold adjustment
+
+**Regression (`% Time High`)**
+- RMSE = 0.056 indicates small average prediction error (~5.6%)  
+- R² = 0.548 shows that the model explains ~55% of variance in patient time-high exposure  
+- Post-hoc calibration corrected scale bias, ensuring predictions are both numerically valid and clinically interpretable
+
+**Overall Interpretation**  
+- TCN models demonstrate strong predictive performance across both classification and regression tasks
+- High-risk patients are reliably identified, while threshold tuning improved medium-risk detection
+- Regression predictions are well-calibrated and clinically interpretable, confirming that the model captures temporal risk trends accurately
+
+---
+
+9. Phase 6: Comparative analyiss 
+
+9A.1 Comparative Analysis Rationale
+
+Explain:
+	•	Why comparison is needed
+	•	Why use additional metrics (Brier, ECE, calibration curves, reliability diagrams, etc.)
+	•	Why per-model metrics aren’t enough
+	•	Why temporal vs non-temporal models require different diagnostic lenses
+
+High level, not pipeline detail.
+
+9A.2 Core Comparative Analysis (using Phase 5 metrics)
+	•	Compare AUROC, F1, RMSE, R² across models
+	•	Explain relative performance
+	•	Identify major strengths/weaknesses for each model
+
+9A.3 Deep Comparative Diagnostics (extra metrics)
+
+This is where you add:
+	•	Brier score
+	•	Expected Calibration Error (ECE)
+	•	Discrimination plots
+	•	Calibration curves
+	•	Regression residual plots
+	•	Correlation heatmaps
+	•	Threshold sensitivity curves
+
+9A.4 Comparative Visualisations
+
+Plots for:
+	•	ROC curves
+	•	Precision-recall curves
+	•	Calibration curves
+	•	Regression scatter plots
+	•	Residual distributions
+	•	Any other interpretability-informed plots relevant for comparison
+
+9A.5 Comparative Summary
+
+Short synthesis:
+Which model is best and why (temporal vs non-temporal).
+
+
+
 ---
 
 Interpretability 
 
+10.1 Interpretability Rationale
+
+	•	Why interpretability is needed (clinical assurance, transparency, model trustworthiness)
+	•	Why you used specific methods (SHAP, feature attribution, temporal saliency, etc.)
+	•	What each interpretability method tells you (local explanations, global importance, temporal weighting, etc.)
+
+
+10.2 SHAP for LightGBM
+
+10.2 saliency for TCN
+
+
+ 
 ---
 
 Deployment Inference
