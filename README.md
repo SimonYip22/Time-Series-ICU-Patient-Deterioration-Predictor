@@ -1092,13 +1092,13 @@ This section summarises all persistent artifacts generated across the preprocess
 ## 8. Phase 5 – Evaluation: Metrics & Interpretation
 ### 8.1 Evaluation Methodology & Adjustments
 
-#### 8.2.1 Overview & Rationale
+#### 8.1.1 Overview & Rationale
 
 - These adjustments produce fair, aligned, and reproducible metrics
 - Enable direct, methodologically sound comparison between the TCN model and LightGBM models  
 - Serves as the foundation for Phase 6 comparative analysis and visualization, ensuring all metrics reflect true model performance under identical conditions. 
 
-#### 8.2.1 Core Implimentations
+#### 8.1.1 Core Implimentations
 
 **Unified Metrics**
 - All models use a **single, centralized metrics module (`evaluation_metrics.py`)** to compute classification and regression metrics  
@@ -1137,29 +1137,31 @@ This section summarises all persistent artifacts generated across the preprocess
 
 #### 8.2.1 Overview
 **Purpose**
-- This section explains the metrics used for evaluation and the rationale for their inclusion
-- Metrics were chosen to capture both threshold-independent performance and threshold-dependent performance for classification tasks, as well as prediction accuracy and variance explanation for regression tasks
+- This section explains the metrics used to evaluate each model independently in Phase, and the rationale for their inclusion
+- Metrics were chosen to capture both threshold-independent performance and threshold-dependent performance for classification tasks, as well as prediction accuracy and variance explanation for the regression task
 
 **Rationale**
 - Classification metrics include threshold-independent (ROC–AUC) and threshold-dependent metrics (F1, Accuracy, Precision, Recall) to capture both ranking ability and decision boundary behaviour
 - Regression metrics are computed in raw-space for clinical interpretability and comparability across models (log-space metrics used internally to validate training)
 
+Calibration metrics (Brier and ECE) are introduced in Phase 6 because they require raw probability predictions that are evaluated at the comparison stage, not in single-model evaluation
+
 #### 8.2.2 Classification Metrics
 
-| Metric       | Purpose / Rationale |
-|-------------|------------------|
-| **ROC–AUC** | Measures model’s ability to rank positive vs negative cases independent of threshold; reflects discrimination capacity |
-| **F1-score** | Harmonic mean of precision and recall; balances false positives and false negatives especially for imbalanced targets |
-| **Accuracy** | Overall proportion of correct predictions; provides general performance overview |
-| **Precision** | Fraction of predicted positives that are true positives; important for avoiding unnecessary clinical alerts |
-| **Recall** | Fraction of true positives correctly identified; critical for sensitive detection of high-risk cases |
+| Metric | Purpose / Rationale |
+|--------|----------------------|
+| **ROC–AUC** | Threshold-independent measure of discrimination; evaluates how well the model ranks high-risk vs low-risk patients |
+| **F1-score** | Balances precision and recall, providing a single summary score of classification quality for imbalanced labels |
+| **Accuracy** | Proportion of total correct predictions; included as a general performance indicator |
+| **Precision** | Indicates the reliability of positive predictions; important clinically for limiting false alarms |
+| **Recall** | Measures sensitivity to true risk cases; critical in clinical settings where missing deterioration is more harmful than raising false alerts |
 
 #### 8.2.3 Regression Metrics
 
-| Metric       | Purpose / Rationale |
-|-------------|------------------|
-| **RMSE**    | Measures average magnitude of prediction errors; sensitive to large deviations |
-| **R²**      | Fraction of variance explained by the model; indicates how well predictions track true outcomes |
+| Metric | Purpose / Rationale |
+|--------|----------------------|
+| **RMSE** | Measures absolute prediction error magnitude; sensitive to larger deviations |
+| **R²** | Indicates how much of the variability in continuous deterioration exposure is captured by the model |
 
 ##
 ### 8.3 LightGBM Evaluation Metrics
@@ -1177,28 +1179,33 @@ This section summarises all persistent artifacts generated across the preprocess
 
 | Target         | RMSE     | R²      | Interpretation |
 |----------------|----------|---------|----------------|
-| `pct_time_high`| 0.0382   | 0.793   | Predictions closely match true values (~79% variance explained). RMSE indicates average prediction error ≈3.8% of time high |
+| `pct_time_high`| 0.0382   | 0.793   | Predictions closely match true values, small average absolute error (~3.8%). Explains ~79% of variance in continuous risk exposure; good alignment with true trend |
 
 #### 8.3.2 Interpretation
 
 **Max Risk Classification** 
-- The model prioritises high recall (100%) to ensure all high-risk patients are identified, which is critical in ICU early warning contexts
-- Slightly reduced precision (86.7%) indicates some false positives, generally acceptable given the clinical priority of recall
+- ROC AUC = 0.846 → good ability to rank patients by high-risk probability  
+- F1 = 0.929 → strong balance between precision and recall  
+- Accuracy = 0.867 → majority of predictions correct  
+- Precision = 0.867 → few false positives  
+- Recall = 1.000 → all high-risk patients correctly identified  
 
-**Median Risk Classification** 
-- High ROC AUC (0.972) shows strong separation between medium-risk and non-medium-risk patients. 
-- Perfect recall indicates no medium-risk patient is missed
-- Reduced precision reflects a small number of false positives, consistent with imbalanced data distribution
+**Median Risk Classification**
+- ROC AUC = 0.972 → excellent separability between medium-risk and non-medium-risk patients  
+- F1 = 0.857 → good balance after accounting for class imbalance  
+- Accuracy = 0.933 → most predictions correct  
+- Precision = 0.750 → some false positives due to imbalance  
+- Recall = 1.000 → all medium-risk patients captured  
 
 **% Time High Regression** 
-- R² = 0.793 indicates strong predictive capability for continuous risk exposure 
-- RMSE = 0.038 indicates tight alignmnet of predictions around true values
-- Minor deviations reflect natural patient-level variability
+- RMSE = 0.0382 → small average prediction error (~3.8%)  
+- R² = 0.793 → model explains ~79% of variance in patient time-high exposure  
+- Predictions align closely with true values; minor deviations reflect natural variability  
 
-**Overall Interpretation** 
-- LightGBM models achieve robust classification and regression performance
-- They produce clinically meaningful predictions, with strong discriminative power and acceptable error levels
-- Metrics provide a baseline for comparison with TCN models in subsequent analyses
+**Overall Interpretation**
+- LightGBM models demonstrate robust classification and regression performance  
+- High-risk and medium-risk patients are reliably captured; regression predictions closely match continuous targets  
+- Provides a strong baseline for comparison with TCN models in Phase 6 comparative analysis
 
 ##
 ### 8.4 TCN Evaluation Metrics
@@ -1207,84 +1214,264 @@ This section summarises all persistent artifacts generated across the preprocess
 
 **Classification Metrics**
 
-| Task          | Threshold | ROC AUC | F1 Score | Accuracy | Interpretation |
-|---------------|-----------|---------|----------|----------|----------------|
-| `max_risk` | 0.5       | 0.923   | 0.929    | 0.867    | Excellent discrimination and balance of precision–recall. Robust identification of high-risk patients with few false negatives |
-| `median_risk` | 0.43      | 0.833   | 0.545    | 0.667    | Good ranking ability (AUC) and improved F1 via threshold tuning, capturing more medium-risk cases while maintaining reasonable precision |
+| Target          | Threshold | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
+|---------------|-----------|---------|----------|----------|-----------|--------|----------------|
+| `max_risk` | 0.5       | 0.923   | 0.929    | 0.867    | 0.867   | 1.000   | Excellent discrimination and balance of precision–recall. Robust identification of high-risk patients with few false negatives; high precision confirms limited over-prediction | 
+| `median_risk` | 0.43      | 0.833   | 0.545    | 0.667    | 0.375  | 1.000 | Good ranking ability (AUC) and improved F1 via threshold tuning, perfect recall ensures all medium-risk cases captured; moderate precision indicates some false positives |
 
-**Regression Metrics (`% Time High`)**
+**Regression Metrics**
 
-| Metric     | Value  | Interpretation |
-|-----------|--------|----------------|
-| **RMSE**  | 0.056  | Predictions closely match true values; small average absolute error (~5.6%) |
-| **R²**    | 0.548  | Explains ~55% of variance in continuous risk exposure; good alignment with true trend |
+| Target         | RMSE     | R²      | Interpretation |
+|----------------|----------|---------|----------------|
+| `pct_time_high`| 0.056   | 0.548   | Predictions closely match true values, small average absolute error (~5.6%). Explains ~55% of variance in continuous risk exposure; post-hoc calibration corrected scale bias for clinical interpretability |
 
 #### 8.4.2 Interpretation
 
 **Max Risk Classification**
-- ROC AUC = 0.923 indicates excellent ability to rank patients by high-risk probability
-- F1 = 0.929 shows strong balance between precision and recall
-- Accuracy = 0.867 confirms correct classification for most patients, with very few false negatives
+- ROC AUC = 0.923 → excellent ability to rank patients by high-risk probability  
+- F1 = 0.929 → strong balance between precision and recall
+- Accuracy = 0.867 → most predictions are correct overall    
+- Precision = 0.867 → relatively few false positives  
+- Recall = 1.000 → all high-risk patients correctly identified  
 
 **Median Risk Classification**
-- ROC AUC = 0.833 confirms reasonable separability between medium-risk and non-medium-risk patients  
-- F1 = 0.545 demonstrates improved detection of medium-risk cases after threshold tuning (optimal 0.43)  
-- Accuracy = 0.667 reflects some misclassifications due to class imbalance, mitigated by threshold adjustment
+- ROC AUC = 0.833 → good separability between medium-risk and non-medium-risk patients  
+- F1 = 0.545 → improved detection of medium-risk cases after threshold tuning 
+- Accuracy = 0.667 → overall classification reflects class imbalance, partially mitigated by threshold adjustment   
+- Precision = 0.375 → some false positives remain  
+- Recall = 1.000 → all medium-risk patients captured  
 
-**Regression (`% Time High`)**
-- RMSE = 0.056 indicates small average prediction error (~5.6%)  
-- R² = 0.548 shows that the model explains ~55% of variance in patient time-high exposure  
-- Post-hoc calibration corrected scale bias, ensuring predictions are both numerically valid and clinically interpretable
+**% Time High Regression**
+- RMSE = 0.056 → small average prediction error (~5.6%)  
+- R² = 0.548 → model explains ~55% of variance in patient time-high exposure  
+- Post-hoc calibration corrected scale bias, ensuring predictions are numerically valid and clinically interpretable  
 
 **Overall Interpretation**  
-- TCN models demonstrate strong predictive performance across both classification and regression tasks
-- High-risk patients are reliably identified, while threshold tuning improved medium-risk detection
-- Regression predictions are well-calibrated and clinically interpretable, confirming that the model captures temporal risk trends accurately
+- TCN models show strong predictive performance for both classification and regression  
+- High-risk patients reliably identified; threshold tuning significantly improves medium-risk detection  
+- Regression predictions are well-calibrated and clinically interpretable, accurately capturing temporal risk trends
 
 ---
 
-9. Phase 6: Comparative analyiss 
+## 9. Phase 6A: Comparative Analysis: LightGBM vs TCN 
+### 9.1 Overview 
 
-9A.1 Comparative Analysis Rationale
+#### 9.1.1 Purpose of Phase 6
 
-Explain:
-	•	Why comparison is needed
-	•	Why use additional metrics (Brier, ECE, calibration curves, reliability diagrams, etc.)
+Phase 6 is the analytical layer of the project. It transforms the raw evaluation outputs from Phase 5 into scientific conclusions, addressing:
+
+1. How the two models compare (comparative analysis; covered in this section)
+2. Why they behave differently (interpretability; covered in the second part of Phase 6)
+
+The comparative analysis determines:
+
+- Which model performs better across discrimination, calibration, and regression fidelity
+- How reliable, calibrated, and clinically usable each model’s predictions are
+- How data constraints and pipeline limitations influence observed performance differences
+
+The interpretability portion of Phase 6 then explains:
+
+- How each model arrives at its predictions.
+- Which features or temporal segments contribute most to model decisions.
+- How these internal behaviours align with clinical expectations across each target.
+
+Together, the comparative analysis and interpretability form the complete scientific validation of the two models before any deployment or clinical integration considerations
+
+#### 9.1.2 Purpose of Comparative Analysis
+- Establishes how and why LightGBM and TCN differ across all three clinical targets (`max_risk`, `median_risk`, `pct_time_high`)
+- Provides a comprehensive quantitative comparison, evaluating each model across discrimination, calibration, and regression fidelity.
+- Extends beyond scalar metrics by analysing probability behaviour, calibration shape, error structure, and prediction bias, producing insights that are both scientifically robust and clinically meaningful
+- Integrates these findings to determine the practical strengths and limitations of each modelling approach, and how each could contribute within a clinical risk-stratification workflow
+
+##
+### 9.2 Comparative Analysis Framework
+
+#### 9.2.1 Two-Step Comparative Structure
+
+Methodology operates through a two-step analytical structure, balancing quantitative evidence with detailed diagnostic reasoning
+
+| Step | Purpose | Contribution |
+|------|------|---------------|
+| **1. Summary Metrics** | Quantitative foundational summary | Establishes model ranking on core dimensions using robust scalar metrics |
+| **2. Numerical Diagnostics** | Explanatory diagnostic deep-dive | Explains why those metric differences exist through detailed numeric curve analysis |
+
+1. **Quantitative Summary Metrics**
+	- Establishes the primary, scalar evidence of how the models compare that all subsequent diagnostics support
+	-	Evaluates discrimination (ROC AUC, F1, Accuracy, Precision, Recall), calibration (Brier, ECE), and regression fidelity (RMSE, R²) using robust summary statistics
+2. **Numerical Diagnostics & Visualisation Analysis**
+	-	Provides mechanistic explanation for step 1 differences by analysing numeric curve data, probability distributions, and residual structures
+  - Numeric diagnostics supports formal interpretation of discrimination behaviour, calibration shape, and regression error patterns without dependancy on plot aesthetics, that are dififcult to interpret due to a small test dataset (n=15)
+
+Together, these form the complete comparative evaluation layer of Phase 6 (preceding the interpretability section)
+
+#### 9.2.2 Integrated Strategy
+
+This strategy ensures objectivity, reproducibility, robustness against dataset sparsity and complete transparency of model behaviour
+
+1. Use Step 1 to define the core performance hierarchy
+2. Use Step 2 to explain probability shapes, calibration patterns, and residual / error behaviour
+3. Synthesize both to form clinically interpretable conclusions about each model’s strengths
+
+
+---
+
+##
+### 9.3 Metrics Used for Comparison
+
+#### 9.3.1 Definitions
+
+
+
+
+
+Regression Fidelity
+RMSE, R²
+Precision and accuracy of continuous predictions (pct_time_high).
+
+
+| Category     | Metric        | Threshold Dependency  | Interpretation     | Purpose     |
+|--------------|---------------|-----------------------|------------------|-------------|
+| Classification (Discrimination) | ROC AUC | Independent | Measures ranking ability; how well the model separates deteriorating vs non-deteriorating cases | Ability to distinguish deteriorating vs non-deteriorating states |
+|                                 | **F1 Score** | Dependent | Harmonic mean of precision and recall; balances false positives and false negatives |        |
+|                                 | **Accuracy** |           | Proportion of all correct predictions |        |
+|                                 | **Precision** |            | Proportion of predicted positives that are true positives; important for minimising unnecessary alerts |       |
+|                                 | **Recall** |              | Proportion of true positives that are correctly detected; critical for clinical sensitivity |       |
+| Calibration | Brier Score | Independent | Measures mean squared error between predicted probabilities and actual outcomes; lower = better calibrated | Probability reliability; alignment between predicted risks and observed event frequencies |
+|             | Expected Calibration Error (ECE) |            | Quantifies probability reliability by comparing predicted vs observed event rates across bins |        |
+| Regression Fidelity | RMSE | Independent | Average magnitude of prediction error for continuous outcomes; sensitive to outliers | Precision and accuracy of continuous predictions (`pct_time_high`) |
+|                     | R² |               | Proportion of variance explained; measures how closely predictions follow true values |        |
+
+
+6.3 Metric Hierarchy: Threshold-Independent vs Threshold-Dependent
+
+This is where the explanation belongs.
+Not Phase 5, not inside the overview, not inside the calibration section.
+
+This subsection explains:
+
+6.3.1 Why threshold-independent metrics are the primary evidence
+	•	ROC AUC
+	•	Brier
+	•	ECE
+	•	RMSE / R²
+
+Because they:
+	•	do not depend on threshold selection
+	•	are stable with small test sets
+	•	provide true ranking and probability reliability information
+  Regression metrics quantify fidelity of continuous predictions, essential for assessing temporal burden of risk.
+
+
+6.3.2 Why threshold-dependent metrics are secondary
+	•	F1
+	•	Precision
+	•	Recall
+	•	Accuracy
+
+Because they:
+useful but sensitive to small sample noise.
+	•	change dramatically with 1–2 patients
+	•	reflect binarisation behaviour, not underlying probability quality
+	•	can be misleading when thresholds are not calibrated
+
+This subsection sets the rules for interpreting all Phase 6 comparisons.
+
+	•	Why ROC-AUC is the primary discriminative metric
+	•	Why Brier/ECE matter for probability quality
+	•	Why threshold-dependent metrics are secondary
+	•	Why RMSE/R² complement probability metrics
+
+
+	•	Why ranking-based metrics matter more for small N
+	•	Why thresholded metrics are unstable
+
+
+---
+---
+
+6.2 Calibration Metrics (Brier + ECE)
+Step 6.4 is purely pipeline justification:
+	•	Why they were not computed in Phase 5
+	•	Why calibration is essential for cross-model comparison
+	•	Why raw per-patient probabilities were needed
+	•	Why only Phase 6 could compute them
+	•	What extra insight they provide beyond discrimination metrics
+
+6.2.1 Why Calibration Metrics Are Introduced in Phase 6
 	•	Why per-model metrics aren’t enough
-	•	Why temporal vs non-temporal models require different diagnostic lenses
+	•	Because Phase 5 didn’t compute Brier/ECE
+	•	Because calibration needs raw per-patient probabilities
+	•	Because these metrics are comparative-only (not per-model evaluation)
 
-High level, not pipeline detail.
+This section is pipeline-specific justification.
 
-9A.2 Core Comparative Analysis (using Phase 5 metrics)
-	•	Compare AUROC, F1, RMSE, R² across models
+
+---
+
+Step 1 – Summary Metric Comparison (Quantitative)
+
+Primary Evidence
+
+9A.2 Core Comparative Analysis (using Phase 5 metrics + calibration)
+	•	6.3 Cross-model comparison
+	•	max_risk → which model better and why
+	•	median_risk → which model better and why
+	•	pct_time_high → which model better and why
+
 	•	Explain relative performance
 	•	Identify major strengths/weaknesses for each model
 
-9A.3 Deep Comparative Diagnostics (extra metrics)
+---
 
-This is where you add:
-	•	Brier score
-	•	Expected Calibration Error (ECE)
-	•	Discrimination plots
-	•	Calibration curves
-	•	Regression residual plots
-	•	Correlation heatmaps
-	•	Threshold sensitivity curves
+Step 2 – Numerical Diagnostic & Visualisation Analysis 
 
-9A.4 Comparative Visualisations
+secondary, Why the Differences Occur, They are supporting evidence for Step 1.
 
-Plots for:
-	•	ROC curves
-	•	Precision-recall curves
-	•	Calibration curves
-	•	Regression scatter plots
-	•	Residual distributions
-	•	Any other interpretability-informed plots relevant for comparison
+Classification Diagnostics
 
-9A.5 Comparative Summary
+Aspect
+Numeric Content
+Reveals
+ROC Curves
+fpr, tpr, AUC
+Sensitivity–specificity behaviour across thresholds.
+Precision–Recall Curves
+precision, recall, AP
+Positive-event sensitivity under class imbalance.
+Calibration Curves
+Mean predicted probability, fraction of positives
+Over-/under-confidence, calibration bias regions.
+Probability Histograms
+Full distribution + descriptive stats
+Confidence spread, probability skew, certainty patterns.
 
-Short synthesis:
-Which model is best and why (temporal vs non-temporal).
+Regression Diagnostics
+
+Aspect
+Numeric Content
+Reveals
+True vs Predicted Scatter
+y_true, y_pred
+Global fit; systematic offsets.
+Residual Distributions + KDE
+residuals + density estimates
+Error symmetry, variance, bias.
+Error vs Truth Scatter
+y_true, residual
+Heteroscedasticity; error–value interactions.
+Residual Stats
+mean, median, std, skew, kurtosis
+Outliers, distributional shape, predictive bias.
+
+
+---
+
+	•	6.5 Final synthesis
+	•	When LightGBM is better
+	•	When TCN_refined is better
+	•	Why
+  overall winner 
+---
 
 
 
