@@ -31,6 +31,8 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 - Transparent interpretability validated against domain knowledge
 - Deployment-lite inference pipeline demonstrating end-to-end usability
 
+![TCN Architecture](src/images/tcn_architecture.png)
+
 ---
 
 ## Table of Contents
@@ -517,9 +519,9 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 
 | Target         | learning_rate | max_depth | n_estimators | min_data_in_leaf |
 |----------------|---------------|-----------|--------------|-------------------|
-| **max_risk**       | 0.1           | 5         | 50           | 20                |
-| **median_risk**    | 0.05          | 5         | 100          | 5                 |
-| **pct_time_high**  | 0.1           | 3         | 200          | 5                 |
+| **`max_risk`**       | 0.1           | 5         | 50           | 20                |
+| **`median_risk`**    | 0.05          | 5         | 100          | 5                 |
+| **`pct_time_high`**  | 0.1           | 3         | 200          | 5                 |
 
 ##
 ### 6.4 Feature Importance
@@ -694,6 +696,9 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 ```
 
 #### 7.3.1 Architectural Structure
+
+![TCN Architecture](src/images/tcn_architecture.png)
+
 1. **Causal Convolution (`CausalConv1d`) Layer**
   -	1D convolutions padded only on the left, trims the right → avoids future data leakage.
   -	Each kernel learns a local temporal pattern (e.g., sudden HR spike, BP drop).
@@ -1124,7 +1129,7 @@ This section summarises all persistent artifacts generated across the preprocess
 - Outputs were trained in log-space (`log1p`) to stabilise training
 - **Post-processing includes:**
   - Inverse log transform (`np.expm1`) to restore raw percentages for clinical interpretation 
-  - Linear calibration in log-space** to correct systemic bias
+  - Linear calibration in log-space to correct systemic bias
 - Calibration improved alignment with ground truth, restoring R² > 0.5 and substantially reducing RMSE, without retraining
 
 **Patient ID Alignment**
@@ -1170,16 +1175,16 @@ Calibration metrics (Brier and ECE) are introduced in Phase 6 because they requi
 
 **Classification Metrics**
 
-| Target       | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
-|--------------|---------|----------|----------|-----------|--------|----------------|
-| `max_risk`   | 0.846   | 0.929    | 0.867    | 0.867     | 1.000  | High recall ensures all high-risk patients are captured; some false positives slightly reduce precision |
-| `median_risk`| 0.972   | 0.857    | 0.933    | 0.750     | 1.000  | Excellent discrimination (ROC AUC). Perfect recall captures all medium-risk patients; lower precision due to some over-predictions |
+| Target         | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
+|----------------|--------:|---------:|---------:|----------:|-------:|----------------|
+| `max_risk`     |   0.846 |    0.929 |    0.867 |     0.867 |  1.000 | High recall ensures all high-risk patients are captured; some false positives slightly reduce precision |
+| `median_risk`  |   0.972 |    0.857 |    0.933 |     0.750 |  1.000 | Excellent discrimination (ROC AUC). Perfect recall captures all medium-risk patients; lower precision due to some over-predictions |
 
 **Regression Metrics**
 
-| Target         | RMSE     | R²      | Interpretation |
-|----------------|----------|---------|----------------|
-| `pct_time_high`| 0.0382   | 0.793   | Predictions closely match true values, small average absolute error (~3.8%). Explains ~79% of variance in continuous risk exposure; good alignment with true trend |
+| Target           |   RMSE |    R²  | Interpretation |
+|-----------------|-------:|-------:|----------------|
+| `pct_time_high`  | 0.0382 | 0.793 | Predictions closely match true values, small average absolute error (~3.8%). Explains ~79% of variance in continuous risk exposure; good alignment with true trend |
 
 #### 8.3.2 Interpretation
 
@@ -1214,16 +1219,16 @@ Calibration metrics (Brier and ECE) are introduced in Phase 6 because they requi
 
 **Classification Metrics**
 
-| Target          | Threshold | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
-|---------------|-----------|---------|----------|----------|-----------|--------|----------------|
-| `max_risk` | 0.5       | 0.923   | 0.929    | 0.867    | 0.867   | 1.000   | Excellent discrimination and balance of precision–recall. Robust identification of high-risk patients with few false negatives; high precision confirms limited over-prediction | 
-| `median_risk` | 0.43      | 0.833   | 0.545    | 0.667    | 0.375  | 1.000 | Good ranking ability (AUC) and improved F1 via threshold tuning, perfect recall ensures all medium-risk cases captured; moderate precision indicates some false positives |
+| Target        | Threshold | ROC AUC | F1 Score | Accuracy | Precision | Recall | Interpretation |
+|---------------|----------:|--------:|---------:|---------:|----------:|-------:|----------------|
+| `max_risk`    |      0.50 |   0.923 |    0.929 |    0.867 |     0.867 |   1.000 | Excellent discrimination and balance of precision–recall. Robust identification of high-risk patients with few false negatives; high precision confirms limited over-prediction |
+| `median_risk` |      0.43 |   0.833 |    0.545 |    0.667 |     0.375 |   1.000 | Good ranking ability (AUC) and improved F1 via threshold tuning, perfect recall ensures all medium-risk cases captured; moderate precision indicates some false positives |
 
 **Regression Metrics**
 
-| Target         | RMSE     | R²      | Interpretation |
-|----------------|----------|---------|----------------|
-| `pct_time_high`| 0.056   | 0.548   | Predictions closely match true values, small average absolute error (~5.6%). Explains ~55% of variance in continuous risk exposure; post-hoc calibration corrected scale bias for clinical interpretability |
+| Target          | RMSE   | R²    | Interpretation |
+|-----------------|-------:|------:|----------------|
+| `pct_time_high` | 0.056 | 0.548 | Predictions closely match true values, small average absolute error (~5.6%). Explains ~55% of variance in continuous risk exposure; post-hoc calibration corrected scale bias for clinical interpretability |
 
 #### 8.4.2 Interpretation
 
@@ -1258,22 +1263,17 @@ Calibration metrics (Brier and ECE) are introduced in Phase 6 because they requi
 
 #### 9.1.1 Purpose of Phase 6
 
-Phase 6 is the analytical layer of the project. It transforms the raw evaluation outputs from Phase 5 into scientific conclusions, addressing:
-
-1. How the two models compare (comparative analysis; covered in this section)
-2. Why they behave differently (interpretability; covered in the second part of Phase 6)
-
-The comparative analysis determines:
-
-- Which model performs better across discrimination, calibration, and regression fidelity
-- How reliable, calibrated, and clinically usable each model’s predictions are
-- How data constraints and pipeline limitations influence observed performance differences
-
-The interpretability portion of Phase 6 then explains:
-
-- How each model arrives at its predictions.
-- Which features or temporal segments contribute most to model decisions.
-- How these internal behaviours align with clinical expectations across each target.
+- Phase 6 is the analytical layer of the project. It transforms the raw evaluation outputs from Phase 5 into scientific conclusions, addressing:
+  1. How the two models compare (comparative analysis; covered in this section)
+  2. Why they behave differently (interpretability; covered in the second part of Phase 6)
+- The comparative analysis determines:
+  - Which model performs better across discrimination, calibration, and regression fidelity
+  - How reliable, calibrated, and clinically usable each model’s predictions are
+  - How data constraints and pipeline limitations influence observed performance differences
+- The interpretability portion of Phase 6 then explains:
+  - How each model arrives at its predictions.
+  - Which features or temporal segments contribute most to model decisions.
+  - How these internal behaviours align with clinical expectations across each target.
 
 Together, the comparative analysis and interpretability form the complete scientific validation of the two models before any deployment or clinical integration considerations
 
@@ -1296,10 +1296,10 @@ Methodology operates through a two-step analytical structure, balancing quantita
 | **2. Numerical Diagnostics** | Explanatory diagnostic deep-dive | Explains why those metric differences exist through detailed numeric curve analysis |
 
 1. **Quantitative Summary Metrics**
-	- Establishes the primary, scalar evidence of how the models compare that all subsequent diagnostics support
-	-	Evaluates discrimination (ROC AUC, F1, Accuracy, Precision, Recall), calibration (Brier, ECE), and regression fidelity (RMSE, R²) using robust summary statistics
+  - Establishes the primary, scalar evidence of how the models compare that all subsequent diagnostics support
+  -	Evaluates discrimination (ROC AUC, F1, Accuracy, Precision, Recall), calibration (Brier, ECE), and regression fidelity (RMSE, R²) using robust summary statistics
 2. **Numerical Diagnostics & Visualisation Analysis**
-	-	Provides mechanistic explanation for step 1 differences by analysing numeric curve data, probability distributions, and residual structures
+  -	Provides mechanistic explanation for step 1 differences by analysing numeric curve data, probability distributions, and residual structures
   - Numeric diagnostics supports formal interpretation of discrimination behaviour, calibration shape, and regression error patterns without dependancy on plot aesthetics, that are dififcult to interpret due to a small test dataset (n=15)
 
 Together, these form the complete comparative evaluation layer of Phase 6 (preceding the interpretability section)
@@ -1313,266 +1313,956 @@ This strategy ensures objectivity, reproducibility, robustness against dataset s
 3. Synthesize both to form clinically interpretable conclusions about each model’s strengths
 
 
----
-
 ##
 ### 9.3 Metrics Used for Comparison
 
-#### 9.3.1 Definitions
-
-
-
-
-
-Regression Fidelity
-RMSE, R²
-Precision and accuracy of continuous predictions (pct_time_high).
-
+#### 9.3.1 Metric Definitions
 
 | Category     | Metric        | Threshold Dependency  | Interpretation     | Purpose     |
 |--------------|---------------|-----------------------|------------------|-------------|
 | Classification (Discrimination) | ROC AUC | Independent | Measures ranking ability; how well the model separates deteriorating vs non-deteriorating cases | Ability to distinguish deteriorating vs non-deteriorating states |
-|                                 | **F1 Score** | Dependent | Harmonic mean of precision and recall; balances false positives and false negatives |        |
-|                                 | **Accuracy** |           | Proportion of all correct predictions |        |
-|                                 | **Precision** |            | Proportion of predicted positives that are true positives; important for minimising unnecessary alerts |       |
-|                                 | **Recall** |              | Proportion of true positives that are correctly detected; critical for clinical sensitivity |       |
-| Calibration | Brier Score | Independent | Measures mean squared error between predicted probabilities and actual outcomes; lower = better calibrated | Probability reliability; alignment between predicted risks and observed event frequencies |
-|             | Expected Calibration Error (ECE) |            | Quantifies probability reliability by comparing predicted vs observed event rates across bins |        |
+|                                 | F1 Score | Dependent | Harmonic mean of precision and recall; balances false positives and false negatives |        |
+|                                 | Accuracy |           | Proportion of all correct predictions |        |
+|                                 | Precision |            | Proportion of predicted positives that are true positives; important for minimising unnecessary alerts |       |
+|                                 | Recall (sensitivity) |              | Proportion of true positives that are correctly detected; critical for clinical sensitivity |       |
+| Classification (Calibration) | Brier Score | Independent | Measures mean squared error between predicted probabilities and actual outcomes; lower = better calibrated | Probability reliability; alignment between predicted risks and observed event frequencies |
+|             | Expected Calibration Error (ECE) |            | Quantifies probability reliability by comparing predicted vs observed event rates |        |
 | Regression Fidelity | RMSE | Independent | Average magnitude of prediction error for continuous outcomes; sensitive to outliers | Precision and accuracy of continuous predictions (`pct_time_high`) |
 |                     | R² |               | Proportion of variance explained; measures how closely predictions follow true values |        |
 
+#### 9.3.2 Metric Hierarchy: Threshold-Independent vs Threshold-Dependent
 
-6.3 Metric Hierarchy: Threshold-Independent vs Threshold-Dependent
+**Purpose:** Defines the interpretive hierarchy used throughout Phase 6, clarifies which metrics provide the strongest evidence, and why others are included only as supportive diagnostics
 
-This is where the explanation belongs.
-Not Phase 5, not inside the overview, not inside the calibration section.
+**Threshold-Independent Metrics — Primary Evidence**
 
-This subsection explains:
+- **Metrics:** ROC AUC, Brier Score + ECE, RMSE + R² → Drive the main comparative conclusions
+- **Why they are primary:**  
+  - No threshold required → Evaluate performance across all possible cut-off*, avoiding instability from arbitrary threshold selection
+  - Statistically stable for small dataset (n=15) → Threshold-independent metrics less sensitive to single-patient fluctuations  
+  - Directly reflect core behaviours:  
+    - ROC AUC → Global discrimination ability  
+    - Brier / ECE → Probability reliability  
+    - RMSE / R² → Fidelity of continuous predictions  
+  - Clinically interpretable → Metrics capture how well the model ranks risk, how trustworthy the predicted probabilities are, and how closely regression outputs match true temporal exposure
 
-6.3.1 Why threshold-independent metrics are the primary evidence
-	•	ROC AUC
-	•	Brier
-	•	ECE
-	•	RMSE / R²
+**Threshold-Dependent Metrics — Secondary Evidence**
 
-Because they:
-	•	do not depend on threshold selection
-	•	are stable with small test sets
-	•	provide true ranking and probability reliability information
-  Regression metrics quantify fidelity of continuous predictions, essential for assessing temporal burden of risk.
+- **Metrics:** F1 Score, Precision, Recall, Accuracy → Explain threshold-level decision behaviour but do not determine the ranking between models
+- **Why they are secondary:**  
+  - Depend on a fixed decision boundary → They evaluate behaviour after binarising probabilities (e.g., threshold = 0.5 or optimised threshold)
+  - Highly unstable with small samples → A single patient shifting sides of the threshold can change Accuracy, F1, or Precision by 6–10%
+  - Reflect decision behaviour, not underlying probability quality → Two models can have identical F1 yet produce very different probability distributions
+  - Misleading when thresholds are not calibrated → These metrics can appear strong even if underlying probabilities are poorly calibrated
+- They are therefore used as supportive, contextual indicators, not as the main evidence of comparative performance
+- The one exception is TCN (`median_risk`), where the threshold was explicitly optimised → threshold-dependent metrics here reflect genuine model improvement
+
+#### 9.3.3 Calibration Metrics Justification (Brier & ECE)
+
+Calibration metrics are introduced only in Phase 6 for three reasons:
+
+1. **Pipeline dependency**
+  - Phase 5 evaluation scripts did not load raw probability outputs, only aggregated metrics
+  - Brier/ECE require the full per-patient probability vectors, which were saved separately and only assembled in Phase 6
+
+2. **Comparative purpose**
+  - Calibration is meaningful primarily when comparing models, not evaluating them individually
+  - Phase 6 is the cross-model analysis layer, so probability reliability metrics belong here
+
+3. **Metric role**
+   - Discrimination metrics (AUC, F1) alone cannot assess whether predicted probabilities are **well-calibrated**.  
+   - Brier and ECE quantify probability accuracy and confidence behaviour, complementing Step 1’s discrimination and regression metrics.
+
+##
+### 9.4 Step 1 – Summary Metric Comparison (Quantitative)
+
+![Comparison Metrics Bar Charts](src/images/metrics_comparison.png)
+
+#### 9.4.1 Classification (`max_risk`)
+
+**Target:** Whether a patient ever reached high deterioration risk during admission
+
+| Model | ROC AUC | F1 | Accuracy | Precision | Recall | Brier | ECE |
+|:--|--:|--:|--:|--:|--:|--:|--:|
+| LightGBM | 0.846 | 0.929 | 0.867 | 0.867 | 1.000 | **0.097** | **0.116** |
+| TCN | **0.923** | 0.929 | 0.867 | 0.867 | 1.000 | 0.101 | 0.149 |
+
+**Interpretation**
+- **ROC AUC:** TCN +9.1% → better ranks patients experiencing deterioration
+- **Threshold metrics (F1, Accuracy, Precision, Recall):** identical due to small n=15; reflect event detection rather than probability quality
+- **Calibration (Brier/ECE):** LightGBM slightly better calibrated; TCN marginally overconfident
+- **Statistical reliability:** Only threshold-independent metrics (AUC, Brier, ECE) are meaningful at this sample size
+- **Conclusion:** TCN excels at detecting acute deterioration events; LightGBM provides more stable probability estimates
+
+#### 9.4.2 Classification (`median_risk`)
+
+**Target:** Typical or central risk level over admission
+
+| Model | ROC AUC | F1 | Accuracy | Precision | Recall | Brier | ECE |
+|:--|--:|--:|--:|--:|--:|--:|--:|
+| LightGBM | **0.972** | **0.857** | **0.933** | **0.750** | 1.000 | **0.065** | **0.093** |
+| TCN | 0.833 | 0.545 | 0.667 | 0.375 | 1.000 | 0.201 | 0.251 |
+
+**Interpretation**
+- **ROC AUC:** LightGBM +16.7% → better separates stable vs chronically unstable patients
+- **Threshold-dependent metrics:** LightGBM superior; TCN overpredicts positives despite F1-tuned threshold (0.43)
+- **Calibration:** LightGBM markedly better (Brier/ECE ~2–3× lower)
+- **Reasons for TCN underperformance:**
+  1. Label–model mismatch → `median_risk` averages risk; TCN optimised for transient peaks
+  2. Limited temporal contrast → low-variance sequences introduce noise into temporal embeddings
+  3. Probability compression → TCN activations overconfident but uninformative
+  4. Structural advantage of LightGBM → aggregates align directly with target definition
+- **Statistical reliability:** divergence reflects true model differences, not rounding noise
+- **Conclusion:** LightGBM decisively better for median-risk; TCN suited to transient events, not long-term risk states
+
+#### 9.4.3 Regression (`pct_time_high`)
+
+**Target:** Proportion of admission spent in high-risk state
+
+| Model | RMSE | R² |
+|:--|--:|--:|
+| LightGBM | **0.038** | **0.793** |
+| TCN | 0.056 | 0.548 |
+
+**Interpretation**
+- LightGBM more accurate (RMSE −48%) and explains more variance (+24 pts R²)
+- TCN predictions less precise; temporal modelling adds less value for aggregate continuous outcomes
+- **Conclusion:** LightGBM is superior for estimating proportion of high-risk time
+
+#### 9.4.4 Overall Quantitative Summary
+
+| Dimension | Winner | Notes |
+|:--|:--|:--|
+| Discrimination (ROC AUC) | **TCN (`max_risk`), LightGBM (`median_risk`)** | TCN excels at transient spikes; LightGBM at sustained states |
+| Threshold Accuracy (F1/Accuracy/Precision) | **LightGBM** | Especially superior for median-risk classification |
+| Calibration (Brier/ECE) | **LightGBM** | More reliable probability scaling |
+| Regression Fit (RMSE/R²) | **LightGBM** | Lower error, higher explained variance |
+
+**Integrated Interpretation**
+- **TCN:** optimal for dynamic event detection (`max_risk`)
+- **LightGBM:** superior for aggregate risk (`median_risk`, `pct_time_high`) and probability calibration
+- **Clinical relevance:** TCN → acute deterioration alerts; LightGBM → stable risk stratification
+- **Key takeaway:** LightGBM provides the most consistent, generalisable quantitative performance; TCN adds incremental value for event-based detection
+
+#### 9.4.5 Limitations and Contextual Analysis: TCN vs LightGBM
+
+**Background**  
+- **TCN:** captures temporal dependencies and nonlinear interactions, potentially discovering subtle patterns 
+- **LightGBM:** operates on aggregated features; excels in small-data regimes and for targets summarising patient-level statistics (`median_risk`, `pct_time_high`)
+
+**Optimisation Efforts for TCN**  
+- **Phase 4.5:** timestamp-level sequences, hyperparameter tuning, class weighting for `median_risk` and log-transform for `pct_time_high`
+- **Phase 5:** per-patient evaluation; threshold 0.5 for `max_risk`, 0.43 for `median_risk`; inverse log-transform and calibration for `pct_time_high`
+- **Phase 6:** Brier and ECE computed from raw probabilities; direct comparison to LightGBM on identical test patients (n = 15)
+
+**Reasons for TCN Underperformance**  
+1. **Small Test Set**: n = 15 insufficient for stable generalisation; threshold-dependent metrics highly sensitive to rounding
+2. **Target–Model Misalignment**:  
+   - `median_risk` reflects average patient-level state; TCN focuses on short-term dynamics  
+   - LightGBM aligns structurally via aggregated features
+3. **Limited Temporal Contrast**: `median_risk` sequences are very similar in magnitude and pattern across entire admission (low variance), model cannot effectively distinguish classes, reduces discriminative signal  
+4. **Calibration & Probability Compression**: low-variance sequences → narrow predicted probability range → overconfident outputs (high Brier/ECE). Post-hoc calibration cannot fully recover reliable probabilities
+5. **Regression Limitation (`pct_time_high`)**: TCN detects spikes, not long-term aggregates; log-transform + calibration improves stability but cannot overcome inherent mismatch
+
+**Key Takeaways**  
+- Deep learning is not guaranteed to outperform classical ML on small datasets
+- TCN excels for event-based detection (`max_risk`)
+- LightGBM excels for aggregate targets (`median_risk`, `pct_time_high`) due to:  
+  - Direct alignment with patient-level statistics
+  - Robustness in small-data regimes
+  - Better-calibrated probability outputs
+- Threshold tuning can improve alignment but does not overcome intrinsic limitations
+
+**Interpretation Guidance**  
+- ROC AUC, Brier, and ECE are the most reliable indicators for n = 15
+- Threshold-dependent metrics (F1, Accuracy, Precision, Recall) are sensitive to small sample effects  
+- Differences reflect task–model alignment and data regime, not inherent algorithmic inferiority
 
 
-6.3.2 Why threshold-dependent metrics are secondary
-	•	F1
-	•	Precision
-	•	Recall
-	•	Accuracy
+##
+### 9.5 Step 2 – Numerical Diagnostics & Visualisation Analysis
 
-Because they:
-useful but sensitive to small sample noise.
-	•	change dramatically with 1–2 patients
-	•	reflect binarisation behaviour, not underlying probability quality
-	•	can be misleading when thresholds are not calibrated
+#### 9.5.1 Overview & Plot Rationale
 
-This subsection sets the rules for interpreting all Phase 6 comparisons.
+**Overview**
 
-	•	Why ROC-AUC is the primary discriminative metric
-	•	Why Brier/ECE matter for probability quality
-	•	Why threshold-dependent metrics are secondary
-	•	Why RMSE/R² complement probability metrics
+- Step 2 provides secondary, supporting evidence for Step 1 metric comparisons by explaining the underlying numerical patterns
+- Focuses on numeric diagnostics derived from plots and CSVs for LightGBM and TCN models  
+- Enables interpretation of model performance without visual plots, ensuring reproducibility and quantitative analysis
+- **Analyses are organised by target and diagnostic type:**
+  - **ROC & PR curves:** Discrimination and handling of class imbalance
+  - **Calibration curves:** Reliability of predicted probabilities
+  - **Probability histograms / regression diagnostics:** Spread, bias, and residual patterns
+- All plots can be consolidated per target (one figure per target), with CSVs providing full quantitative detail
+
+**Classification Diagnostics**
+
+| Aspect | CSV Content | Purpose / Insight |
+|--------|-------------|-----------------|
+| **ROC Curve** | `fpr_*`, `tpr_*`, `auc_*` | Sensitivity–specificity behaviour across thresholds; overall discrimination |
+| **Precision–Recall Curve** | `precision_*`, `recall_*`, `ap_*` | Positive-class performance, especially under class imbalance |
+| **Calibration Curve** | `mean_pred_*`, `frac_pos_*`, `brier_*`, `ece_*` | Assesses over- or under-confidence; evaluates probability alignment |
+| **Probability Histogram** | `pred_prob_*`, `mean_*`, `std_*`, `min_*`, `max_*`, `skew_*`, `kurt_*` | Distribution of predicted probabilities; confidence spread and skew |
+
+**Regression Diagnostics**
+
+| Aspect | CSV Content | Purpose / Insight |
+|--------|-------------|-----------------|
+| **True vs Predicted Scatter** | `y_true_*`, `y_pred_*` | Assesses global fit; identifies systematic offsets |
+| **Residuals** | `residual_*`, `mean_res_*`, `std_res_*`, `min_res_*`, `max_res_*`, `skew_res_*`, `kurt_res_*` | Quantifies bias, variability, and extreme prediction errors. Residuals centered around zero indicate unbiased predictions; spread and skew highlight variability and systematic deviations |
+| **Residual KDE** | `grid_*`, `kde_*` | Smooth representation of residual distribution; highlights error concentration, spread, and predictive reliability |
+| **Error vs Truth Scatter** | `y_true_*`, `residual_*` | Shows how prediction errors vary with the true values; identifies patterns where errors increase or decrease with outcome magnitude |
+
+#### 9.5.2 Classification (`max_risk`)
+
+**Target:** Whether a patient ever reached high deterioration risk during admission
+
+![Max Risk Plots](src/images/max_risk_comparison.png)
 
 
-	•	Why ranking-based metrics matter more for small N
-	•	Why thresholded metrics are unstable
+| Dimension | LightGBM | TCN | Interpretation |
+|-----------|----------|-------------|----------------|
+| **ROC (AUC)** | 0.846 | **0.923** | TCN shows steeper early discrimination → detects high-risk patients earlier and with fewer false positives |
+| **Precision–Recall (AP)** | 0.9774 | **0.9897** | Both high precision; TCN marginally improves recall (+1.25%), detecting more high-risk patients |
+| **Calibration** | `mean_pred` 0.5087–0.9744, Brier 0.0973, ECE 0.1160 | `mean_pred` 0.7704–0.8619, Brier 0.1010, ECE 0.1488 | LightGBM slightly better calibrated; TCN produces tightly clustered probabilities → consistent but slightly inflated confidence |
+| **Probability Histogram** | mean 0.883, std 0.144, skew –1.267 | mean 0.831, std 0.046, skew –0.492 | LightGBM shows broader spread → finer separation; TCN tightly clusters → uniform detection but less granularity |
 
+**Analysis Summary**
+- **Interpretation**
+  - **Discrimination:** TCN excels in early identification of deteriorating patients  
+  - **Calibration:** LightGBM better reflects true probabilities
+  - **Probability spread:** LightGBM allows nuanced differentiation; TCN is aggressive and sensitive 
+- **Clinical takeaway:** TCN is superior for early-warning detection, LightGBM for interpretable probabilistic scoring
+
+
+#### 9.5.3 Classification: `median_risk`
+
+**Target:** Typical or central risk level over admission
+
+![Median Risk Plots](src/images/median_risk_comparison.png)
+
+### CSV-Based Analysis
+| Dimension | LightGBM | TCN_refined | Interpretation |
+|-----------|----------|-------------|----------------|
+| **ROC (AUC)** | **0.972** | 0.833 | LightGBM achieves stronger early discrimination for sustained risk |
+| **Precision–Recall (AP)** | **0.917** | 0.633 | LightGBM maintains precision under class imbalance; TCN underperforms |
+| **Calibration** | `mean_pred` 0.011–0.967, Brier 0.065, ECE 0.093 | `mean_pred` 0.298–0.640, Brier 0.201, ECE 0.251 | LightGBM well-calibrated; TCN mid-range compression → poor probability interpretability |
+| **Probability Histogram** | mean 0.244, std 0.393 | mean 0.451, std 0.116 | LightGBM spans full range → better patient stratification; TCN compressed → limited long-term risk insight |
+
+**Interpretation**
+- LightGBM consistently outperforms TCN across discrimination, calibration, and probability spread  
+- TCN’s compressed outputs fail to distinguish low vs moderate vs high sustained-risk patients
+- **Clinical takeaway:** For median-level risk assessment, LightGBM provides actionable, interpretable probabilities, whereas TCN is less reliable
+
+
+#### 9.5.4 Regression: `pct_time_high`
+
+**Target:** Proportion of admission spent in high-risk state
+
+![Regression Plots](src/images/pct_time_high_comparison.png)
+
+### CSV-Based Analysis
+| Dimension | LightGBM | TCN_refined | Interpretation |
+|-----------|----------|-------------|----------------|
+| **Scatter (`y_true` vs `y_pred`)** | tight along `y=x` | broader spread | LightGBM accurately reflects true exposure; TCN overestimates low-risk patients |
+| **Residuals (mean ± SD)** | **0.0013 ± 0.038** | 0.111 ± 0.066 | LightGBM nearly unbiased; TCN systematically overestimates by ~11% |
+| **Residual Max** | **0.0619** | 0.2177 | TCN extreme errors >3× LightGBM → poorer calibration at extremes |
+| **Residual KDE** | peak 0 ±0.038 | peak 0.111 ±0.066 | Confirms concentration and spread; TCN skewed toward overestimation |
+| **Error vs True** | flat, corr −0.16 | decreasing with truth, corr −0.41 | LightGBM stable across all outcomes; TCN exhibits regression-to-mean → underestimates high-risk durations |
+
+**Interpretation**
+- LightGBM produces reliable, unbiased, and clinically actionable predictions 
+- TCN overestimates short-risk patients and underestimates prolonged-risk patients, showing heteroscedastic bias (more wrong for some ranges of true values than others)
+- **Clinical takeaway:** For `pct_time_high`, LightGBM is the preferred model, providing faithful risk duration estimates for triage and monitoring 
+
+##
+### 9.6 Final Integrated Summary
+#### 9.6.1 Target-Based Conclusions
+
+Across all three targets, the models show clear task-specific strengths:
+
+- **`max_risk` (acute deterioration events):**
+  - TCN → provides the strongest discrimination and earliest separation of high-risk cases, driven by its sensitivity to short-term temporal spikes
+  - LightGBM → offers slightly better calibration but lower early sensitivity
+- **`median_risk` (typical risk level across admission):**
+  - LightGBM → consistently outperforms TCN in AUC, AP, and calibration; wide probability spread allows clearer separation of stable versus borderline patients
+  - TCN → compressed mid-range outputs reflect a mismatch between temporal modelling and an aggregated, patient-level target
+- **`pct_time_high` (proportion of admission spent in high-risk state):** 
+  - LightGBM → provides reliable, unbiased regression estimates with tightly centred residuals.  
+  - TCN → systematically overestimates low-risk patients and underestimates prolonged-risk patients, showing value compression and heteroscedastic error
+
+#### 9.6.2 Overall Conclusion
+
+- LightGBM is the most dependable model for patient-level risk stratification, offering superior calibration, stable residual behaviour, and accurate prediction of sustained or cumulative risk measures  
+- TCN remains the strongest choice for detecting transient, acute deterioration events, where temporal sensitivity outweighs precise calibration requirements
+- In practical deployment, the models are complementary:  
+  - TCN for early-warning alerting  
+  - LightGBM for calibrated daily risk scoring and long-term patient profiling
 
 ---
+
+## 10. Phase 6B: Interpretability – LightGBM SHAP vs TCN Saliency
+
+### 10.1 Why Interpretability Matters in Clinical ML
+
+Interpretability is essential for ICU deterioration prediction because:
+
+- Clinicians must understand the basis of a model’s high- or low-risk assignments
+- Regulatory and safety frameworks require transparent reasoning rather than black-box performance
+- Spurious feature dependencies (e.g. artefacts, temporal gaps, missingness patterns) must be detectable
+- Interpretability links model outputs to physiologically plausible mechanisms
+
+In this project, interpretability is used to:
+
+- Confirm that models rely on meaningful clinical signals
+- Diagnose architectural weaknesses (e.g. temporal compression in TCN, over-weighting of static features in LightGBM)
+- Ensure the reliability and accountability of deployment scenarios
+
+##
+### 10.2 How Interpretability Fits Into Phase 6
+
+Interpretability forms the third analytical layer of the evaluation pipeline:
+
+| Stage | Step | Focus | Question Answered | Role |
+|-------|------|--------|-------------------|-------|
+| **Quantitative Comparison** | Step 1 | AUC, F1, Brier, RMSE, R² | *How well do the models perform?* | Establish baseline |
+| **Behavioural Diagnostics** | Step 2 | ROC/PR curves, calibration, residual distributions | *How do models behave across the risk spectrum?* | Reveal reliability patterns |
+| **Interpretability** | Step 3 | SHAP + saliency | *Why do the models behave this way?* | Identify causal drivers |
+
+**Purpose and Integration**
+
+- Steps 1–2 quantify what happens; interpretability explains why
+- SHAP identifies which physiological features dominate LightGBM decisions
+- Saliency reveals which temporal segments the TCN relies on
+- This creates a full analytical progression: Performance → Behaviour → Mechanism 
+
+**SHAP vs Saliency: Complementary Interpretability**
+
+Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpretability framework
+
+| **Aspect** | **SHAP (LightGBM)** | **Saliency (TCN)** | **Complementary Insight** |
+|------------|--------------------|------------------|--------------------------|
+| **Focus** | Global, static feature importance | Temporal, local feature sensitivity | Combines “what matters” with “when it matters” |
+| **Temporal Resolution** | Sequence-aggregated | Per-timestep | Aligns static importance with dynamic changes |
+| **Key Drivers** | Core vitals, NEWS2 | Same vitals plus transient spikes | Confirms both sustained and acute signals |
+| **Stability** | Stable across patients | Sensitive to noise, patient-specific | Detects subgroup or episodic influences |
+| **Clinical Interpretation** | Baseline physiology and long-term risk | Emerging instability and critical periods | Multi-scale interpretability: baseline + acute events |
+
+- **How both methods compliment each other:**  
+  - SHAP identifies globally important predictors 
+  - Saliency shows when these predictors influence outcomes over time 
+  - Together, they validate physiological plausibility and support actionable insights for clinicians
+- This unified framework ensures clinicians can see both which features drive risk and when, supporting transparent, clinically grounded model explanations across all three targets
+
+##
+### 10.3 LightGBM Interpretability: SHAP Background & Overview
+
+#### 10.3.1 SHAP Rationale
+- SHAP provides additive, consistent feature attributions, giving a principled measure of how each variable influences model output
+- Mean absolute SHAP values produce a stable global importance ranking, more reliable than LightGBM’s raw feature importance
+- SHAP extends and supersedes Phase 3 feature importance:
+  - **Phase 3 feature importance:** early-stage sanity check confirming the model learned physiologically coherent signals and feature rankings were stable during cross-validation
+  - **Phase 6 SHAP:** final, model-aligned interpretability providing mechanistic explanations for the trained LightGBM used in comparative evaluation
+
+#### 10.3.2 Definition
+- SHAP uses game-theoretic Shapley values to quantify each feature’s average marginal contribution to the model’s output
+- For any prediction: `f(x) = φ₀ + Σ φᵢ` where `φᵢ` represents the effect of feature `i` in pushing the prediction higher or lower
+  - Positive `φᵢ` → pushes risk upward
+  - Negative `φᵢ` → pushes risk downward
+  - Magnitude → strength of influence
+- SHAP provides both global (dataset-level) and local (patient-level) interpretability, but this project focuses on global feature ranking for model comparison
+
+#### 10.3.3 Configuration Decisions
+
+| Decision | Our Choice | Rationale |
+|----------|------------|-----------|
+| **Explainer type** | `TreeExplainer` | Provides exact SHAP values for tree models; computationally efficient and stable |
+| **Model output explained** | Raw outputs for regression; class-1 output for classification | Avoids LightGBM/SHAP instability; ensures risk-focused interpretation |
+| **Aggregation method** | Mean absolute SHAP values | Standard for global importance; removes directional cancellation |
+| **Dataset for SHAP** | Training set (70 patients) | Explains what the model actually learned; avoids test-set noise |
+| **Visualisation** | Top-10 feature bar plots | Clear, reproducible, and publication-ready summaries |
+
+- **Why TreeExplainer**
+  - Computes exact SHAP values for gradient-boosted trees without sampling noise 
+  - Efficient and scalable for LightGBM ensembles
+  - Provides attributions directly aligned with the model’s internal decision structure
+- **Alternatives not used**
+  - `KernelExplainer` → slow, approximate
+  - `DeepExplainer` → designed for neural networks  
+  - `LinearExplainer` → inappropriate for non-linear boosting models
+
+##
+### 10.4 LightGBM Interpretability: SHAP Results & Interpretation
+
+#### 10.4.1 `max_risk` SHAP Analysis
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `spo2_min` | 1.082 | Lowest SpO₂ is the dominant predictor of high-risk classification, consistent with respiratory deterioration driving escalation |
+| 2 | `supplemental_o2_mean` | 0.697 | Higher average O₂ supplementation increases predicted risk, aligning with oxygen support needs |
+| 3 | `respiratory_rate_max` | 0.533 | Elevated maximum respiratory rate reflects physiological stress contributing to high-risk predictions |
+| 4 | `temperature_missing_pct` | 0.406 | Missing temperature measurements influence predictions → likely proxying clinical instability or gaps in monitoring |
+| 5 | `heart_rate_mean` | 0.266 | Persistent tachycardia moderately increases predicted risk |
+
+- **Interpretation Summary**
+  - Primary drivers are respiratory physiology (SpO₂, O₂ delivery)
+  - Secondary drivers include temperature and heart rate
+  - Non-contributing features (systolic BP, CO₂ metrics) have minimal impact
+- **Conclusion**  
+  - For `max_risk`, SHAP confirms the model aligns with clinical expectations, emphasizing oxygenation and respiratory status
+
+#### 10.4.2 `median_risk` SHAP Analysis
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `respiratory_rate_mean` | 1.301 | Average respiratory rate is the dominant feature for median risk, reflecting ongoing respiratory instability |
+| 2 | `spo2_mean` | 0.901 | Low average SpO₂ strongly influences risk predictions, consistent with hypoxia |
+| 3 | `heart_rate_max` | 0.636 | Maximum heart rate signals physiological stress |
+| 4 | `systolic_bp_missing_pct` | 0.635 | Missing BP readings indicate unobserved instability or monitoring gaps |
+| 5 | `level_of_consciousness_missing_pct` | 0.536 | Missing consciousness measurements impact predictions, highlighting incomplete observations during high-risk periods |
+
+- **Interpretation Summary**
+  - Median risk prediction continues to prioritize respiratory and oxygenation variables
+  - Missingness metrics act as indirect markers of instability
+  - Temperature and heart rate are secondary contributors
+  - Zero-contribution features (CO₂ metrics, some supplemental O₂) are non-informative
+- **Conclusion:**  
+  - For `median_risk`, respiratory dynamics and oxygenation dominate, with missingness features serving as a proxy for clinical instability
+
+#### 10.4.3 `pct_time_high` SHAP Analysis
+
+| Rank | Feature | Mean |SHAP| Value | Interpretation |
+|------|---------|----------------|----------------|
+| 1 | `respiratory_rate_mean` | 0.034 | Average respiratory rate drives cumulative high-risk duration, emphasizing sustained respiratory instability |
+| 2 | `heart_rate_max` | 0.014 | Maximum heart rate contributes moderately, reflecting physiological stress |
+| 3 | `supplemental_o2_mean` | 0.012 | Mean supplemental O₂ requirement affects predicted high-risk duration |
+| 4 | `spo2_mean` | 0.012 | Average SpO₂ influences risk duration, consistent with hypoxia prolonging high-risk periods |
+| 5 | `temperature_median` | 0.011 | Temperature reflects systemic stress or infection |
+
+- **Interpretation Summary**
+  - Respiratory and oxygenation metrics dominate cumulative high-risk time predictions
+  - Missingness features contribute slightly, highlighting data completeness as an indirect marker
+  - Low-contributing features are physiologically less relevant for predicting high-risk duration
+- **Conclusion:**  
+  - For `pct_time_high`, SHAP reveals that sustained respiratory dynamics and oxygenation are key determinants, with minor influence from missingness and secondary vital signs
+
+#### 10.4.4 Missingness Features as Clinical Instability Indicators
+- Some SHAP features represent the fraction of missing data → `temperature_missing_pct`, `systolic_bp_missing_pct`, `level_of_consciousness_missing_pct`
+- These “missingness features” can act as proxies for clinical instability 
+- When vital signs or observations are not recorded, it may indicate periods of high-risk or urgent clinical activity
+- The model has learned that gaps in monitoring often correlate with deterioration, so these features appear important in SHAP analysis, even though they do not directly reflect physiology
+
+#### 10.4.5 Overall Summary
+- Respiratory features (RR, SpO₂, O₂ support) are the strongest predictors across all targets
+- Heart rate and temperature contribute moderately
+- Missingness features (BP, LOC, temperature) indicate real-world data capture gaps and correlate with risk, functioning as indirect markers of instability and reflect real-world monitoring gaps
+- CO₂ metrics and some supplemental O₂ features have negligible influence, suggesting these signals either lacked sufficient data quality or were redundant with stronger respiratory indicators 
+- SHAP confirms that LightGBM’s decision logic is clinically coherent and driven by physiologically meaningful patterns, supporting confidence in its reliability and transparency
+
+##
+### 10.5 TCN Interpretability: Saliency Overview & Rationale 
+
+#### 10.5.1 Saliency Rationale
+- The TCN is a temporal model; therefore interpretability must show when and which features influence predictions
+- Gradient × Input saliency provides time-resolved attribution, complementing SHAP (which provides static, non-temporal feature importance for LightGBM)
+- Absolute (|∂y/∂x × x|) saliency stabilises gradients and highlights clinically meaningful activity rather than noise
+- This approach offers clinicians transparent insight into temporal reasoning, supporting validation of whether predictions align with physiological patterns
+
+#### 10.5.2 Definition
+- Given a model output `y` (scalar prediction) and an input tensor `x` with dimensions `(T, F)` where:  
+  - `T`: timesteps  
+  - `F`: features  
+- The saliency for each element `x_{t,f}` is computed as `S_{t,f} = | (∂y / ∂x_{t,f}) × x_{t,f} |` where:
+  - `(∂y / ∂x_{t,f})` measures how sensitive the output `y` is to small changes in feature `f` at time `t` 
+  - Multiplying by `x_{t,f}` weights this sensitivity by the actual input value → importance weighted by feature activation  
+  - Taking the absolute value removes directionality, leaving only the magnitude of influence 
+- The resulting saliency tensor has shape `(T, F)` for a single sample and `(N, T, F)` across a dataset, where `N` = number of patients or sequences
+
+#### 10.5.3 Configuration Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Saliency method** | Gradient × Input | Combines sensitivity and activation; stable and differentiable for TCNs |
+| **Direction handling** | Absolute values | Removes polarity; focuses on magnitude relevant to risk scoring |
+| **Aggregation** | Mean across patients | Produces global, reproducible feature and temporal profiles |
+| **Heatmap scaling** | Log transform + 5th–95th percentile scaling | Prevents outlier distortion; improves interpretability |
+| **Outputs** | Feature-level means, temporal profiles, top-feature trends, mean heatmaps | Covers both “what matters” and “when it matters” |
+| **Model scope** | All three TCN heads | Ensures attribution consistency across risk targets |
+
+- **Why Gradient × Input for the TCN**
+  - No architectural changes required: Uses native gradients and input tensors; no hooks, surrogate models, or special layers
+  - Temporal and feature-level transparency: Produces attribution across all timesteps and features, which is essential for ICU time-series
+  - Computationally efficient: Only a single backward pass is needed per sample and per output head
+  - Model-agnostic: Works with any differentiable sequence model (TCN, RNN, LSTM, MLP)
+  - Temporal attribution unavailable in SHAP: SHAP provides global feature importance but cannot localise importance across time
+- **Alternatives Not Used**
+  -	Integrated Gradients → requires many forward passes
+  -	DeepLIFT → requires a baseline and is less intuitive for continuous clinical data
+  -	Grad-CAM → unsuitable for 1-D temporal convolutions
+
+##
+### 10.6 TCN Interpretability: Saliency Results & Interpretation
+
+#### 10.6.1 Summary Outputs
+
+The TCN produces four complementary outputs for each prediction head (`max_risk`, `median_risk`, `pct_time_high`):
+
+| Output Type | File / Format | What it Shows | Purpose |
+|------------|---------------|---------------|---------|
+| **Feature-level saliency** | `*_feature_saliency.csv` | Overall contribution of each input feature (averaged across patients and timesteps) | Identifies which features the model relies on most globally |
+| **Temporal mean saliency** | `*_temporal_saliency.csv` | Average saliency per timestep across all features and patients | Highlights when during a patient’s trajectory the model is most sensitive |
+| **Top-feature temporal profiles** | `*_top_features_temporal.csv` | Evolution of the top 5 features’ saliency over time | Shows feature-specific temporal dynamics, revealing importance at different stages of the sequence |
+| **Mean heatmaps** | `*_mean_heatmap.png` | Visual summary of temporal-feature importance for the top 10 features | Provides a combined, intuitive view of what and when features influence predictions |
+
+Together, these outputs allow users to see which features drive predictions and when they exert the greatest influence, complementing LightGBM’s SHAP analysis.
+
+#### 10.6.2 `max_risk` Saliency Analysis
+
+| Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
+|----------------|------------------------|----------------|----------------|
+| **Feature-level saliency** | `heart_rate_roll24h_min`, `respiratory_rate_roll4h_min`, `news2_score`, `temperature_max`, `level_of_consciousness_carried` | N/A | Heart rate and respiratory minima show high mean and variable influence, indicating episodic importance. NEWS2 and temperature are moderate and more stable, providing baseline predictive context. Secondary features contribute less consistently |
+| **Temporal mean saliency** | Aggregate across all features | Low early (0–10), stable mid (10–40), rising late (40–70), peaks 55–75 | Model focuses on recent physiological changes, showing recency bias. Early vitals contribute little; late-sequence rise corresponds to emerging deterioration patterns |
+| **Top-feature temporal profiles** | Top 5 features: heart rate, respiratory rate, NEWS2, temperature, consciousness | Heart rate & respiratory minima rise sharply ~55–75; NEWS2 steady mid-to-late; temperature & consciousness intermittent | Confirms progressive accumulation of risk signals. Heart rate and respiratory rate indicate sustained physiological decline; NEWS2 provides continuous contextual information. Peaks cluster in final third of sequence |
+| **Mean heatmap (top 10 features)** | Heart rate dominates; respiratory metrics and NEWS2 prominent; secondary features moderate | Gradual late-stage brightening 40–85 hrs; persistent heart rate band | Visual confirmation of recency-focused and sustained importance. Captures both persistent abnormal trends and event-specific spikes. Aligns with clinical deterioration trajectories |
+
+- **Primary drivers:** Heart rate minima, respiratory metrics, NEWS2 score consistently dominate both feature-level and temporal importance  
+- **Temporal focus:** Saliency rises from ~40 hrs, peaks 55–85 hrs, indicating recency bias toward late deterioration signals
+- **Sustained vs. episodic influence:** Heart rate is persistently important; respiratory metrics and NEWS2 are moderately sustained with occasional spikes; secondary features contribute intermittently  
+- **Clinical alignment:** Patterns match expected physiological deterioration, gradual, multi-system decline rather than isolated early anomalies  
+- **Interpretive insight:** Maximum risk prediction is driven by progressive worsening across key vitals, integrating both persistent abnormalities and short-term escalations, consistent with real-world ICU patient trajectories
+
+#### 10.6.3 `median_risk` Saliency Analysis
+
+| Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
+|----------------|------------------------|----------------|----------------|
+| **Feature-level saliency** | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `heart_rate_missing_pct`, `news2_score`, `risk_numeric` | N/A | Cardiovascular measures dominate; heart rate minima and mean indicate baseline and ongoing physiological state. NEWS2 and numeric risk provide continuous context, while missingness contributes moderate additional signal. High std for heart rate features reflects patient-specific variation |
+| **Temporal mean saliency** | Aggregate across all features | Early peak 0–5, low 5–15, moderate plateau 15–50, broad late rise 55–80, taper 80–96 | Bi-phasic temporal pattern: early sensitivity reflects baseline condition, late sustained activation (~55–80 hrs) integrates long-term physiological trends. Mid-sequence steady attention shows continuous monitoring of stable signals |
+| **Top-feature temporal profiles** | Top 5 features: HR minima & mean, missing HR, NEWS2, numeric risk | Early high saliency for HR minima, moderate mid-sequence NEWS2 and risk, late-sequence HR mean peaks 55–70 | Temporal differentiation: HR minima capture baseline susceptibility, HR mean indicates ongoing cardiovascular trends, NEWS2 and numeric risk provide persistent global context. Peaks are distributed rather than sharp, consistent with median-risk target |
+| **Mean heatmap (top 10 features)** | HR minima & mean, NEWS2, numeric risk, missingness indicators, secondary vitals | Early brightness 0–5, minimal 5–15, steady 15–50, strong late 55–80, taper after 85 | Visual confirmation of distributed and cumulative importance. Core cardiovascular features and global scores drive sustained risk; absence of sharp spikes supports continuous rather than episodic prediction |
+
+- **Primary Drivers:** 
+  - Rolling heart rate minima and mean, NEWS2, numeric risk, and missingness dominate
+  - Early HR minima indicate baseline susceptibility; late HR mean and global scores capture ongoing physiological trends
+- **Temporal Focus:** 
+  - Bi-phasic attention → early peak (0–5 hrs) sets baseline, late-to-mid sustained activation (55–80 hrs) integrates cumulative risk
+  - Mid-sequence steady attention supports continuous monitoring
+- **Early vs Late Contributions:** 
+  - Early HR minima define initial risk; later HR mean, NEWS2, and numeric risk maintain persistent influence
+  - Secondary vitals provide contextual support without acute spikes
+- **Interpretation of Variability:** 
+  - Feature-level variability reflects patient-specific weighting; temporal patterns confirm that median risk is treated as a stable, cumulative measure rather than acute events
+- **Clinical Alignment:** 
+  - Patterns align with chronic physiological burden and ongoing stability, capturing typical risk trajectories rather than episodic deterioration events
+  - Early activation sets baseline susceptibility; later sustained signals refine overall risk estimation
+
+#### 10.6.4 `pct_time_high` Saliency Analysis
+
+| Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
+|----------------|------------------------|----------------|----------------|
+| **Feature-level saliency** | `systolic_bp_roll24h_min`, `level_of_consciousness`, `respiratory_rate_missing_pct`, `heart_rate`, `systolic_bp` | N/A | Cardiovascular and neurological features dominate. Chronic hypotension and persistent altered consciousness are primary determinants of prolonged high-risk exposure. Secondary contributors (HR, respiratory missingness) reflect episodic instability or incomplete monitoring. High std indicates patient-specific variability |
+| **Temporal mean saliency** | Aggregate across all features | Early peak 0–5, low 5–20, mid-level plateau 20–55, broad late rise 55–80, taper 85–96 | Dual-phase attention: early peak captures baseline vulnerability, mid-plateau reflects ongoing integration, late rise corresponds to renewed or persistent instability. Confirms model tracks cumulative exposure rather than isolated events |
+| **Top-feature temporal profiles** | Top 5 features: chronic systolic BP, consciousness, HR, respiratory missingness | Early 0–50 hrs moderate-high, late 60–80 hrs strong, intermittent episodic peaks | Temporal differentiation: early phases dominated by baseline BP and consciousness; late phases reflect recurrent multi-system deterioration. HR and respiratory missingness add context-dependent signals extending cumulative risk |
+| **Mean heatmap (top 10 features)** | Core cardiovascular, neurological, respiratory, and supportive vitals | Dense activation across 0–85 hrs, clusters 0–50 and 60–85, taper after 90 | Visual confirmation of persistent, multi-system saliency. Baseline and recurrent phases captured. Consistent attention to systolic BP and consciousness; episodic contributions from HR and respiratory metrics. Supports cumulative, system-wide instability interpretation |
+
+- **Primary Drivers:**
+  - Sustained hypotension (`systolic_bp_roll24h_min`, `systolic_bp`) and neurological state (`level_of_consciousness`) dominate 
+  - Secondary features → HR and respiratory missingness contribute episodically, extending total high-risk duration
+- **Temporal Focus:** 
+  - Dual-phase pattern → early (0–50 hrs) establishes baseline, late (60–85 hrs) captures renewed instability or cumulative deterioration
+  - Mid-phase maintains moderate attention, integrating ongoing physiological fluctuations
+- **Early vs Late Contributions:** 
+  - Early BP and consciousness define baseline susceptibility; late HR, BP, and respiratory missingness extend cumulative exposure 
+- **Interpretation of Variability:** 
+  - High mean and moderate-to-high std indicate both consistent importance and patient-specific variation in physiological drivers of prolonged high-risk time  
+- **Clinical Alignment:** 
+  - Model identifies patients who remain unstable due to initial baseline vulnerability plus recurrent or persistent multi-system compromise, reflecting cumulative physiological instability rather than discrete acute deterioration events
+
+#### 10.6.5 Overall Saliency Summary
+
+| **Aspect** | **`max_risk`** | **`median_risk`** | **`pct_time_high`** | **Clinical Interpretation** |
+|------------|----------------|-----------------|-------------------|-----------------------------|
+| **Primary Drivers** | `heart_rate_roll24h_min`, respiratory rate (`respiratory_rate`, `respiratory_rate_roll4h_min`), `news2_score` | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric`, `heart_rate_missing_pct` | `systolic_bp_roll24h_min`, `systolic_bp`, `level_of_consciousness`; secondary: `heart_rate`, `respiratory_rate_missing_pct` | `max_risk`: acute deterioration surges; `median_risk`: ongoing baseline + sustained cardiovascular trends; `pct_time_high`: cumulative multi-system instability (neurological + cardiovascular + respiratory). |
+| **Temporal Focus** | Gradual rise ~40h, peak 55–85h, slight taper | Bi-phasic: early peak 0–5h, moderate mid 15–50h, broad late 55–80h, decline after 85h | Dual-phase: early 0–50h (baseline vulnerability), mid 10–50h (moderate fluctuations), late 55–80h (recurrent instability), decline ~90h | `max_risk` emphasizes recency of deterioration; `median_risk` and `pct_time_high` integrate both baseline and later trends, capturing progression over time. |
+| **Early vs Late Contributions** | Minor early; late: heart rate minima, respiratory rate, NEWS2 spikes | Early: `heart_rate_roll24h_min`; late: `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric` | Early: `systolic_bp_roll24h_min`, `level_of_consciousness`; mid-to-late: heart rate, BP, respiratory missingness | Early signals anchor baseline risk; late signals reflect peak, cumulative, or recurrent instability, consistent with clinical deterioration trajectories. |
+| **Sustained vs Episodic Signals** | Persistent heart rate, intermittent respiratory/NEWS2 spikes | Persistent rolling HR and global scores, moderate background vitals | Persistent baseline features (BP, consciousness), episodic secondary features (HR, respiratory missingness) | `max_risk` captures acute peaks; `median_risk` captures continuous trends; `pct_time_high` integrates cumulative physiological burden. |
+| **Feature Variability** | High SD across patients; case-specific | Moderate-to-high SD; dual-phase reliance | High mean + moderate-to-high SD; patient-specific pathways | All targets show patient heterogeneity; `max_risk` peak-specific; `median_risk` and `pct_time_high` emphasize ongoing risk integration. |
+| **Clinical Takeaways** | Prolonged deviations in HR, RR, and NEWS2 precede peak events | Baseline cardiovascular vulnerability + sustained trends dominate | Early hypotension & altered consciousness set baseline; late HR, BP, respiratory missingness reflect multi-system persistence | Provides complementary perspectives: acute peak risk (`max_risk`), typical ongoing risk (`median_risk`), cumulative high-risk exposure (`pct_time_high`). Enables clinically interpretable, target-specific insights. |
+
+##
+### 10.7 SHAP vs Saliency: Cross-Model Interpretability
+
+**Purpose:** Evaluate whether LightGBM SHAP global feature importance aligns with TCN saliency temporal patterns across all three targets; focus is on convergence of insights and clinically meaningful patterns, not exact numeric correspondence
+
+#### 10.7.1 Comparative Summary
+| **Target** | **Shared Key Features** | **Temporal Insights (Saliency)** | **Clinical Interpretation** |
+|------------|-----------------------|---------------------------------|----------------------------|
+| **`max_risk`** | HR, RR, SpO₂ | Late-sequence escalation in HR minima and RR | Captures acute deterioration peaks; aligns SHAP feature relevance with when risk manifests dynamically |
+| **`median_risk`** | HR trends, NEWS2, missingness metrics | Bi-phasic pattern: early baseline + late sustained trends | Reflects typical/ongoing risk, integrating baseline physiology and prolonged deviations |
+| **`pct_time_high`** | BP, LOC, HR | Dual-phase: early baseline + late recurrence; multi-system patterns | Measures cumulative exposure to instability, highlighting persistent and recurrent physiological compromise |
+
+#### 10.7.2 Key Takeaways
+- **Alignment:** Both methods consistently identify major physiological domains as important across targets (HR, RR, BP, SpO₂, consciousness)
+- **Divergence:** Saliency uniquely provides temporal dynamics: early vs late contributions, dual-phase patterns, and transient vs sustained signals
+- **Complementarity:**  
+  - SHAP → confirms global, static feature relevance
+  - Saliency → reveals when features drive risk, critical for clinical interpretation
+- **Recommendation:** Use SHAP and Saliency jointly: SHAP for feature-level confirmation, Saliency for temporal and dynamic interpretability
+
+Cross-model analysis strengthens confidence in key predictors while adding temporal depth, showing not just what matters, but when it matters, supporting transparent and clinically meaningful explanations of model predictions
+
+
+## 11. Phase 7: Inference Demonstration (Deployment-Lite)
+
+### 11.1 Overview
+- Phase 7 introduces a unified, deployment-lite inference pipeline for both model families (LightGBM and TCN)
+- This demonstrates reproducible, deployment-ready model usage by consolidating all prediction and interpretability steps into a single, coherent workflow
+- **Key objectives:**
+  - Load both models with their exact preprocessing, feature mappings, and configurations
+  - Run batch inference to produce deterministic predictions and top-10 feature summaries
+  - Ensure all outputs are consistent, compact, and deployment-ready
+  - Offer an optional CLI for fast, single-patient prediction lookup
+  - Consolidate all previous evaluation logic into one maintainable, production-aligned script
+- The result is a minimal, reliable, and fully reproducible inference system that forms the foundation for a full deployment stage
+
+##
+### 11.2 Deployment Rationale
+
+#### 11.2.1 Why Deployment-Lite
+
+- Deployment transforms the trained LightGBM and TCN models from research artefacts into a reproducible inference system
+- Phase 7 implements deployment-lite → a lightweight, local, deterministic inference pipeline that demonstrates end-to-end usability without the overhead of full MLOps infrastructure
+- **This mirrors standard ML practice:**
+  1. Train and validate models  
+  2. Build a minimal reproducible inference layer  
+  3. Expand to API or cloud deployment only when required
+- **Deployment-lite is selected because:**
+  - Full production deployment (CI/CD, monitoring, cloud hosting) is not always necessary
+  - Local inference provides all essential guarantees—correct model loading, reproducible outputs, version-aligned preprocessing, and interpretability
+  - It is the canonical intermediate step before optional API/cloud deployment
+
+#### 11.2.2 How Deployment Builds on Earlier Phases
+
+**Phase 7 adds capabilities not present in training/evaluation**
+
+- A single unified inference script for both LightGBM (patient-level) and TCN (sequence-level)
+- Guaranteed use of the exact trained preprocessing, feature ordering, and model architectures
+- Clean, deployment-ready outputs:
+  - Batch predictions for all test patients  
+  - Combined LightGBM SHAP + TCN saliency top-10 feature summaries
+- An optional CLI interface post-batch inference for rapid per-patient prediction lookup
+
+**Inference vs Evaluation (Conceptual Difference)**
+
+| Aspect | Evaluation Pipeline | Deployment-Lite |
+|--------|----------------------|-----------------------------|
+| Purpose | Assess model performance | Generate predictions for any dataset |
+| Ground-truth labels | Required | Not needed |
+| Post-processing | Threshold tuning, log calibration | None; raw outputs preserved |
+| Outputs | Metrics + predictions | Predictions + interpretability summaries |
+
+##
+### 11.3 Design Rationale
+
+Overall, the design prioritises reproducibility, simplicity, and correctness while retaining the interpretability and structure necessary for future Phase 7B cloud/API deployment
+
+| Design Principle | Rationale | Implementation |
+|------------------|-----------|----------------|
+| **Unified pipeline** | Prevent fragmented scripts; ensure consistent predictions | LightGBM + TCN inference consolidated into one workflow |
+| **Reproducible batch inference** | Deterministic outputs required for deployment | Fixed ordering, no per-record recomputation |
+| **Model-faithful predictions** | Deployment must return raw model outputs, not evaluation-adjusted metrics | No threshold tuning, no calibration, no binary target recreation |
+| **Correct architecture loading** | TCN weights require full reconstruction; LightGBM loads directly | TCN rebuilt from JSON config + padding config; LightGBM loaded from `.pkl` |
+| **Valid numeric outputs** | Regression predictions must remain in plausible ranges | Regression heads clipped at 0 after inverse transform |
+| **Lightweight interpretability** | Deployment should avoid heavy plots or large artefacts | Only top-10 SHAP (LightGBM) and top-10 saliency (TCN) exported as CSV |
+| **Dataset-agnostic** | Pipeline must work without ground-truth labels | Only feature columns / tensors required; no evaluation-specific data |
+| **Minimal CLI interface** | Provide quick inspection without notebooks | Optional per-patient lookup using precomputed results |
+
+##
+### 11.4 Unified Inference Pipeline
+
+```text
+                   ┌────────────────────────┐
+                   │ Load Test Data         │
+                   │  • Patient features    │
+                   │  • TCN tensors & masks │
+                   └───────────┬────────────┘
+                               │
+              ┌────────────────┴─────────────────┐
+              │                                  │
+              ▼                                  ▼
+   ┌─────────────────────┐            ┌─────────────────────┐
+   │ LightGBM            │            │ TCN                 │
+   │  • Load .pkl model  │            │  • Load .pt weights │
+   │  • Predict 3 heads  │            │  • Rebuild model    │
+   └──────────┬──────────┘            └──────────┬──────────┘
+              │                                  │
+              └────────────────┬─────────────────┘
+                               │
+                               ▼ 
+                     ┌───────────────────┐
+                     │ Predictions       │
+                     │ (CSV outputs)     │
+                     └─────────┬─────────┘
+                               │
+              ┌────────────────┴─────────────────┐
+              │                                  │
+              ▼                                  ▼
+     ┌─────────────────┐                ┌─────────────────┐
+     │ SHAP Top-10     │                │ Saliency Top-10 │
+     │ (LightGBM)      │                │ (TCN)           │
+     └────────┬────────┘                └────────┬────────┘
+              │                                  │
+              └────────────────┬─────────────────┘
+                               │
+                               ▼ 
+                     ┌───────────────────┐
+                     │ Combined Summary  │
+                     │ top10_features    │
+                     └─────────┬─────────┘
+                               │
+                               ▼
+                     ┌───────────────────┐
+                     │ Optional CLI      │
+                     │ Per-patient query │
+                     └───────────────────┘
+```
+
+#### 11.4.1 Pipeline Workflow
+1. **Load test data & models**
+   - **LightGBM:** patient-level features + trained `.pkl` models
+   - **TCN:** sequence tensors, masks, padding/config JSON, trained `.pt` weights 
+2. **Compute Inference**
+   - **LightGBM:** classification probabilities (`max_risk`, `median_risk`) + regression (`pct_time_high`)
+   - **TCN:** classification logits → probabilities + back-transformed regression (`expm1`) outputs
+   - Clip negative regression values at `0` → prevents impossible negative percentages.
+3. **Compute Interpretability**
+   - **LightGBM:** top-10 SHAP features per target (mean |SHAP|)
+   - **TCN:** top-10 |Gradient × Input| saliency features per target (mean across patients & timesteps)
+   - Combined into a single numeric CSV for deployment-ready outputs
+4. **Optional Interactive CLI (Per-Patient)**
+   - Query predictions for individual patients by inputting their subject IDs
+   - Uses precomputed batch outputs; no recomputation needed
+
+#### 11.4.2 Outputs
+
+| Artifact | Description |
+|----------|-------------|
+| `lightgbm_inference_outputs.csv` | Predictions for all test patients |
+| `tcn_inference_outputs.csv` | Predictions for all test patients |
+| `top10_features_summary.csv` | Combined top-10 features per target (LightGBM SHAP + TCN saliency) |
+| Interactive CLI | Terminal-based per-patient predictions |
+
+##
+### 11.5 CLI Inference Example Walkthrough
+
+```bash
+Batch inference complete.
+Available patient IDs:
+[10021938, 10005909, ..., 10038999]
+
+Enter a patient ID for per-patient inference (or 'no' to exit): 10021938
+
+--- LightGBM predictions ---
+max_risk: 0.6798
+median_risk: 0.0031
+pct_time_high: 0.0
+
+--- TCN predictions ---
+prob_max: 0.7658
+prob_median: 0.3093
+y_pred_reg_raw: 0.0855
+
+Enter a patient ID (or 'no' to exit): no
+Exiting per-patient inference.
+```
+
+Batch inference runs first generating all predictions and top-10 interpretability summaries
+
+- LightGBM outputs classification probabilities and regression predictions
+- TCN outputs classification probabilities and back-transformed regression values
+- Top-10 SHAP (LightGBM) and Gradient×Input saliency (TCN) features are saved as a combined CSV
+- The script prints concise status messages confirming each saved artifact
+
+Interactive CLI mode follows automatically, allowing per-patient lookup
+  
+- The script lists all valid patient IDs from the test set
+- Users enter a patient ID to view that patient’s predictions
+- **Predictions:**
+  - **LightGBM section displays:** `max_risk` probability + `median_risk` probability + `pct_time_high` regression output (clipped at 0 if negative)  
+  - **TCN section displays:** `prob_max` + `prob_median` + `pct_time_high` (back-transformed via `expm1`, clipped ≥ 0)  
+- Results are printed cleanly and instantly using precomputed batch outputs—no recomputation
+- Typing `"no"` exits the loop and ends the session
+
+Terminal output design is intentionally minimal, readable, and aligned with deployment-lite expectations, enabling quick inspection without noise
+
 ---
 
-6.2 Calibration Metrics (Brier + ECE)
-Step 6.4 is purely pipeline justification:
-	•	Why they were not computed in Phase 5
-	•	Why calibration is essential for cross-model comparison
-	•	Why raw per-patient probabilities were needed
-	•	Why only Phase 6 could compute them
-	•	What extra insight they provide beyond discrimination metrics
+### Methodological Rationale and Design Reflection
+**Overview**
+- This section outlines the rationale behind the chosen modelling pipeline and the methodological decisions shaping the comparison between **LightGBM** and the **Temporal Convolutional Network (TCN)**.  
+- The design prioritised **comparability, interpretability, and applied insight** over purely technical optimisation.  
+- Although this constrained the TCN’s full temporal potential, it enabled both models to be evaluated on **identical, real-world patient-level prediction tasks**, a critical consideration for **applied healthcare machine learning**.
 
-6.2.1 Why Calibration Metrics Are Introduced in Phase 6
-	•	Why per-model metrics aren’t enough
-	•	Because Phase 5 didn’t compute Brier/ECE
-	•	Because calibration needs raw per-patient probabilities
-	•	Because these metrics are comparative-only (not per-model evaluation)
+**Project Goals and Rationale**
+1. **Comparability Over Complexity**
+  - The overarching goal was not to build two different models for two different tasks, but to **directly compare** a classical tabular learner (LightGBM) and a deep temporal model (TCN) under **identical predictive conditions**.  
+  - A shared design allowed:
+    - Direct quantitative comparison of discrimination, calibration, and regression metrics.  
+    - A clear test of whether deep learning provides measurable benefit over classical methods in small, patient-level datasets.  
+  - This **comparative framework** was central to the project’s scientific validity.
+2. **Applied Machine Learning Perspective**
+  - The approach reflects **applied ML thinking**, prioritising:
+    - Comparability over maximum performance.  
+    - Interpretability over black-box optimisation.  
+    - Practical insight over theoretical idealism.  
+  - In real-world healthcare settings, models must operate under **limited data, constrained resources, and high interpretability requirements**, making this a deliberately realistic study design.
+3. **Critical Thinking and Trade-offs**
+  - Every model choice introduces structural biases.  
+  - By constraining both models to **identical patient-level prediction granularity**, the project isolated **architectural differences** rather than confounding them with task-level variation.
+  - This is a hallmark of sound experimental design: controlled constraint to ensure **methodological fairness**.
+4. **Why Not a Multi-Outcome or Multi-Granularity Design**
+  - A dual or hybrid pipeline (e.g., timestamp-level TCN + patient-level LightGBM) would have demonstrated engineering versatility,  
+    but **not** answered the methodological question of whether deep temporal models actually outperform classical ones on the same clinical prediction task.  
+  - This project’s aim was **comparative insight**, not mere technical diversity.  
+  - The chosen approach therefore provided a **clean, interpretable benchmark** of model suitability under identical constraints.
 
-This section is pipeline-specific justification.
+**Why the Pipeline Was Designed This Way**
+1. **Ensuring Direct Comparability**
+  - Both models were trained and evaluated on identical **patient-level targets**:
+    - `max_risk`  
+    - `median_risk`  
+    - `pct_time_high`  
+  - This made it possible to measure key metrics (ROC AUC, F1, Brier, ECE, RMSE, R²) in a strictly like-for-like manner.  
+  - If the models were trained on different temporal resolutions, the results would have been **qualitatively incomparable**, invalidating the comparison.
+2. **The Alternative: Fully Temporal Supervision**
+  - A theoretically optimal TCN design would have predicted deterioration probabilities at each **timestamp**, allowing direct modelling of short-term risk dynamics.  
+  - These predictions could then be aggregated (e.g., by taking the maximum or median per patient).
+  - However:
+    - LightGBM cannot operate on timestamp-level labels, so direct comparison would have been impossible.  
+    - The two models would effectively represent **two different tasks** — dynamic forecasting vs static patient-level classification — rather than two solutions to the same task.  
+    - With a dataset of only **15 test patients**, timestamp-level supervision would have been statistically fragile and computationally unstable.
+  - Hence, the **patient-level prediction structure** was a deliberate, controlled constraint designed to keep the comparison fair.
+3. **Pragmatic and Computational Constraints**
+  - Timestamp-level supervision requires **hundreds or thousands of patients** to learn stable temporal representations.  
+  - With a small dataset, patient-level aggregation was essential to:
+    - Stabilise training,  
+    - Prevent overfitting, and  
+    - Produce interpretable, reproducible results.  
+  - Implementing timestamp-level labels would have required major architectural changes and computational resources beyond this project’s practical scope.  
+  - The final pipeline therefore represents a **methodologically grounded trade-off** between **comparability** and **temporal expressiveness**.
 
+**Consequences of This Design**
+1. **Structural Bias Toward LightGBM**
+  - All three outcome targets (`max_risk`, `median_risk`, `pct_time_high`) are **aggregate, patient-level summaries** of risk across an admission.
+  - **LightGBM** naturally consumes aggregated tabular inputs (e.g., patient-level means, medians, and latest values), which directly mirror the structure of these targets.  
+  - In contrast, the **TCN** was designed for timestamp-level reasoning*, but in this project it had to compress full temporal sequences into a single scalar output per patient, effectively **neutralising its key temporal advantage**.
+  - This created an inherent **alignment bias** that favoured LightGBM, because the target definition matched LightGBM’s static input structure more closely than the TCN’s dynamic processing architecture.
+2. **Loss of Timestamp-Level Supervision**
+  - Although the **TCN was trained on timestamp-level features**, its **supervision signal (labels)** was still at the patient level — i.e., one label per full sequence.
+  - This means that while the model saw detailed temporal variation in vitals, labs, and observations, it was only taught to predict a **single patient-level summary outcome** (e.g., overall max or median deterioration).
+  - Consequently, only the **final pooled sequence embedding** contributed to the loss function.  
+    - Gradients flowed back from one scalar label through all timesteps.  
+    - This diluted temporal sensitivity → the model could not learn which time segments were most predictive of deterioration.
+  - In practice, this forced the TCN to behave less like a true sequence forecaster and more like a **temporal feature summariser**, collapsing its temporal depth into a static representation.
+  - This setup did not make the model “non-temporal,” but it **weakened temporal gradient flow** and restricted its ability to exploit timestamp-level dependencies → the exact strength that normally allows deep temporal models to outperform tabular ones.
+3. **Different Model Strengths by Design**
+  - **LightGBM**: excels at aggregate state recognition → its feature engineering (aggregates, medians, last values) directly aligns with the target structure of all patient-level outcomes.
+  - **TCN**: excels at dynamic event detection and timestamp-level forecasting, where risk transitions occur over short timescales.
+  - Because this project’s evaluation was designed around patient-level targets, the TCN’s inherent advantage in temporal prediction was **underutilised by design**.
+  - The comparison, therefore, was **methodologically fair but structurally biased**:
+    - It allowed direct, one-to-one metric comparison between both models on identical targets.
+    - But it inherently favoured LightGBM’s architecture, which was already aligned with the outcome definition.
+    - TCN, in contrast, had to self-compress temporal richness to remain comparable, effectively operating under a structural handicap.
 
----
+**Clinical and Practical Context**
+1. **Realistic Data Constraints**
+  - In real-world hospitals:
+    - An ICU typically has **10–20 patients** at any time.  
+    - Even large hospitals rarely exceed **~100 high-dependency or ICU-level patients** across all wards.  
+  - This means applied ML in healthcare operates in a **small-n, high-frequency** regime:
+    - Each patient has thousands of timepoints.  
+    - But there are few independent patients overall.
+2. **Implications for Real-World Deployment**
+  - Large public datasets like MIMIC-IV (10,000+ patients) help research benchmarking,  
+    but deployment scenarios involve far fewer patients, limiting model generalisability.  
+  - This project’s **small-patient test set (n = 15)** therefore **mirrors real deployment conditions**, not an artificial benchmark.  
+  - In such settings:
+    - **LightGBM** is well-suited for robustness and interpretability.  
+    - **TCNs** cannot reach their potential due to insufficient patient diversity.
 
-Step 1 – Summary Metric Comparison (Quantitative)
+**Key Insights from This Design Choice**
+1. **Comparative Validity**  
+  - By enforcing a shared target granularity, both models were benchmarked on **exactly the same predictive question** → predicting patient-level outcomes rather than timestamp-level ones.  
+  - This design ensured **scientific validity** and methodological fairness: both models received identical inputs and produced comparable outputs, allowing a like-for-like evaluation.  
+  - Although this choice constrained the TCN’s temporal capabilities, it preserved the integrity of the **comparative framework**, which was the project’s primary goal.
+2. **Task–Model Alignment**  
+  - The observed performance differences stem from **target–architecture alignment**, not algorithmic superiority.  
+  - **LightGBM** is optimised for **static, tabular representations**, where each feature summarises a patient’s physiological state (e.g., mean HR, max NEWS2, last SpO₂).  
+  - **TCN**, in contrast, is optimised for **temporal event detection**, where labels vary dynamically across time (e.g., risk transitions or deterioration spikes).  
+  - Because all targets (`max_risk`, `median_risk`, `pct_time_high`) were **aggregated at the patient level**, the LightGBM model was structurally aligned with the target definition, while the TCN was forced to compress temporal data into a single static prediction.  
+  - The resulting differences in performance therefore reflect **task suitability**, not model inferiority.
+3. **Data Regime Dependency**  
+  - In small, low-variance datasets like this one (n = 15 patients), classical models often outperform deep learning architectures due to differences in **inductive bias** and **data efficiency**. 
+  - **Inductive Bias** is the set of built-in assumptions a model makes about data structure and how it behaves. 
+    - **LightGBM** has a **strong inductive bias**:  
+      - LightGBM’s bias stems from its **decision-tree structure**, which learns patterns through **if–then splits (threshold-based decision splits)**, e.g.:  
+        - If NEWS2 > 5 → higher deterioration risk 
+        - If age > 80 and HR > 110 → high risk
+      - This threshold-based reasoning mirrors clinical thinking, where risk is defined by interpretable cut-points rather than continuous temporal trends.  
+      - As a result, LightGBM is naturally suited for **static, tabular, rule-based risk prediction**, allowing robust learning even from very small samples.
+      - The model’s hierarchical structure and decision rules act as built-in **regularisers**, preventing overfitting when data are sparse or noisy. 
+    - **TCN**, by contrast, has a **weak inductive bias**:  
+      - It assumes very little about the data’s structure, and makes almost no prior assumptions about how features relate. 
+      - Instead, it learns dependencies directly from raw temporal sequences through **1D convolutions**, detecting evolving patterns over time.  
+      - This flexibility allows powerful pattern recognition in large datasets but makes the model highly **data-hungry** → it needs extensive, diverse sequences to learn stable patterns to generalise effectively.  
+      - With limited data, the TCN’s convolutional filters cannot reliably distinguish signal from noise, producing **unstable and poorly generalisable** temporal representations.
+  - **Data Efficiency**  
+    - **LightGBM** is highly **data-efficient**:  
+      - It generalises well even in small datasets because its structure and learning process rely on simple, interpretable transformations of tabular features.  
+      - Fewer parameters and clear feature–outcome mappings make it robust under data scarcity.  
+    - **TCN** is inherently **data-intensive**:  
+      - Its large number of learnable parameters and complex layer structure require substantial data diversity to stabilise training.  
+      - When trained on small datasets, it tends to memorise local fluctuations rather than learning general clinical relationships.  
+  - **Implication for This Project**  
+    - In this data regime — **small sample size, low temporal variance, and aggregate targets** — LightGBM’s strong inductive bias and efficiency gave it a decisive advantage.  
+    - TCN’s theoretical strengths (capturing long-range dependencies and complex dynamics) could not manifest because the dataset was too small to support high-dimensional temporal learning.  
+    - Thus, LightGBM’s superior performance reflects a **data–model mismatch**, not algorithmic inferiority.
+4. **Potential Under Full Supervision**  
+  - With a **larger dataset** and **timestamp-level supervision**, the TCN would likely outperform LightGBM.  
+  - Proper timestamp-level training would allow the TCN to:  
+    - Capture **fine-grained temporal patterns**, such as gradual deterioration or recovery.  
+    - Learn **causal transitions** between physiological states instead of static averages.  
+    - Exploit **multi-scale temporal features** (both short-term fluctuations and long-term trends).  
+  - LightGBM, by design, cannot model such temporal dependencies → it treats each patient as a single independent sample.  
+  - Therefore, under full temporal supervision and sufficient data, a well-tuned TCN (or similar deep temporal model) would likely achieve **superior discrimination, generalisation, and calibration** across clinically relevant timescales.  
 
-Primary Evidence
+**Would a Dual-Pipeline Design Have Been Better?**
+- A dual-pipeline design could have included:
+  - **LightGBM** for static patient-level classification, and  
+  - **TCN** for timestamp-level event forecasting.  
+- This would have demonstrated both models’ strengths in their native domains.  
+- However, it would have become a **multi-objective project**, not a comparative one → shifting focus away from methodological evaluation toward model engineering.  
+- For the current project’s aims; **applied, comparative, and interpretive ML in healthcare**; the shared patient-level framework was the optimal design.  
+- It demonstrated:
+  - Methodological discipline,  
+  - Awareness of bias and constraint, and  
+  - Alignment with **real-world clinical applicability**, not academic idealism.
 
-9A.2 Core Comparative Analysis (using Phase 5 metrics + calibration)
-	•	6.3 Cross-model comparison
-	•	max_risk → which model better and why
-	•	median_risk → which model better and why
-	•	pct_time_high → which model better and why
+**Final Perspective**
+- The chosen design reflects an intentional methodological trade-off:
+  - Enables direct cross-model benchmarking on identical tasks.  
+  - Restricts TCN’s full temporal learning potential.
+- This was **not a limitation by mistake**, but a **controlled experimental choice** to isolate the variable of interest (architecture) under equal conditions.
+- **The resulting findings are meaningful:** Deep learning does not inherently outperform classical ML; its advantage depends on data scale, label granularity, and task–model alignment.
+- In larger datasets with timestamp-level outcomes, TCNs would likely achieve superior generalisation and temporal understanding.  
+  However, under realistic data constraints and applied evaluation goals, **LightGBM’s simplicity, calibration, and robustness** make it the more effective model for practical deployment.
 
-	•	Explain relative performance
-	•	Identify major strengths/weaknesses for each model
-
----
-
-Step 2 – Numerical Diagnostic & Visualisation Analysis 
-
-secondary, Why the Differences Occur, They are supporting evidence for Step 1.
-
-Classification Diagnostics
-
-Aspect
-Numeric Content
-Reveals
-ROC Curves
-fpr, tpr, AUC
-Sensitivity–specificity behaviour across thresholds.
-Precision–Recall Curves
-precision, recall, AP
-Positive-event sensitivity under class imbalance.
-Calibration Curves
-Mean predicted probability, fraction of positives
-Over-/under-confidence, calibration bias regions.
-Probability Histograms
-Full distribution + descriptive stats
-Confidence spread, probability skew, certainty patterns.
-
-Regression Diagnostics
-
-Aspect
-Numeric Content
-Reveals
-True vs Predicted Scatter
-y_true, y_pred
-Global fit; systematic offsets.
-Residual Distributions + KDE
-residuals + density estimates
-Error symmetry, variance, bias.
-Error vs Truth Scatter
-y_true, residual
-Heteroscedasticity; error–value interactions.
-Residual Stats
-mean, median, std, skew, kurtosis
-Outliers, distributional shape, predictive bias.
-
-
----
-
-	•	6.5 Final synthesis
-	•	When LightGBM is better
-	•	When TCN_refined is better
-	•	Why
-  overall winner 
----
-
-
-
----
-
-Interpretability 
-
-10.1 Interpretability Rationale
-
-	•	Why interpretability is needed (clinical assurance, transparency, model trustworthiness)
-	•	Why you used specific methods (SHAP, feature attribution, temporal saliency, etc.)
-	•	What each interpretability method tells you (local explanations, global importance, temporal weighting, etc.)
-
-
-10.2 SHAP for LightGBM
-
-10.2 saliency for TCN
-
-
- 
----
-
-Deployment Inference
-
----
-
-11. Project Summary
-	•	Developed reproducible data → baseline → TCN → evaluation → deployment pipeline.
-	•	Diagnosed and corrected label misalignment, class imbalance, and regression skew.
-	•	Implemented causal TCN architecture with masking, dilation, residual blocks, and multi-task heads.
-	•	Achieved stable training with early stopping and LR scheduling.
-	•	Produced final evaluation metrics, visualisations, and interpretable outputs.
-	•	Implemented deployable per-patient inference workflow.
-
-This project delivers a clinically grounded, technically rigorous, fully reproducible machine learning system for ICU patient deterioration prediction. The dual-architecture approach reveals complementary strengths
-
-Core Achievements:
-
-NHS-compliant NEWS2 computation with validated clinical rules
-Reproducible temporal evaluation methodology preventing data leakage
-Model-agnostic interpretability enabling clinical transparency
-Deployment-ready inference pipeline with batch and per-patient modes
-
-Clinical Impact Potential:
-
-Early intervention through TCN's superior sensitivity
-Resource optimization via LightGBM's calibrated risk scores
-Continuous monitoring with automated risk assessment
-
-Production Readiness:
-
-✅ Reproducible end-to-end pipeline
-✅ Comprehensive documentation
-✅ Interpretability for clinical adoption
-
----
-
-Repository Structure
-
----
-
-How to Run 
-
-### Environment Setup
-- clone repo
-- pip or conda 
-### Pipeline Execution
-Phase 1: NEWS2 Computation
-Phase 2: Feature Engineering
-Phase 3: Train LightGBM
-Phase 4: Train TCN
-Phase 7A: Deployment-Lite Inference
-
----
-
-Requirements / Dependencies
-
-# Core scientific stack
-numpy>=1.26.0
-pandas>=2.1.0
-
-# Visualization
-matplotlib>=3.7.0
-
-# Machine learning (baseline, more later)
-scikit-learn>=1.3.0
-
-# Deep learning
-torch>=2.2.0
-
-# Utilities and file handling
-tqdm>=4.66.0
-pathlib>=1.0.1
-jsonschema>=4.19.0
-
-# Model interpretability
-shap>=0.44.0
-joblib>=1.3.2
-
-# Gradient boosting
-lightgbm>=4.0.0
+**Key Takeaways**
+- **Applied focus:** The study reflects real-world ML practice → prioritising comparability, interpretability, and efficiency over theoretical performance.  
+- **Transparency:** Every trade-off was explicit, ensuring reproducibility and honest benchmarking.  
+- **Insightful outcome:** Model suitability depends jointly on data regime, target semantics, and deployment context.  
+- **Practical impact:**  
+  - LightGBM’s calibration, reliability, and simplicity make it the preferred model for small-cohort hospital settings.  
+  - Deep temporal architectures like TCNs remain powerful for large, timestamp-rich datasets → but their advantages emerge only when data scale supports temporal generalisation.
 
 ---
 
@@ -1685,6 +2375,52 @@ Future Clinical Deployment Strategy
 This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
 
 ---
+---
+
+Repository Structure
+
+---
+
+How to Run 
+
+### Environment Setup
+- clone repo
+- pip or conda 
+### Pipeline Execution
+Phase 1: NEWS2 Computation
+Phase 2: Feature Engineering
+Phase 3: Train LightGBM
+Phase 4: Train TCN
+Phase 7A: Deployment-Lite Inference
+
+---
+
+Requirements / Dependencies
+
+# Core scientific stack
+numpy>=1.26.0
+pandas>=2.1.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Machine learning (baseline, more later)
+scikit-learn>=1.3.0
+
+# Deep learning
+torch>=2.2.0
+
+# Utilities and file handling
+tqdm>=4.66.0
+pathlib>=1.0.1
+jsonschema>=4.19.0
+
+# Model interpretability
+shap>=0.44.0
+joblib>=1.3.2
+
+# Gradient boosting
+lightgbm>=4.0.0
 
 License
 MIT License - See LICENSE file for details.
