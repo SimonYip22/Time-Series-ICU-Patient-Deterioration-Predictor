@@ -31,7 +31,7 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 - Transparent interpretability validated against domain knowledge
 - Deployment-lite inference pipeline demonstrating end-to-end usability
 
-![TCN Architecture](src/images/tcn_architecture.png)
+![TCN Architecture](images/tcn_architecture.png)
 
 ---
 
@@ -1376,7 +1376,7 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 ##
 ### 9.4 Step 1 – Summary Metric Comparison (Quantitative)
 
-![Comparison Metrics Bar Charts](src/images/metrics_comparison.png)
+![Comparison Metrics Bar Charts](images/metrics_comparison.png)
 
 #### 9.4.1 Classification (`max_risk`)
 
@@ -1517,7 +1517,7 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 **Target:** Whether a patient ever reached high deterioration risk during admission
 
-![Max Risk Plots](src/images/max_risk_comparison.png)
+![Max Risk Plots](images/max_risk_comparison.png)
 
 
 | Dimension | LightGBM | TCN | Interpretation |
@@ -1539,7 +1539,7 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 **Target:** Typical or central risk level over admission
 
-![Median Risk Plots](src/images/median_risk_comparison.png)
+![Median Risk Plots](images/median_risk_comparison.png)
 
 ### CSV-Based Analysis
 | Dimension | LightGBM | TCN_refined | Interpretation |
@@ -1910,6 +1910,7 @@ Together, these outputs allow users to see which features drive predictions and 
 
 Cross-model analysis strengthens confidence in key predictors while adding temporal depth, showing not just what matters, but when it matters, supporting transparent and clinically meaningful explanations of model predictions
 
+---
 
 ## 11. Phase 7: Inference Demonstration (Deployment-Lite)
 
@@ -1942,7 +1943,7 @@ Cross-model analysis strengthens confidence in key predictors while adding tempo
 
 #### 11.2.2 How Deployment Builds on Earlier Phases
 
-**Phase 7 adds capabilities not present in training/evaluation**
+Phase 7 adds capabilities not present in training/evaluation
 
 - A single unified inference script for both LightGBM (patient-level) and TCN (sequence-level)
 - Guaranteed use of the exact trained preprocessing, feature ordering, and model architectures
@@ -1950,8 +1951,6 @@ Cross-model analysis strengthens confidence in key predictors while adding tempo
   - Batch predictions for all test patients  
   - Combined LightGBM SHAP + TCN saliency top-10 feature summaries
 - An optional CLI interface post-batch inference for rapid per-patient prediction lookup
-
-**Inference vs Evaluation (Conceptual Difference)**
 
 | Aspect | Evaluation Pipeline | Deployment-Lite |
 |--------|----------------------|-----------------------------|
@@ -2096,285 +2095,177 @@ Terminal output design is intentionally minimal, readable, and aligned with depl
 
 ---
 
-### Methodological Rationale and Design Reflection
-**Overview**
-- This section outlines the rationale behind the chosen modelling pipeline and the methodological decisions shaping the comparison between **LightGBM** and the **Temporal Convolutional Network (TCN)**.  
-- The design prioritised **comparability, interpretability, and applied insight** over purely technical optimisation.  
-- Although this constrained the TCN’s full temporal potential, it enabled both models to be evaluated on **identical, real-world patient-level prediction tasks**, a critical consideration for **applied healthcare machine learning**.
+## 12. Methodological Rationale and Design Reflection
 
-**Project Goals and Rationale**
-1. **Comparability Over Complexity**
-  - The overarching goal was not to build two different models for two different tasks, but to **directly compare** a classical tabular learner (LightGBM) and a deep temporal model (TCN) under **identical predictive conditions**.  
-  - A shared design allowed:
-    - Direct quantitative comparison of discrimination, calibration, and regression metrics.  
-    - A clear test of whether deep learning provides measurable benefit over classical methods in small, patient-level datasets.  
-  - This **comparative framework** was central to the project’s scientific validity.
-2. **Applied Machine Learning Perspective**
-  - The approach reflects **applied ML thinking**, prioritising:
-    - Comparability over maximum performance.  
-    - Interpretability over black-box optimisation.  
-    - Practical insight over theoretical idealism.  
-  - In real-world healthcare settings, models must operate under **limited data, constrained resources, and high interpretability requirements**, making this a deliberately realistic study design.
-3. **Critical Thinking and Trade-offs**
-  - Every model choice introduces structural biases.  
-  - By constraining both models to **identical patient-level prediction granularity**, the project isolated **architectural differences** rather than confounding them with task-level variation.
-  - This is a hallmark of sound experimental design: controlled constraint to ensure **methodological fairness**.
-4. **Why Not a Multi-Outcome or Multi-Granularity Design**
-  - A dual or hybrid pipeline (e.g., timestamp-level TCN + patient-level LightGBM) would have demonstrated engineering versatility,  
-    but **not** answered the methodological question of whether deep temporal models actually outperform classical ones on the same clinical prediction task.  
-  - This project’s aim was **comparative insight**, not mere technical diversity.  
-  - The chosen approach therefore provided a **clean, interpretable benchmark** of model suitability under identical constraints.
+### 12.1 Purpose of the Comparative Design
 
-**Why the Pipeline Was Designed This Way**
-1. **Ensuring Direct Comparability**
-  - Both models were trained and evaluated on identical **patient-level targets**:
-    - `max_risk`  
-    - `median_risk`  
-    - `pct_time_high`  
-  - This made it possible to measure key metrics (ROC AUC, F1, Brier, ECE, RMSE, R²) in a strictly like-for-like manner.  
-  - If the models were trained on different temporal resolutions, the results would have been **qualitatively incomparable**, invalidating the comparison.
-2. **The Alternative: Fully Temporal Supervision**
-  - A theoretically optimal TCN design would have predicted deterioration probabilities at each **timestamp**, allowing direct modelling of short-term risk dynamics.  
-  - These predictions could then be aggregated (e.g., by taking the maximum or median per patient).
-  - However:
-    - LightGBM cannot operate on timestamp-level labels, so direct comparison would have been impossible.  
-    - The two models would effectively represent **two different tasks** — dynamic forecasting vs static patient-level classification — rather than two solutions to the same task.  
-    - With a dataset of only **15 test patients**, timestamp-level supervision would have been statistically fragile and computationally unstable.
-  - Hence, the **patient-level prediction structure** was a deliberate, controlled constraint designed to keep the comparison fair.
-3. **Pragmatic and Computational Constraints**
-  - Timestamp-level supervision requires **hundreds or thousands of patients** to learn stable temporal representations.  
-  - With a small dataset, patient-level aggregation was essential to:
-    - Stabilise training,  
-    - Prevent overfitting, and  
-    - Produce interpretable, reproducible results.  
-  - Implementing timestamp-level labels would have required major architectural changes and computational resources beyond this project’s practical scope.  
-  - The final pipeline therefore represents a **methodologically grounded trade-off** between **comparability** and **temporal expressiveness**.
+- The project was designed to compare a classical tabular learner (LightGBM) and a deep temporal model (TCN) on exactly the same patient-level prediction tasks. This ensured:
+  - Direct, fair comparison of discrimination, calibration, and regression metrics
+  - A controlled evaluation of whether deep temporal models provide added value in small, real-world hospital datasets
+  - Full interpretability alignment across both model families
+- The priority was comparability, interpretability, and applied insight, not maximising deep-learning performance
 
-**Consequences of This Design**
-1. **Structural Bias Toward LightGBM**
-  - All three outcome targets (`max_risk`, `median_risk`, `pct_time_high`) are **aggregate, patient-level summaries** of risk across an admission.
-  - **LightGBM** naturally consumes aggregated tabular inputs (e.g., patient-level means, medians, and latest values), which directly mirror the structure of these targets.  
-  - In contrast, the **TCN** was designed for timestamp-level reasoning*, but in this project it had to compress full temporal sequences into a single scalar output per patient, effectively **neutralising its key temporal advantage**.
-  - This created an inherent **alignment bias** that favoured LightGBM, because the target definition matched LightGBM’s static input structure more closely than the TCN’s dynamic processing architecture.
-2. **Loss of Timestamp-Level Supervision**
-  - Although the **TCN was trained on timestamp-level features**, its **supervision signal (labels)** was still at the patient level — i.e., one label per full sequence.
-  - This means that while the model saw detailed temporal variation in vitals, labs, and observations, it was only taught to predict a **single patient-level summary outcome** (e.g., overall max or median deterioration).
-  - Consequently, only the **final pooled sequence embedding** contributed to the loss function.  
-    - Gradients flowed back from one scalar label through all timesteps.  
-    - This diluted temporal sensitivity → the model could not learn which time segments were most predictive of deterioration.
-  - In practice, this forced the TCN to behave less like a true sequence forecaster and more like a **temporal feature summariser**, collapsing its temporal depth into a static representation.
-  - This setup did not make the model “non-temporal,” but it **weakened temporal gradient flow** and restricted its ability to exploit timestamp-level dependencies → the exact strength that normally allows deep temporal models to outperform tabular ones.
-3. **Different Model Strengths by Design**
-  - **LightGBM**: excels at aggregate state recognition → its feature engineering (aggregates, medians, last values) directly aligns with the target structure of all patient-level outcomes.
-  - **TCN**: excels at dynamic event detection and timestamp-level forecasting, where risk transitions occur over short timescales.
-  - Because this project’s evaluation was designed around patient-level targets, the TCN’s inherent advantage in temporal prediction was **underutilised by design**.
-  - The comparison, therefore, was **methodologically fair but structurally biased**:
-    - It allowed direct, one-to-one metric comparison between both models on identical targets.
-    - But it inherently favoured LightGBM’s architecture, which was already aligned with the outcome definition.
-    - TCN, in contrast, had to self-compress temporal richness to remain comparable, effectively operating under a structural handicap.
+##
+### 12.2 Key Design Constraints and Trade-offs
+- To enforce methodological fairness:
+  - Both models used identical patient-level outcomes (`max_risk`, `median_risk`, `pct_time_high`)
+  - The TCN was restricted to producing one output per patient, preventing timestamp-level supervision
+  - This avoided comparing two different tasks (dynamic forecasting vs static prediction), which would invalidate the experiment
+- These constraints reflect real healthcare ML conditions: small numbers of patients, high-frequency time series, and strong interpretability requirements
 
-**Clinical and Practical Context**
-1. **Realistic Data Constraints**
-  - In real-world hospitals:
-    - An ICU typically has **10–20 patients** at any time.  
-    - Even large hospitals rarely exceed **~100 high-dependency or ICU-level patients** across all wards.  
-  - This means applied ML in healthcare operates in a **small-n, high-frequency** regime:
-    - Each patient has thousands of timepoints.  
-    - But there are few independent patients overall.
-2. **Implications for Real-World Deployment**
-  - Large public datasets like MIMIC-IV (10,000+ patients) help research benchmarking,  
-    but deployment scenarios involve far fewer patients, limiting model generalisability.  
-  - This project’s **small-patient test set (n = 15)** therefore **mirrors real deployment conditions**, not an artificial benchmark.  
-  - In such settings:
-    - **LightGBM** is well-suited for robustness and interpretability.  
-    - **TCNs** cannot reach their potential due to insufficient patient diversity.
+##
+### 12.3 Consequences for Model Performance
+- **The chosen design introduced a structural bias:**
+  - LightGBM naturally aligns with aggregated patient-level targets and performs strongly in small, low-variance datasets
+  - The TCN, designed for timestamp-level sequence forecasting, was forced to compress full sequences into a single scalar label
+  - This weakens temporal gradient flow and prevents the model from exploiting short-term risk dynamics—its primary strength
+- **Thus, the comparison was methodologically fair but architecturally asymmetric:**
+  - LightGBM operated within its ideal regime
+  - TCN operated under a deliberate constraint to preserve comparability
 
-**Key Insights from This Design Choice**
-1. **Comparative Validity**  
-  - By enforcing a shared target granularity, both models were benchmarked on **exactly the same predictive question** → predicting patient-level outcomes rather than timestamp-level ones.  
-  - This design ensured **scientific validity** and methodological fairness: both models received identical inputs and produced comparable outputs, allowing a like-for-like evaluation.  
-  - Although this choice constrained the TCN’s temporal capabilities, it preserved the integrity of the **comparative framework**, which was the project’s primary goal.
-2. **Task–Model Alignment**  
-  - The observed performance differences stem from **target–architecture alignment**, not algorithmic superiority.  
-  - **LightGBM** is optimised for **static, tabular representations**, where each feature summarises a patient’s physiological state (e.g., mean HR, max NEWS2, last SpO₂).  
-  - **TCN**, in contrast, is optimised for **temporal event detection**, where labels vary dynamically across time (e.g., risk transitions or deterioration spikes).  
-  - Because all targets (`max_risk`, `median_risk`, `pct_time_high`) were **aggregated at the patient level**, the LightGBM model was structurally aligned with the target definition, while the TCN was forced to compress temporal data into a single static prediction.  
-  - The resulting differences in performance therefore reflect **task suitability**, not model inferiority.
-3. **Data Regime Dependency**  
-  - In small, low-variance datasets like this one (n = 15 patients), classical models often outperform deep learning architectures due to differences in **inductive bias** and **data efficiency**. 
-  - **Inductive Bias** is the set of built-in assumptions a model makes about data structure and how it behaves. 
-    - **LightGBM** has a **strong inductive bias**:  
-      - LightGBM’s bias stems from its **decision-tree structure**, which learns patterns through **if–then splits (threshold-based decision splits)**, e.g.:  
-        - If NEWS2 > 5 → higher deterioration risk 
-        - If age > 80 and HR > 110 → high risk
-      - This threshold-based reasoning mirrors clinical thinking, where risk is defined by interpretable cut-points rather than continuous temporal trends.  
-      - As a result, LightGBM is naturally suited for **static, tabular, rule-based risk prediction**, allowing robust learning even from very small samples.
-      - The model’s hierarchical structure and decision rules act as built-in **regularisers**, preventing overfitting when data are sparse or noisy. 
-    - **TCN**, by contrast, has a **weak inductive bias**:  
-      - It assumes very little about the data’s structure, and makes almost no prior assumptions about how features relate. 
-      - Instead, it learns dependencies directly from raw temporal sequences through **1D convolutions**, detecting evolving patterns over time.  
-      - This flexibility allows powerful pattern recognition in large datasets but makes the model highly **data-hungry** → it needs extensive, diverse sequences to learn stable patterns to generalise effectively.  
-      - With limited data, the TCN’s convolutional filters cannot reliably distinguish signal from noise, producing **unstable and poorly generalisable** temporal representations.
-  - **Data Efficiency**  
-    - **LightGBM** is highly **data-efficient**:  
-      - It generalises well even in small datasets because its structure and learning process rely on simple, interpretable transformations of tabular features.  
-      - Fewer parameters and clear feature–outcome mappings make it robust under data scarcity.  
-    - **TCN** is inherently **data-intensive**:  
-      - Its large number of learnable parameters and complex layer structure require substantial data diversity to stabilise training.  
-      - When trained on small datasets, it tends to memorise local fluctuations rather than learning general clinical relationships.  
-  - **Implication for This Project**  
-    - In this data regime — **small sample size, low temporal variance, and aggregate targets** — LightGBM’s strong inductive bias and efficiency gave it a decisive advantage.  
-    - TCN’s theoretical strengths (capturing long-range dependencies and complex dynamics) could not manifest because the dataset was too small to support high-dimensional temporal learning.  
-    - Thus, LightGBM’s superior performance reflects a **data–model mismatch**, not algorithmic inferiority.
-4. **Potential Under Full Supervision**  
-  - With a **larger dataset** and **timestamp-level supervision**, the TCN would likely outperform LightGBM.  
-  - Proper timestamp-level training would allow the TCN to:  
-    - Capture **fine-grained temporal patterns**, such as gradual deterioration or recovery.  
-    - Learn **causal transitions** between physiological states instead of static averages.  
-    - Exploit **multi-scale temporal features** (both short-term fluctuations and long-term trends).  
-  - LightGBM, by design, cannot model such temporal dependencies → it treats each patient as a single independent sample.  
-  - Therefore, under full temporal supervision and sufficient data, a well-tuned TCN (or similar deep temporal model) would likely achieve **superior discrimination, generalisation, and calibration** across clinically relevant timescales.  
-
-**Would a Dual-Pipeline Design Have Been Better?**
-- A dual-pipeline design could have included:
-  - **LightGBM** for static patient-level classification, and  
-  - **TCN** for timestamp-level event forecasting.  
-- This would have demonstrated both models’ strengths in their native domains.  
-- However, it would have become a **multi-objective project**, not a comparative one → shifting focus away from methodological evaluation toward model engineering.  
-- For the current project’s aims; **applied, comparative, and interpretive ML in healthcare**; the shared patient-level framework was the optimal design.  
-- It demonstrated:
-  - Methodological discipline,  
-  - Awareness of bias and constraint, and  
-  - Alignment with **real-world clinical applicability**, not academic idealism.
-
-**Final Perspective**
-- The chosen design reflects an intentional methodological trade-off:
-  - Enables direct cross-model benchmarking on identical tasks.  
-  - Restricts TCN’s full temporal learning potential.
-- This was **not a limitation by mistake**, but a **controlled experimental choice** to isolate the variable of interest (architecture) under equal conditions.
-- **The resulting findings are meaningful:** Deep learning does not inherently outperform classical ML; its advantage depends on data scale, label granularity, and task–model alignment.
-- In larger datasets with timestamp-level outcomes, TCNs would likely achieve superior generalisation and temporal understanding.  
-  However, under realistic data constraints and applied evaluation goals, **LightGBM’s simplicity, calibration, and robustness** make it the more effective model for practical deployment.
-
-**Key Takeaways**
-- **Applied focus:** The study reflects real-world ML practice → prioritising comparability, interpretability, and efficiency over theoretical performance.  
-- **Transparency:** Every trade-off was explicit, ensuring reproducibility and honest benchmarking.  
-- **Insightful outcome:** Model suitability depends jointly on data regime, target semantics, and deployment context.  
-- **Practical impact:**  
-  - LightGBM’s calibration, reliability, and simplicity make it the preferred model for small-cohort hospital settings.  
-  - Deep temporal architectures like TCNs remain powerful for large, timestamp-rich datasets → but their advantages emerge only when data scale supports temporal generalisation.
+##
+### 12.4 Core Insights and Practical Implications
+- Model suitability depends on data regime and target alignment, not algorithmic sophistication
+- In small-cohort hospital datasets, classical models with strong inductive bias (e.g. LightGBM) generally outperform deep temporal models
+- With large datasets and true timestamp supervision, TCNs would likely surpass LightGBM by capturing temporal deterioration patterns directly
+- **The project demonstrates a realistic applied-ML pipeline:**
+  - Clear experimental control  
+  - Transparent trade-offs  
+  - Reproducible methodology  
+  - Insightful cross-model benchmarking  
+- This design shows that deep learning is not inherently superior; its advantage emerges only when data scale and task structure fit the model’s architecture
 
 ---
 
-Limitations
+## 12. Limitations
 
-- Limited dataset size
-The deep model (TCN) operates close to the lower bound of data required for stable temporal learning. This restricts generalisation and contributes to early stopping at very early epochs.
-- NEWS2-only feature space
-All features are derived from NEWS2, with no labs, medications, or high-frequency vital streams. This caps signal richness and reduces temporal model advantage.
-- Padded sequence truncation
-All patient timelines are padded/truncated to a common length. Extreme short or long ICU stays may lose information.
-- Regression target skew
-The outcome pct_time_high was heavily right-skewed. Although log-transform stabilised training, the true clinical distribution remains narrow, limiting learnable variance.
-- Class imbalance
-Median-risk classification required explicit pos_weight. Imbalance still reduces calibration reliability.
-- Single-centre dataset
-Trained and validated on a single hospital dataset → external generalisation unknown.
-- Temporal receptive field capped
-With 3 dilated blocks and small kernel size, the model does not fully exploit long-range ICU dependencies that larger TCN/Transformer models could learn.
+### 12.1 Overview
+- This project delivers a full end-to-end deterioration-risk pipeline, but several constraints limit generalisability, temporal expressiveness, and clinical applicability
+- These limitations reflect realistic conditions in applied healthcare ML and define clear directions for future development
+- **The main limiting factors are:**
+  - Small patient cohort of single-centre data  
+  - NEWS2-only vitals features that become only aggregated patient-level targets  
+  - Constrained temporal supervision leading to weaker learning
+  - Absence of external/prospective validation  
+- **These reflect realistic applied healthcare ML constraints and define clear opportunities for future improvement:** larger multi-centre datasets, timestamp-level supervision, richer feature modalities, expanded temporal architectures, and clinician-validated interpretability
 
-Current Limitations
-Dataset Constraints
+##
+### 12.2 Data & Cohort Constraints
+- **Small cohort size:** The deep model (TCN) operates near the minimum data required for stable temporal learning. Limited patient diversity restricts generalisation and increases variance
+- **Single-centre dataset:** All data originate from one hospital, external validity, cross-site transferability, and demographic robustness remain untested
+- **Class imbalance:** `median_risk` required `pos_weight`; imbalance still affects calibration reliability
+- **Outcome distribution skew:** `pct_time_high` is heavily right-skewed, log transform stabilised training but the real distribution is narrow and limits learnable variance
+- **NEWS2-only feature space:** No labs, medications, imaging, or high-frequency vitals are included. This constrains signal richness and reduces the benefit normally gained from temporal deep learning models
 
-Small sample (100 patients) insufficient for robust deep learning
-Synthetic data may not reflect real distributions
-Limited high-risk events (class imbalance)
-Single institution (generalization unvalidated)
+##
+### 12.3 Modelling & Target Design Constraints
+- **Patient-level supervision only:** Both models predict patient-level summaries (`max_risk`, `median_risk`, `pct_time_high`); TCNs typically require timestamp-level labels to exploit temporal gradients; this setup weakens temporal learning and structurally favours LightGBM
+- **Aggregate/binary targets collapse temporal richness:** Deterioration trajectories are compressed into coarse summaries, this limits temporal model expressiveness and removes short-horizon prediction capability
+- **No ensembles or hybrid architectures:** Models were evaluated independently to preserve methodological clarity, ensemble methods may provide better absolute accuracy but were intentionally excluded
+- **Regression clipping:** Negative values are clipped to 0 in deployment-safe inference, this avoids invalid predictions but introduces minor structural bias
 
-Modeling Decisions
+##
+### 12.4 Temporal & Architectural Constraints
+- **Limited temporal receptive field:** The TCN uses three dilated blocks with small kernel size, long-range ICU dependencies and slow deterioration patterns are only partially captured
+- **Padded/truncated sequences:** Timelines are padded to a fixed length, very short or very long stays may lose informative context
+- **Under-utilisation of deep temporal structure:** Because labels are patient-level, the TCN compresses rich sequences into one scalar embedding; temporal gradients dilute across all timesteps, weakening event-level learning
 
-Binary conversion collapsed multi-class risk
-Fixed prediction horizon (any high-risk event during stay)
-No ensemble (LightGBM and TCN evaluated independently)
+##
+### 12.5 Evaluation & Generalisation Constraints
+- **No external validation:** All evaluation is internal; true generalisation across hospitals, timelines, or care practices is unknown
+- **No temporal or prospective validation:** Tested only on historical, batch-mode data; real-time performance, drift behaviour, and robustness to streaming inputs remain unassessed
 
-Clinical Integration
-
-No prospective validation on real-time patient data
-Missing external validation on holdout institutions
-Interpretability not reviewed by clinicians
-
----
-
-Future Work
-
-Model Architecture
-- Expand TCN depth and receptive field
-Add more blocks or larger kernels to capture longer clinical trajectories.
--	Move from patient-level → timestamp-level outputs
-Enable early warning behaviour by predicting risk dynamically over time.
-- Integrate attention or Transformer layers
-Combine causal convolutions with learned temporal weighting.
-
-Feature Set Extensions
-- Add richer clinical features
-Incorporate labs, comorbidities, medication events, and device parameters to unlock TCN advantages.
-- Use irregular time-series modelling
-Replace padding with continuous-time architectures or learnable positional embeddings.
-
-Training Pipeline
-- Better imbalance handling
-Evaluate focal loss and dynamic re-weighting for median risk.
-- Improved regression modelling
-Model uncertainty (e.g., Gaussian likelihood) for skewed clinical targets.
-- Cross-validation rather than one split
-Strengthen generalisation assessment.
-
-Evaluation
-- External validation on another hospital dataset.
-- Calibration analysis (isotonic regression, temperature scaling).
-- Compare with sequence models beyond TCN (Transformers, RNNs, Temporal Fusion Networks).
-
-Phase 7B: Cloud Deployment
-
-Real-time API (Flask/FastAPI)
-Database integration (PostgreSQL + Redis)
-Monitoring dashboard (Grafana)
-
-Phase 8: Ensemble Modeling
-
-Stacking meta-learner combining LightGBM + TCN
-Multi-horizon models (1h, 4h, 24h risk windows)
-Calibration layer (isotonic regression for TCN)
-
-Phase 9: Extended Features
-
-Laboratory values (lactate, creatinine, WBC)
-Medication data (vasopressors, sedation)
-Text data (nursing notes via NLP)
-
-Phase 10: External Validation
-
-Multi-site study (3-5 hospitals)
-Prospective trial (shadow mode)
-Health equity analysis (stratified by demographics)
+##
+### 12.6 Clinical Integration Constraints
+- **No clinician review of interpretability outputs:** SHAP/saliency insights were not validated by domain experts
+- **No EHR or workflow integration:** The pipeline is technically robust but not yet implemented or tested in real decision-support environments
 
 ---
 
-Potential Clinical Integration
+## 13. Future Work
 
-- Real-time inference pipeline for early warning.
-- Alert threshold optimisation using decision curves and cost-sensitive metrics.
-- Human–machine collaboration design: how clinicians consume outputs.
+### 13.1 Overview & Rationale
 
-Future Clinical Deployment Strategy
-1. LightGBM runs at admission → baseline, interpretable risk stratification (resource planning)
-2. TCN runs continuously → real-time continuous temporal monitoring (acute alerts)
-3. Ensemble logic → hybrid alert triggers if either model exceeds threshold (maximizes sensitivity)
-4. Calibration layer → Map TCN probabilities to LightGBM-aligned scale via isotonic regression
+- This end-to-end project establishes a fully reproducible cross-model deterioration-risk pipeline
+- Further work focuses on expanding temporal modelling capacity, enriching the clinical feature space, strengthening training and evaluation reliability, and progressing toward real-world deployment
+- **Future progress centres on four directions:**  
+  1. **Richer modelling** → deeper temporal models, timestamp-level outputs, multimodal EHR inputs
+  2. **More robust training** → better imbalance handling, probabilistic regression, cross-validation
+  3. **Stronger evaluation** → external datasets, calibration, benchmarking against advanced temporal models
+  4. **Real-world deployment** → cloud API, monitoring, ensemble forecasting, multi-horizon risk prediction
 
-This outlines how dual-architectures could be integrated into a real-world clinical decision-support system.
+These extensions would allow the pipeline to evolve from a comparative research framework into a clinically actionable, temporally aware deterioration prediction system
+
+##
+### 13.1 Model & Feature Enhancements
+
+- **Expand temporal modelling capacity**  
+  - Increase TCN depth, dilations, and kernel sizes to capture longer-range physiological trajectories 
+  - Integrate attention or Transformer layers to enable multi-scale temporal reasoning
+- **Move to timestamp-level supervision**  
+  - Train the TCN to predict risk dynamically at each timestep rather than at the patient level
+  - This enables early-warning behaviour and leverages the full temporal richness of ICU data
+- **Extend the clinical feature space**  
+  - Incorporate laboratory values, comorbidities, medication events (e.g., vasopressors, sedation), device parameters, and waveform data
+  - Adding richer modalities unlocks the advantages of sequence models and reduces reliance on NEWS2-only features
+- **Handle irregular timing more naturally**  
+  - Replace padding with continuous-time models, interpolation encoders, or learned temporal embeddings to preserve clinical time intervals and reduce artefacts from truncation
+
+##
+### 13.2 Training, Optimisation & Model Robustness
+
+- **Improved imbalance and uncertainty modelling**  
+  - Evaluate focal loss or class-balanced loss for skewed classification targets, particularly median-risk
+  - For regression (`pct_time_high`), explore probabilistic objectives (Gaussian or quantile loss) to capture uncertainty
+- **Stronger validation procedures**  
+  - Move from single-train/test split to cross-validation to quantify model variance and improve generalisation
+  - Extend calibration analysis using isotonic regression or temperature scaling—especially beneficial for neural outputs
+- **Compare alternative architectures**  
+  - Benchmark the TCN against Temporal Fusion Transformers, RNNs, or hybrid convolution–attention architectures to understand performance boundaries under small-n ICU datasets
+
+##
+### 13.3 Deployment & External Validation
+
+- **Next Phase of Deployment: Cloud deployment**  
+  - Expose the unified inference pipeline via FastAPI or Flask; deploy to Render, Hugging Face, or AWS  
+  - Integrate PostgreSQL/Redis for persistent prediction storage and low-latency querying
+  - Add monitoring dashboards (Grafana/Prometheus) and drift detection for production readiness
+- **External and prospective validation**  
+  - Evaluate the pipeline on 1–3 independent hospital datasets to test generalisation and demographic robustness
+  - Implement prospective shadow-mode evaluation to assess real-time behaviour under operational ICU conditions
 
 ---
+
+## 14. Potential Clinical Integration
+
+### 14.1 System Overview 
+- A clinically deployable system would combine LightGBM for baseline risk, TCN for dynamic monitoring, and an ensemble alert strategy to maximise sensitivity while maintaining interpretability. 
+- With calibration, threshold optimisation, and clinician-friendly output formats, the current pipeline can evolve into a safe, transparent, real-time deterioration early-warning tool suitable for integration into hospital workflows
+- This section outlines how the current modelling pipeline could translate into a deployable clinical decision-support system
+- The emphasis is on real-time inference, clinically aligned alerting, and human–machine collaboration rather than automated decision-making
+
+##
+### 14.2 Real-Time Clinical Workflow Integration
+- **Continuous early-warning inference:** The TCN (or future timestamp-level temporal model) can run at fixed intervals to produce evolving risk estimates, enabling continuous bedside monitoring
+- **Admission-time baseline risk stratification:** LightGBM provides a fast, interpretable assessment using static and aggregate features, supporting initial triage, bed management, and resource allocation
+- **Hybrid alerting architecture using:**
+  1. LightGBM → baseline long-horizon risk
+  2. TCN → short-horizon dynamic deterioration risk
+  3. Ensemble logic → alert if either (or both) exceed threshold, improving sensitivity for early intervention
+- **Multi-horizon prediction windows:** Extending the TCN to output 1h, 4h, and 24h predicted risk trajectories would align model outputs with clinically meaningful timeframes and early escalation pathways
+
+##
+### 14.3 Calibration, Thresholding & Clinical Safety
+- **Threshold optimisation using decision analysis:** Risk thresholds can be selected via decision curves, cost-sensitive optimisation, or false-alarm minimisation strategies tailored to ward or ICU capacity
+- **Calibration alignment across models:** A post-hoc calibration layer (e.g., isotonic regression) can map TCN probabilities onto a scale consistent with LightGBM, improving interpretability and harmonising ensemble alerts
+- **Fail-safe and fallback logic:** If temporal inputs degrade (missingness, corrupted sequences), the pipeline can revert to LightGBM-only predictions to maintain safety and continuity.
+
+##
+### 14.4 Human–Machine Collaboration
+- **Clinician-oriented output formats:** Predictions should be displayed as simple risk tiers (e.g., green/amber/red), supported by top-feature explanations from SHAP (LightGBM) and saliency (TCN)
+- **Actionable interpretability:** Feature-level drivers (e.g., worsening SpO₂, rising RR, hypotension) convert model outputs into clinically contextual signals that support—not replace—clinical reasoning
+- **Operational integration:** Outputs can be embedded into existing dashboards, electronic observations systems, or mobile alerting platforms, ensuring minimal workflow friction
+
 ---
 
 Repository Structure
