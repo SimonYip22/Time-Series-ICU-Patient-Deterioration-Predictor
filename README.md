@@ -2268,82 +2268,253 @@ These extensions would allow the pipeline to evolve from a comparative research 
 
 ---
 
-Repository Structure
-
+## 15. Repository Structure
+```text
 Neural-Network-TimeSeries-ICU-Predictor/
 ├─ data/
-│  ├─ raw_data/             # MIMIC-IV raw data    
-│  ├─ interim_data/         # Phase 1 NEWS2 extraction output files 
-│  └─ processed_data/       # Phase 2 preprocessing output files  
-├─ images/                  # Aggregated PNG's for README
+│  ├─ raw_data/                             # MIMIC-IV raw data    
+│  ├─ interim_data/                         # Phase 1 extraction + NEWS2 outputs
+│  └─ processed_data/                       # Phase 2 ML-ready CSV files  
+│
+├─ images/                                  # PNG diagrams and plots used in README
+│
 ├─ src/
-│  ├─ 
-│  ├─ 
-│  ├─ 
-│  ├─
-│  └─ 
-├─ README.md
+│  ├─ data_processing                       # Phase 1: Data extraction + NEWS2 computation
+│  │  ├─ preview_headers.py
+│  │  ├─ extract_news2_vitals.py
+│  │  ├─ check_co2_retainers.py
+│  │  ├─ compute_news2.py
+│  │  └─ validate_news2_scoring.py
+│  │ 
+│  ├─ ml_data_prep                          # Phase 2: Feature engineering + patient dataset
+│  │  ├─ prepare_patient_dataset.py
+│  │  ├─ make_patient_features.py
+│  │  └─ make_timestamp_features.py
+│  │ 
+│  ├─ ml_models_lightgbm                    # Phase 3: LightGBM modelling pipeline
+│  │  ├─ initial_train_lightgbm.py
+│  │  ├─ complete_train_lightgbm.py
+│  │  ├─ tune_models.py
+│  │  ├─ feature_importance.py
+│  │  ├─ train_final_models.py
+│  │  ├─ summarise_results.py
+│  │  ├─ baseline_models/                   # Fold-wise models pkls + feature importance CSVx
+│  │  ├─ hyperparameter_tuning_runs/        # Tuning logs + best parameters
+│  │  ├─ feature_importance_runs/           # Feature importance CSV + PNGs
+│  │  └─ deployment_models/                 # Final LightGBM models 
+│  │
+│  ├─ ml_models_tcn                         # Phase 4: TCN modelling pipeline
+│  │  ├─ prepare_tcn_dataset.py
+│  │  ├─ tcn_model.py
+│  │  ├─ tcn_training_script.py
+│  │  ├─ plot_training_curves.py
+│  │  ├─ deployment_models/
+│  │  │  └─ preprocessing/                  # Preprocessing artifacts
+│  │  ├─ prepared_datasets/                 # Sequence + mask tensors 
+│  │  ├─ trained_models/                    # Configuration + model weights
+│  │  └─ plots/                             # Training loss curve 
+│  │
+│  ├─ prediction_diagnostic                 # Phase 4.5: TCN diagnostics & retraining
+│  │  ├─ tcn_diagnostics.py
+│  │  ├─ tcn_training_script_refined.py
+│  │  ├─ plot_training_curves_refined.py
+│  │  ├─ results/                           # Diagnostic summary CSV/JSON files
+│  │  ├─ plots/                             # Diagnostics PNGs
+│  │  ├─ trained_models_refined/            # Final refined TCN model + configs
+│  │  └─ loss_plots/                        # Refined loss curves
+│  │
+│  ├─ predictions_evaluations               # Phase 5: Model evaluation
+│  │  ├─ evaluation_metrics.py
+│  │  ├─ evaluate_lightgbm_testset.py
+│  │  ├─ evaluate_tcn_testset.py
+│  │  ├─ evaluate_tcn_testset_refined.py
+│  │  ├─ lightgbm_results/                  # LightGBM retrained models + metrics + predictions
+│  │  ├─ tcn_results/                       # TCN metrics + predictions
+│  │  └─ tcn_results_refined/               # TCN refined metrics + predictions + calibration PNGs
+│  │
+│  ├─ results_finalisation                  # Phase 6: Analysis + interpretability
+│  │  ├─ performance_analysis.py
+│  │  ├─ shap_analysis_lightgbm.py
+│  │  ├─ saliency_analysis_tcn.py
+│  │  ├─ comparison_metrics/                # Combined comparison CSVs
+│  │  ├─ comparison_plots/                  # Combined comparison PNGs
+│  │  ├─ interpretability_lightgbm/         # SHAP CSVs and PNGs
+│  │  └─ interpretability_tcn/              # Saliency CSVs and PNGs
+│  │
+│  └─ scripts_inference                     # Phase 7: Deployment inference
+│     ├─ unified_inference.py
+│     └─ deployment_lite_outputs/           # Inference output CSVs
+│
+├─ README.md                    
+├─ notes.md                                 # Detailed chronological notes + logs
 ├─ LICENSE
-├─ notes.md
 └─ requirements.txt
-
-
----
-
-How to Run 
-
-### Environment Setup
-- clone repo
-- pip or conda 
-### Pipeline Execution
-Phase 1: NEWS2 Computation
-Phase 2: Feature Engineering
-Phase 3: Train LightGBM
-Phase 4: Train TCN
-Phase 7A: Deployment-Lite Inference
+```
 
 ---
 
-Requirements / Dependencies
+## 16. How to Run 
 
+### 16.1 Clone the Repository
+
+```bash
+git clone https://github.com/SimonYip22/Neural-Network-TimeSeries-ICU-Predictor.git
+cd Neural-Network-TimeSeries-ICU-Predictor
+```
+- **This repo already contains:**
+  - Example MIMIC-IV extracted files under `data/raw_data/`
+  -	All preprocessing + modelling scripts
+  - Pretrained models and inference artifacts
+- No external downloads are required
+
+##
+### 16.2 Environment Setup
+
+1. Install `Python` ≥ 3.9 (any 3.9–3.11 version is compatible)
+2. Create a virtual environment
+```bash
+python3 -m venv venv
+source venv/bin/activate     # Linux / macOS
+venv\Scripts\activate        # Windows
+```
+3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+- All Python stacks required for data processing, LightGBM, and TCN training are included in `requirements.txt`
+- No other manual setup (CUDA, Docker, Makefile) is required
+
+##
+### 16.3 Pipeline Execution
+
+Below is the full execution flow if you want to reproduce everything end-to-end
+
+#### 16.3.1 Phase 1: Extraction + NEWS2 Computation
+
+```bash
+python3 src/data_processing/extract_news2_vitals.py
+python3 src/data_processing/compute_news2.py
+```
+
+- Output → `data/interim_data/`
+- Contains extracted vital signs + NEWS2 scores
+
+#### 16.3.2 Phase 2: Feature Engineering
+
+```bash
+python3 src/ml_data_prep/make_patient_features.py
+python3 src/ml_data_prep/make_timestamp_features.py
+```
+
+- Output → `data/processed_data/`
+- Contains patient-level + timestamp-level engineered features ready for ML pipelines
+
+#### 16.3.3 Phase 3: Train LightGBM
+
+```bash
+python3 src/ml_models_lightgbm/tune_models.py
+```
+
+- Outputs → `src/ml_models_lightgbm/hyperparameter_tuning_runs/`
+- Contains tuning logs, best parameters, tuning results
+- Final LightGBM models are retrained in Phase 5: Evaluation
+
+#### 16.3.4 Phase 4: Train TCN
+
+```bash
+python3 src/ml_models_tcn/prepare_tcn_dataset.py
+python3 src/prediction_diagnostics/tcn_training_script_refined.py
+```
+
+- Outputs → `src/ml_models_tcn/deployment_models/preprocessing/` → standard scalar, patient splits, padding configuration
+- Outputs → `src/ml_models_tcn/prepared_datasets/` → sequence + mask tensors
+- Outputs → `src/prediction_diagnostics/trained_models_refined/` → model configuration, model weights (.pt), training log
+
+#### 16.3.5 Phase 5: Evaluation (Optional)
+
+```bash
+python3 src/predictions_evaluations/evaluate_lightgbm_testset.py
+python3 src/predictions_evaluations/evaluate_tcn_testset_refined.py
+```
+
+- Outputs → `src/prediction_evaluations/lightgbm_results` → LightGBM predictions + metrics + trained models (.pkl)
+- Outputs → `src/prediction_evaluations/tcn_results_refined` → TCN predictions + metrics 
+
+#### 16.3.6 Phase 6: Comparative Analysis & Interpretability (Optional)
+
+```bash
+python3 src/results_finalisation/performance_analysis.py
+python3 src/results_finalisation/shap_analysis_lightgbm.py
+python3 src/results_finalisation/saliency_analysis_tcn.py
+```
+
+- Outputs → `src/results_finalisation/{comparison_metrics}{comparison_plots}/` → comparison CSVs + PNGs
+- Outputs → `src/results_finalisation/interpretability_lightgbm/` → SHAP CSVs + PNGs
+- Outputs → `src/results_finalisation/interpretability_tcn/` → Saliency CSVs + PNGs
+
+#### 16.3.7 Phase 7: Deployment-Lite Inference
+
+```bash
+python3 src/scripts_inference/unified_inference.py
+```
+
+- Output → `src/scripts_inference/deployment_lite_outputs/`
+- Contains LightGBM + TCN inference outputs + combined interpretability
+- Optional per-patient CLI (“enter patient ID to inspect predictions”)
+
+---
+
+## 17. Requirements & Dependencies
+
+```text
 # Core scientific stack
-numpy>=1.26.0
-pandas>=2.1.0
+numpy>=1.26
+pandas>=2.1
+scipy>=1.10
 
-# Visualization
-matplotlib>=3.7.0
+# Visualisation
+matplotlib>=3.7
 
-# Machine learning (baseline, more later)
-scikit-learn>=1.3.0
+# Machine learning
+scikit-learn>=1.3
+lightgbm>=4.0
+shap>=0.44
+joblib>=1.3
 
 # Deep learning
-torch>=2.2.0
+torch>=2.2
 
-# Utilities and file handling
-tqdm>=4.66.0
-pathlib>=1.0.1
-jsonschema>=4.19.0
-
-# Model interpretability
-shap>=0.44.0
-joblib>=1.3.2
-
-# Gradient boosting
-lightgbm>=4.0.0
-
-License
-MIT License - See LICENSE file for details.
+# Utilities
+tqdm>=4.66
+```
 
 ---
 
-Acknowledgments
+## 18. License
 
-MIMIC-IV: Johnson, A., et al. (2023). MIMIC-IV (version 2.2). PhysioNet.
-NHS NEWS2: Royal College of Physicians (2017). National Early Warning Score (NEWS) 2.
-PyTorch: Paszke, A., et al. (2019). PyTorch: An Imperative Style, High-Performance Deep Learning Library.
-LightGBM: Ke, G., et al. (2017). LightGBM: A Highly Efficient Gradient Boosting Decision Tree.
-TCN
-ChatGPT
+This project is licensed under the MIT License; see the [LICENSE](LICENSE) file for details
+
+---
+
+## 19. Acknowledgments
+
+- **MIMIC-IV Clinical Database Demo v2.2**
+  - Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV (version 3.1)*. PhysioNet. [https://doi.org/10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58)  
+  - Johnson, A.E.W., Bulgarelli, L., Shen, L. et al. (2023). *MIMIC-IV, a freely accessible electronic health record dataset*. Sci Data, 10, 1. [https://doi.org/10.1038/s41597-022-01899-x](https://doi.org/10.1038/s41597-022-01899-x)  
+  - Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C., Mark, R., ... & Stanley, H. E. (2000). *PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals.* Circulation [Online]. 101 (23), pp. e215–e220
+
+- **NEWS2 Scoring System**
+  - Royal College of Physicians. (2017). *National Early Warning Score (NEWS) 2.*  
+  - MDCalc NEWS2 Calculator: [https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights](https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights)
+
+- **NEWS2 API Diagram Image**
+  - NHS Digital. *NEWS2 API Guide*. [https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png)
+
+- **ChatGPT** 
+  – Provided guidance throughout the project, including code explanations, debugging, project structure and architectural design
+
+All other components, including Python scripts, preprocessing, model training, and visualizations, were developed by the author. No additional proprietary datasets, papers, or external tutorials were required beyond those cited above
 
 ---
 
