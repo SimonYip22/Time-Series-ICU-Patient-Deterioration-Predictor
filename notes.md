@@ -6712,7 +6712,7 @@ src/
 ### 2. **Comparative Analysis: Generate Visualisations & Numeric Plot Data (`performance_analysis.py`)**
   - **Purpose**:
     - Extend Step 1’s scalar metrics and builds into visual and numerical diagnostics:
-      - Step 1 → establishes who performs better overall* (numerical summary).  
+      - Step 1 → establishes who performs better overall (numerical summary).  
       - Step 2 → explains how and why those performance differences arise (shape-level analysis). 
     - Generates all classification and regression visualisations, each paired with machine-readable CSVs containing the arrays used to render the figures, ensuring **full reproducibility without relying on PNG inspection**.
   - **Process (Summary)**  

@@ -31,7 +31,7 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 - Transparent interpretability validated against domain knowledge
 - Deployment-lite inference pipeline demonstrating end-to-end usability
 
-![TCN Architecture](images/tcn_architecture.png)
+![TCN Architecture](images/tcn_architecture_detailed.png)
 
 ---
 
@@ -697,7 +697,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 
 #### 7.3.1 Architectural Structure
 
-![TCN Architecture](src/images/tcn_architecture.png)
+![TCN Architecture](src/images/tcn_architecture_detailed.png)
 
 1. **Causal Convolution (`CausalConv1d`) Layer**
   -	1D convolutions padded only on the left, trims the right → avoids future data leakage.
@@ -2269,6 +2269,24 @@ These extensions would allow the pipeline to evolve from a comparative research 
 ---
 
 Repository Structure
+
+Neural-Network-TimeSeries-ICU-Predictor/
+├─ data/
+│  ├─ raw_data/             # MIMIC-IV raw data    
+│  ├─ interim_data/         # Phase 1 NEWS2 extraction output files 
+│  └─ processed_data/       # Phase 2 preprocessing output files  
+├─ images/                  # Aggregated PNG's for README
+├─ src/
+│  ├─ 
+│  ├─ 
+│  ├─ 
+│  ├─
+│  └─ 
+├─ README.md
+├─ LICENSE
+├─ notes.md
+└─ requirements.txt
+
 
 ---
 

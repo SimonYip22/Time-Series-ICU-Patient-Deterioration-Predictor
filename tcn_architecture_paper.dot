@@ -1,48 +1,54 @@
 digraph TCN {
   rankdir=LR;             // left -> right main flow
   bgcolor="white";
-  node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=10, margin="0.4,0.3"];
+  node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.5,0.4", fixedsize=false];
 
   // ---------- INPUT ----------
-  Input [label="Input\n(B, L, F)\nF = num_features (e.g. 171)", fillcolor="#d0e4f7"];
+  Input [label="Input Sequence\n(B, L, F)\nL = MAX_SEQ_LEN (96)\nF = num_features (171)", fillcolor="#bab1dbff"];
+  Mask [label="Mask Tensor\n(B, L)\n1 = valid, 0 = padded", fillcolor="#bab1dbff"];
 
-  // ---------- TCN STACK (vertical inside cluster) ----------
+  // ---------- TCN STACK ----------
   subgraph cluster_tcn {
     label="TCN Stack (Temporal Residual Blocks)";
     style="rounded";
-    color="#a0c4e8";
-    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=9, margin="0.3,0.2"];
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12, margin="0.3,0.2"];
 
-    TB1 [label="Temporal Block 1\nCausalConv ×2\nin_ch = F → out_ch = 64\nkernel = 3, dilation = 1\n(receptive field ≈ 3)", fillcolor="#b0d4f8"];
-    TB2 [label="Temporal Block 2\nCausalConv ×2\nin_ch = 64 → out_ch = 64\nkernel = 3, dilation = 2\n(receptive field ≈ 7)", fillcolor="#b0d4f8"];
-    TB3 [label="Temporal Block 3\nCausalConv ×2\nin_ch = 64 → out_ch = 128\nkernel = 3, dilation = 4\n(receptive field ≈ 15)", fillcolor="#b0d4f8"];
+TB1 [label="Temporal Block 1\nCausalConv ×2\n2x (LayerNorm → ReLU → Dropout)\nDownsample + Residual Connection\nChannels 64 → 64; kernel=3, dilation=1", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
+TB2 [label="Temporal Block 2\nCausalConv ×2\n2x (LayerNorm → ReLU → Dropout)\nDownsample + Residual Connection\nChannels 64 → 64; kernel=3, dilation=2", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
+TB3 [label="Temporal Block 3\nCausalConv ×2\n2x (LayerNorm → ReLU → Dropout)\nDownsample + Residual Connection\nChannels 64 → 128; kernel=3, dilation=4", fillcolor="#b0d4f8", margin="0.4,0.4", fixedsize=false];
 
-    { rank = same; TB1; TB2; TB3; } // vertically stacked in cluster
+    { rank = same; TB1; TB2; TB3; } 
   }
 
-  // ---------- POOL / HEAD ----------
-  Pool [label="Masked Mean Pooling\n(B, C_last)\nignores padding timesteps", fillcolor="#e0f0e0"];
-  DenseHead [label="Dense Head\nLinear(128 → 64)\nReLU + Dropout", fillcolor="#e0f0e0"];
-  
+  // ---------- POOLING ----------
+  Pool [label="Masked Mean Pooling\n(B, C_last)\nignores padded timesteps", fillcolor="#e6eaccff"];
+
+  // ---------- OPTIONAL DENSE HEAD ----------
+  DenseHead [label="Dense Head\nLinear(C_last → 64)\nReLU + Dropout", fillcolor="#ffd9b3"];
+
+  // ---------- TASK HEADS ----------
   subgraph cluster_heads {
-    label="Task-specific heads";
+    label="Task-specific Output Heads";
     style="rounded";
-    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=9];
-    ClassMax [label="Classifier Max\nLinear(64 → 1)\nlogit_max", fillcolor="#fff5e0"];
-    ClassMedian [label="Classifier Median\nLinear(64 → 1)\nlogit_median", fillcolor="#fff5e0"];
-    Regressor [label="Regressor\nLinear(64 → 1)\nregression (pct_time_high, log-space during training)", fillcolor="#fff5e0"];
-    { rank = same; ClassMax; ClassMedian; Regressor; } // stacked vertically
-  }
+    node [shape=rect, style="filled,rounded", fontname="Helvetica", fontsize=12];
 
-  // ---------- INSET ----------
-  inset [label="Dilation growth inset\nBlock1: d=1 → RF≈3\nBlock2: d=2 → RF≈7\nBlock3: d=4 → RF≈15", shape=note, fontsize=9];
+  ClassMax [label="Classifier Max\nLinear(head_hidden → 1)\nlogit_max\nOutput shape: (B,)", fillcolor="#c3f0c3"];
+  ClassMedian [label="Classifier Median\nLinear(head_hidden → 1)\nlogit_median\nOutput shape: (B,)", fillcolor="#c3f0c3"];
+  Regressor [label="Regressor\nLinear(head_hidden → 1)\npct_time_high (log-space during training)\nOutput shape: (B,)", fillcolor="#c3f0c3"];
+  { rank = same; ClassMax; ClassMedian; Regressor; }
+  }
 
   // ---------- EDGES ----------
-  Input -> TB1 -> TB2 -> TB3 -> Pool -> DenseHead;
+  Input -> TB1 -> TB2 -> TB3 -> Pool;
+  Mask -> Pool;
+
+  Pool -> DenseHead [label="head_hidden=64"];
   DenseHead -> ClassMax;
   DenseHead -> ClassMedian;
   DenseHead -> Regressor;
 
+  // ---------- INSET ----------
+  inset [label="Dilation Growth\nBlock1: d=1\nBlock2: d=2\nBlock3: d=4", shape=note, fontsize=12];
   inset -> TB1 [style=dashed, color="#aaaaaa"];
   inset -> TB2 [style=dashed, color="#aaaaaa"];
   inset -> TB3 [style=dashed, color="#aaaaaa"];
