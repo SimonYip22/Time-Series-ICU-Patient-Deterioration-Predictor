@@ -8,15 +8,29 @@
 
 **Tech stack:** *Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy*
 
-This project implements a dual-architecture early warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes (maximum risk attained, average sustained risk, % time spent in high-risk state). 
+This project implements a dual-architecture early warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes: 
 
-Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset (100 patients), using dual feature engineering pipelines: 171 timestamp-level temporal features (24-hour windows) for TCN, and 40 patient-level aggregated features for LightGBM.
+1. Maximum risk attained
+2. Average sustained risk
+3. Percentage time spent in high-risk state
 
-**The hybrid approach reveals complementary strengths:** LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment, while TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration. Together, they characterise short-term instability and longer-term exposure to physiological risk.
+Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset (100 patients), using dual feature engineering pipelines:
 
-The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, robust evaluation, and model-specific interpretability (SHAP for LightGBM; gradient×input saliency for TCN).
+- 171 timestamp-level temporal features (96hr timestamps) for TCN
+- 40 patient-level aggregated features for LightGBM
 
-A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use.
+**The hybrid approach reveals complementary strengths:** 
+
+- LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment
+- TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
+
+Together, they characterise short-term instability and longer-term exposure to physiological risk
+
+The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model-specific hyperparameter optimisation, robust evaluation, and model-specific interpretability (SHAP for LightGBM; gradient×input saliency for TCN)
+
+A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
+
+**Model Comparison Summary**
 
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
@@ -2518,7 +2532,8 @@ All other components, including Python scripts, preprocessing, model training, a
 
 ---
 
-Project Status: ✅ Core Development Complete
-Last Updated: November 2025
+**Project Status:** ✅ Core Development Complete  
+**Last Updated:** November 2025  
+**Maintainer:** Simon Yip (simon.yip@city.ac.uk)
 
 ---
