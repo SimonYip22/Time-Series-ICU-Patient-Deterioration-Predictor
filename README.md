@@ -2622,7 +2622,7 @@ All other components, including Python scripts, preprocessing, model training, a
 ---
 
 **Project Status:** Core Development Complete  
-**Last Updated:** November 2025  
-**Maintainer:** Simon Yip (simon.yip@city.ac.uk)
+**Last Updated:** 27th November 2025  
+**Author & Maintainer:** Simon Yip - simon.yip@city.ac.uk
 
 ---
