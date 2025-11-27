@@ -8,16 +8,16 @@
 
 **Tech stack:** ***Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy***
 
-This project implements a dual-architecture early warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes: 
+A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes: 
 
-1. Maximum risk attained
-2. Average sustained risk
-3. Percentage time spent in high-risk state
+1. `max_risk`: Maximum risk level attained during stay 
+2. `median_risk`: Average sustained risk level across the stay  
+3. `pct_time_high`: Percentage of time spent in high-risk state 
 
-Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual feature engineering pipelines:
+Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual feature-engineering pipelines:
 
-- 171 timestamp-level temporal features (96hr timestamps) for TCN
-- 40 patient-level aggregated features for LightGBM
+- 171 timestamp-level time-series temporal features (96hr timestamps) for TCN
+- 40 patient-level aggregated tabular features for LightGBM
 
 The hybrid approach reveals complementary strengths; combined they characterise short-term instability and longer-term exposure to physiological risk:
 
@@ -26,11 +26,11 @@ The hybrid approach reveals complementary strengths; combined they characterise 
 
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
-| Maximum Risk     | TCN        | ROC AUC: 0.923           | Strong acute detection, high sensitivity |
-| Median Risk      | LightGBM   | ROC AUC: 0.972, Brier: 0.065 | Superior sustained risk calibration |
-| Percentage Time High | LightGBM | R²: 0.793                | Better regression fidelity for high-risk exposure |
+| `max_risk`        | TCN        | ***ROC-AUC:*** 0.923           | Strong acute detection, high sensitivity |
+| `median_risk`     | LightGBM   | ***ROC-AUC:*** 0.972; ***Brier:*** 0.065 | Superior sustained risk calibration |
+| `pct_time_high`   | LightGBM   | ***R²:*** 0.793                | Better regression fidelity for high-risk exposure |
 
-The complete pipeline includes:
+The complete pipeline workflow includes:
 
 - Clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols)
 - Comprehensive feature engineering, model training and hyperparameter optimisation
