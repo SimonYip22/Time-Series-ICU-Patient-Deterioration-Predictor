@@ -8,13 +8,13 @@
 
 **Tech stack:** ***Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy***
 
-A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes: 
+A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN), for predicting ICU patient deterioration across three NEWS2-derived clinical-risk outcomes: 
 
-1. `max_risk`: Maximum risk level attained during stay 
-2. `median_risk`: Average sustained risk level across the stay  
+1. `max_risk`: Maximum risk level attained during ICU stay 
+2. `median_risk`: Average sustained risk level across ICU stay  
 3. `pct_time_high`: Percentage of time spent in high-risk state 
 
-Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual feature-engineering pipelines:
+Models were trained on the PhysioNet MIMIC-IV Clinical Demo v2.2 dataset using dual feature-engineering pipelines:
 
 - 171 timestamp-level temporal features (96hr time-series) for TCN
 - 40 patient-level static-aggregated tabular features for LightGBM
@@ -42,8 +42,8 @@ Overall the system demonstrates:
 - Distinct strengths leveraged by temporal deep learning vs. gradient-boosted tree models
 - Effective integration of timestamp-level and aggregated patient-level features into model-specific pipelines
 - Predictive model behaviour consistent with physiological and clinical expectations
-- Interpretability that maps coherently onto established markers of physiological instability
-- A reproducible, end-to-end workflow suitable for further extension or deployment
+- Interpretability aligned with clinically meaningful physiological markers 
+- A reproducible, end-to-end workflow ready for scaling to full clinical datasets or deployment environments
 
 ![TCN Architecture](images/tcn_architecture_detailed.png)
 
