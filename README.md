@@ -8,7 +8,7 @@
 
 **Tech stack:** ***Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy***
 
-A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN), for predicting ICU patient deterioration across three NEWS2-derived clinical-risk outcomes: 
+A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration across three NEWS2-derived clinical-risk outcomes: 
 
 1. `max_risk`: Maximum risk level attained during ICU stay 
 2. `median_risk`: Average sustained risk level across ICU stay  
