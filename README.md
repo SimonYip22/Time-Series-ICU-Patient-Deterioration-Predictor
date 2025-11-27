@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-**Tech stack:** *Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy*
+**Tech stack:** ***Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy***
 
 This project implements a dual-architecture early warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration, across three NEWS2-derived clinical-risk outcomes: 
 
