@@ -16,8 +16,8 @@ A dual-architecture early-warning system comparing gradient-boosted decision tre
 
 Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual feature-engineering pipelines:
 
-- 171 timestamp-level time-series temporal features (96hr timestamps) for TCN
-- 40 patient-level aggregated tabular features for LightGBM
+- 171 timestamp-level temporal features (96hr time-series) for TCN
+- 40 patient-level static-aggregated tabular features for LightGBM
 
 The hybrid approach reveals complementary strengths; combined they characterise short-term instability and longer-term exposure to physiological risk:
 
@@ -26,9 +26,9 @@ The hybrid approach reveals complementary strengths; combined they characterise 
 
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
-| `max_risk`        | TCN        | ***ROC-AUC:*** 0.923           | Strong acute detection, high sensitivity |
-| `median_risk`     | LightGBM   | ***ROC-AUC:*** 0.972; ***Brier:*** 0.065 | Superior sustained risk calibration |
-| `pct_time_high`   | LightGBM   | ***R²:*** 0.793                | Better regression fidelity for high-risk exposure |
+| `max_risk`        | TCN        | ***ROC-AUC:*** *0.923*           | Strong acute detection, high sensitivity |
+| `median_risk`     | LightGBM   | ***ROC-AUC:*** *0.972*; ***Brier:*** *0.065* | Superior sustained risk calibration |
+| `pct_time_high`   | LightGBM   | ***R²:*** *0.793*                | Better regression fidelity for high-risk exposure |
 
 The complete pipeline workflow includes:
 
@@ -39,8 +39,8 @@ The complete pipeline workflow includes:
 
 Overall the system demonstrates:
 
-- Clear division of strengths between temporal deep learning and gradient-boosted trees
-- Effective integration of timestamp-level and aggregated patient-level features into their respected pipelines
+- Distinct strengths leveraged by temporal deep learning vs. gradient-boosted tree models
+- Effective integration of timestamp-level and aggregated patient-level features into model-specific pipelines
 - Predictive model behaviour consistent with physiological and clinical expectations
 - Interpretability that maps coherently onto established markers of physiological instability
 - A reproducible, end-to-end workflow suitable for further extension or deployment
