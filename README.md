@@ -21,7 +21,7 @@ Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual featur
 
 The hybrid approach reveals complementary strengths; combined they characterise short-term instability and longer-term exposure to physiological risk:
 
-- LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment
+- LightGBM achieves superior calibration and regression fidelity (-68% Brier, +17% AUC, +44% R²) for sustained risk assessment
 - TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
 
 | Target           | Best Model | Key Metric(s)             | Notes |
