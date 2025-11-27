@@ -19,18 +19,12 @@ Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset (100 patients), u
 - 171 timestamp-level temporal features (96hr timestamps) for TCN
 - 40 patient-level aggregated features for LightGBM
 
-**The hybrid approach reveals complementary strengths:** 
+The hybrid approach reveals complementary strengths; combined they characterise short-term instability and longer-term exposure to physiological risk:
 
 - LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment
 - TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
 
-Together, they characterise short-term instability and longer-term exposure to physiological risk
-
-The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model-specific hyperparameter optimisation, robust evaluation, and model-specific interpretability (SHAP for LightGBM; gradient×input saliency for TCN)
-
-A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
-
-**Model Comparison Summary**
+The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model-specific hyperparameter optimisation, robust evaluation, and interpretability tooling (LightGBM SHAP; TCN Saliency). A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
 
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
@@ -39,11 +33,12 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 | Percentage Time High | LightGBM | R²: 0.793                | Better regression fidelity for high-risk exposure |
 
 **Key Contributions:**
-- Full clinical-validity pipeline with robust NEWS2 computation
-- Dual feature engineering workflow (patient-level vs timestamp)
-- Dual-model training with model-specific hyperparameter tuning
-- Transparent interpretability validated against domain knowledge
-- Deployment-lite inference pipeline demonstrating end-to-end usability
+
+- Demonstrated complementary strengths of tree-based vs temporal deep learning models
+- Built a unifying framework for comparing timestamp-level and aggregated patient-level feature pipelines
+- Conducted clinical validation of model outputs against physiological expectations
+- Produced interpretable outputs aligned with real-world clinical reasoning
+- Provided a reproducible, deployment-friendly inference workflow
 
 ![TCN Architecture](images/tcn_architecture_detailed.png)
 
@@ -1661,7 +1656,7 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 **Target:** Proportion of admission spent in high-risk state
 
-![Regression Plots](images/pct_time_high_comparison.png)
+![Regression Plots](images/regression_comparison.png)
 
 **CSV-Based Analysis**
 
@@ -1922,6 +1917,8 @@ Together, these outputs allow users to see which features drive predictions and 
 
 #### 10.6.2 `max_risk` Saliency Analysis
 
+![Max Risk Heatmap](src/results_finalisation/interpretability_tcn/max_risk_mean_heatmap.png)
+
 | Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
 |----------------|------------------------|----------------|----------------|
 | **Feature-level saliency** | `heart_rate_roll24h_min`, `respiratory_rate_roll4h_min`, `news2_score`, `temperature_max`, `level_of_consciousness_carried` | N/A | Heart rate and respiratory minima show high mean and variable influence, indicating episodic importance. NEWS2 and temperature are moderate and more stable, providing baseline predictive context. Secondary features contribute less consistently |
@@ -1936,6 +1933,8 @@ Together, these outputs allow users to see which features drive predictions and 
 - **Interpretive insight:** Maximum risk prediction is driven by progressive worsening across key vitals, integrating both persistent abnormalities and short-term escalations, consistent with real-world ICU patient trajectories
 
 #### 10.6.3 `median_risk` Saliency Analysis
+
+![Median Risk Heatmap](src/results_finalisation/interpretability_tcn/median_risk_mean_heatmap.png)
 
 | Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
 |----------------|------------------------|----------------|----------------|
@@ -1960,6 +1959,8 @@ Together, these outputs allow users to see which features drive predictions and 
   - Early activation sets baseline susceptibility; later sustained signals refine overall risk estimation
 
 #### 10.6.4 `pct_time_high` Saliency Analysis
+
+![Regression Heatmap](src/results_finalisation/interpretability_tcn/pct_time_high_mean_heatmap.png)
 
 | Output / Focus | Key Features / Patterns | Temporal Trend | Interpretation |
 |----------------|------------------------|----------------|----------------|
@@ -2042,7 +2043,7 @@ Cross-model analysis strengthens confidence in key predictors while adding tempo
   3. Expand to API or cloud deployment only when required
 - **Deployment-lite is selected because:**
   - Full production deployment (CI/CD, monitoring, cloud hosting) is not always necessary
-  - Local inference provides all essential guarantees—correct model loading, reproducible outputs, version-aligned preprocessing, and interpretability
+  - Local inference provides all essential guarantees → correct model loading, reproducible outputs, version-aligned preprocessing, and interpretability
   - It is the canonical intermediate step before optional API/cloud deployment
 
 #### 11.2.2 How Deployment Builds on Earlier Phases
@@ -2157,6 +2158,10 @@ Overall, the design prioritises reproducibility, simplicity, and correctness whi
 ##
 ### 11.5 CLI Inference Example Walkthrough
 
+- Batch inference runs first generating all predictions and top-10 interpretability summaries
+- Interactive CLI mode follows automatically, allowing per-patient lookup
+- Terminal output design is intentionally minimal, readable, and aligned with deployment-lite expectations, enabling quick inspection without noise
+
 ```bash
 Batch inference complete.
 Available patient IDs:
@@ -2177,25 +2182,14 @@ y_pred_reg_raw: 0.0855
 Enter a patient ID (or 'no' to exit): no
 Exiting per-patient inference.
 ```
-
-Batch inference runs first generating all predictions and top-10 interpretability summaries
-
-- LightGBM outputs classification probabilities and regression predictions
-- TCN outputs classification probabilities and back-transformed regression values
-- Top-10 SHAP (LightGBM) and Gradient×Input saliency (TCN) features are saved as a combined CSV
-- The script prints concise status messages confirming each saved artifact
-
-Interactive CLI mode follows automatically, allowing per-patient lookup
   
-- The script lists all valid patient IDs from the test set
-- Users enter a patient ID to view that patient’s predictions
-- **Predictions:**
+1. The script lists all valid patient IDs from the test set
+2. Users enter a patient ID to view that patient’s predictions
+3. **Predictions:**
   - **LightGBM section displays:** `max_risk` probability + `median_risk` probability + `pct_time_high` regression output (clipped at 0 if negative)  
   - **TCN section displays:** `prob_max` + `prob_median` + `pct_time_high` (back-transformed via `expm1`, clipped ≥ 0)  
-- Results are printed cleanly and instantly using precomputed batch outputs—no recomputation
-- Typing `"no"` exits the loop and ends the session
-
-Terminal output design is intentionally minimal, readable, and aligned with deployment-lite expectations, enabling quick inspection without noise
+4. Results are printed cleanly and instantly using precomputed batch outputs—no recomputation
+5. Typing `"no"` exits the loop and ends the session
 
 ---
 
