@@ -14,7 +14,7 @@ This project implements a dual-architecture early warning system comparing gradi
 2. Average sustained risk
 3. Percentage time spent in high-risk state
 
-Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset (100 patients), using dual feature engineering pipelines:
+Models were trained on the MIMIC-IV Clinical Demo v2.2 dataset using dual feature engineering pipelines:
 
 - 171 timestamp-level temporal features (96hr timestamps) for TCN
 - 40 patient-level aggregated features for LightGBM
@@ -24,7 +24,8 @@ The hybrid approach reveals complementary strengths; combined they characterise 
 - LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment
 - TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
 
-The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model-specific hyperparameter optimisation, robust evaluation, and interpretability tooling (LightGBM SHAP; TCN Saliency). A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
+The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model training & optimisation, robust evaluation, and interpretability tooling (SHAP vs. Saliency). 
+A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
 
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
