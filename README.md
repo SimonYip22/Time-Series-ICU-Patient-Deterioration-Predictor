@@ -1,6 +1,6 @@
 # Time-Series ICU Patient Deterioration Predictor
 
-***Hybrid Machine Learning System for Early Warning in Critical Care***
+***Dual-Architecture Machine Learning System Using LightGBM & Temporal Convolutional Networks for Early Warning in Critical Care***
 
 ---
 
