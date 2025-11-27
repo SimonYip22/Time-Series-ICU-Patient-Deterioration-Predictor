@@ -1471,8 +1471,8 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
   - Phase 6 is the cross-model analysis layer, so probability reliability metrics belong here
 
 3. **Metric role**
-   - Discrimination metrics (AUC, F1) alone cannot assess whether predicted probabilities are **well-calibrated**.  
-   - Brier and ECE quantify probability accuracy and confidence behaviour, complementing Step 1’s discrimination and regression metrics.
+  - Discrimination metrics (AUC, F1) alone cannot assess whether predicted probabilities are **well-calibrated**.  
+  - Brier and ECE quantify probability accuracy and confidence behaviour, complementing Step 1’s discrimination and regression metrics.
 
 ##
 ### 9.4 Step 1 – Summary Metric Comparison (Quantitative)
@@ -1661,7 +1661,7 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 **Target:** Proportion of admission spent in high-risk state
 
-![Regression Plots](src/images/pct_time_high_comparison.png)
+![Regression Plots](images/pct_time_high_comparison.png)
 
 **CSV-Based Analysis**
 
@@ -1732,12 +1732,11 @@ Interpretability forms the third analytical layer of the evaluation pipeline:
 | **Behavioural Diagnostics** | Step 2 | ROC/PR curves, calibration, residual distributions | *How do models behave across the risk spectrum?* | Reveal reliability patterns |
 | **Interpretability** | Step 3 | SHAP + saliency | *Why do the models behave this way?* | Identify causal drivers |
 
-**Purpose and Integration**
-
-- Steps 1–2 quantify what happens; interpretability explains why
-- SHAP identifies which physiological features dominate LightGBM decisions
-- Saliency reveals which temporal segments the TCN relies on
-- This creates a full analytical progression: Performance → Behaviour → Mechanism 
+- **Purpose and Integration**
+  - Steps 1–2 quantify what happens; interpretability explains why
+  - SHAP identifies which physiological features dominate LightGBM decisions
+  - Saliency reveals which temporal segments the TCN relies on
+  - This creates a full analytical progression: Performance → Behaviour → Mechanism 
 
 **SHAP vs Saliency: Complementary Interpretability**
 
@@ -1799,7 +1798,7 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 
 #### 10.4.1 `max_risk` SHAP Analysis
 
-| Rank | Feature | Mean |SHAP| Value | Interpretation |
+| Rank | Feature | Mean SHAP Value | Interpretation |
 |------|---------|----------------|----------------|
 | 1 | `spo2_min` | 1.082 | Lowest SpO₂ is the dominant predictor of high-risk classification, consistent with respiratory deterioration driving escalation |
 | 2 | `supplemental_o2_mean` | 0.697 | Higher average O₂ supplementation increases predicted risk, aligning with oxygen support needs |
@@ -1807,7 +1806,7 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 | 4 | `temperature_missing_pct` | 0.406 | Missing temperature measurements influence predictions → likely proxying clinical instability or gaps in monitoring |
 | 5 | `heart_rate_mean` | 0.266 | Persistent tachycardia moderately increases predicted risk |
 
-- **Interpretation Summary**
+- **Interpretation summary**
   - Primary drivers are respiratory physiology (SpO₂, O₂ delivery)
   - Secondary drivers include temperature and heart rate
   - Non-contributing features (systolic BP, CO₂ metrics) have minimal impact
@@ -1816,7 +1815,7 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 
 #### 10.4.2 `median_risk` SHAP Analysis
 
-| Rank | Feature | Mean |SHAP| Value | Interpretation |
+| Rank | Feature | Mean SHAP Value | Interpretation |
 |------|---------|----------------|----------------|
 | 1 | `respiratory_rate_mean` | 1.301 | Average respiratory rate is the dominant feature for median risk, reflecting ongoing respiratory instability |
 | 2 | `spo2_mean` | 0.901 | Low average SpO₂ strongly influences risk predictions, consistent with hypoxia |
@@ -1824,7 +1823,7 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 | 4 | `systolic_bp_missing_pct` | 0.635 | Missing BP readings indicate unobserved instability or monitoring gaps |
 | 5 | `level_of_consciousness_missing_pct` | 0.536 | Missing consciousness measurements impact predictions, highlighting incomplete observations during high-risk periods |
 
-- **Interpretation Summary**
+- **Interpretation summary**
   - Median risk prediction continues to prioritize respiratory and oxygenation variables
   - Missingness metrics act as indirect markers of instability
   - Temperature and heart rate are secondary contributors
@@ -1834,7 +1833,7 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 
 #### 10.4.3 `pct_time_high` SHAP Analysis
 
-| Rank | Feature | Mean |SHAP| Value | Interpretation |
+| Rank | Feature | Mean SHAP Value | Interpretation |
 |------|---------|----------------|----------------|
 | 1 | `respiratory_rate_mean` | 0.034 | Average respiratory rate drives cumulative high-risk duration, emphasizing sustained respiratory instability |
 | 2 | `heart_rate_max` | 0.014 | Maximum heart rate contributes moderately, reflecting physiological stress |
@@ -1842,11 +1841,11 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 | 4 | `spo2_mean` | 0.012 | Average SpO₂ influences risk duration, consistent with hypoxia prolonging high-risk periods |
 | 5 | `temperature_median` | 0.011 | Temperature reflects systemic stress or infection |
 
-- **Interpretation Summary**
+- **Interpretation summary**
   - Respiratory and oxygenation metrics dominate cumulative high-risk time predictions
   - Missingness features contribute slightly, highlighting data completeness as an indirect marker
   - Low-contributing features are physiologically less relevant for predicting high-risk duration
-- **Conclusion:**  
+- **Conclusion**  
   - For `pct_time_high`, SHAP reveals that sustained respiratory dynamics and oxygenation are key determinants, with minor influence from missingness and secondary vital signs
 
 #### 10.4.4 Missingness Features as Clinical Instability Indicators
@@ -1907,6 +1906,8 @@ Phase 6B uses SHAP (LightGBM) and Saliency (TCN) to provide a complete interpret
 ### 10.6 TCN Interpretability: Saliency Results & Interpretation
 
 #### 10.6.1 Summary Outputs
+
+![Saliency maps](images/tcn_saliency.png)
 
 The TCN produces four complementary outputs for each prediction head (`max_risk`, `median_risk`, `pct_time_high`):
 
@@ -1982,8 +1983,8 @@ Together, these outputs allow users to see which features drive predictions and 
 
 #### 10.6.5 Overall Saliency Summary
 
-| **Aspect** | **`max_risk`** | **`median_risk`** | **`pct_time_high`** | **Clinical Interpretation** |
-|------------|----------------|-----------------|-------------------|-----------------------------|
+| **Aspect** | **`max_risk`** | **`median_risk`** | **`pct_time_high`** | **Clinical Interpretation**                        |
+|------------|----------------|-----------------|-------------------|-------------------------------------------------------|
 | **Primary Drivers** | `heart_rate_roll24h_min`, respiratory rate (`respiratory_rate`, `respiratory_rate_roll4h_min`), `news2_score` | `heart_rate_roll24h_min`, `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric`, `heart_rate_missing_pct` | `systolic_bp_roll24h_min`, `systolic_bp`, `level_of_consciousness`; secondary: `heart_rate`, `respiratory_rate_missing_pct` | `max_risk`: acute deterioration surges; `median_risk`: ongoing baseline + sustained cardiovascular trends; `pct_time_high`: cumulative multi-system instability (neurological + cardiovascular + respiratory). |
 | **Temporal Focus** | Gradual rise ~40h, peak 55–85h, slight taper | Bi-phasic: early peak 0–5h, moderate mid 15–50h, broad late 55–80h, decline after 85h | Dual-phase: early 0–50h (baseline vulnerability), mid 10–50h (moderate fluctuations), late 55–80h (recurrent instability), decline ~90h | `max_risk` emphasizes recency of deterioration; `median_risk` and `pct_time_high` integrate both baseline and later trends, capturing progression over time. |
 | **Early vs Late Contributions** | Minor early; late: heart rate minima, respiratory rate, NEWS2 spikes | Early: `heart_rate_roll24h_min`; late: `heart_rate_roll24h_mean`, `news2_score`, `risk_numeric` | Early: `systolic_bp_roll24h_min`, `level_of_consciousness`; mid-to-late: heart rate, BP, respiratory missingness | Early signals anchor baseline risk; late signals reflect peak, cumulative, or recurrent instability, consistent with clinical deterioration trajectories. |
@@ -2464,7 +2465,7 @@ Neural-Network-TimeSeries-ICU-Predictor/
 git clone https://github.com/SimonYip22/Neural-Network-TimeSeries-ICU-Predictor.git
 cd Neural-Network-TimeSeries-ICU-Predictor
 ```
-- **This repo already contains:**
+- **This repository already contains:**
   - Example MIMIC-IV extracted files under `data/raw_data/`
   -	All preprocessing + modelling scripts
   - Pretrained models and inference artifacts
@@ -2602,26 +2603,26 @@ This project is licensed under the MIT License; see the [LICENSE](LICENSE) file 
 
 ## 20. Acknowledgments
 
-- **MIMIC-IV Clinical Database Demo v2.2**
-  - Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV (version 3.1)*. PhysioNet. [https://doi.org/10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58)  
-  - Johnson, A.E.W., Bulgarelli, L., Shen, L. et al. (2023). *MIMIC-IV, a freely accessible electronic health record dataset*. Sci Data, 10, 1. [https://doi.org/10.1038/s41597-022-01899-x](https://doi.org/10.1038/s41597-022-01899-x)  
-  - Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C., Mark, R., ... & Stanley, H. E. (2000). *PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals.* Circulation [Online]. 101 (23), pp. e215–e220
+**MIMIC-IV Clinical Database Demo v2.2**
+- Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV (version 3.1)*. PhysioNet. [https://doi.org/10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58)  
+- Johnson, A.E.W., Bulgarelli, L., Shen, L. et al. (2023). *MIMIC-IV, a freely accessible electronic health record dataset*. Sci Data, 10, 1. [https://doi.org/10.1038/s41597-022-01899-x](https://doi.org/10.1038/s41597-022-01899-x)  
+- Goldberger, A., Amaral, L., Glass, L., Hausdorff, J., Ivanov, P. C., Mark, R., ... & Stanley, H. E. (2000). *PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic signals.* Circulation [Online]. 101 (23), pp. e215–e220
 
-- **NEWS2 Scoring System**
-  - Royal College of Physicians. (2017). *National Early Warning Score (NEWS) 2.*  
-  - MDCalc NEWS2 Calculator: [https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights](https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights)
+**NEWS2 Scoring System**
+- Royal College of Physicians. (2017). *National Early Warning Score (NEWS) 2.*  
+- MDCalc NEWS2 Calculator: [https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights](https://www.mdcalc.com/calc/10083/national-early-warning-score-news-2#creator-insights)
 
-- **NEWS2 API Diagram Image**
-  - NHS Digital. *NEWS2 API Guide*. [https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png)
+**NEWS2 API Diagram Image**
+- NHS Digital. *NEWS2 API Guide*. [https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png](https://developer.nhs.uk/apis/news2-1.0.0-alpha.1/images/NEWS2chart.png)
 
-- **ChatGPT** 
-  – Provided guidance throughout the project, including code explanations, debugging, project structure and architectural design
+**ChatGPT**
+- Provided guidance throughout the project, including code explanations, debugging, project structure and architectural design
 
 All other components, including Python scripts, preprocessing, model training, and visualizations, were developed by the author. No additional proprietary datasets, papers, or external tutorials were required beyond those cited above
 
 ---
 
-**Project Status:** ✅ Core Development Complete  
+**Project Status:** Core Development Complete  
 **Last Updated:** November 2025  
 **Maintainer:** Simon Yip (simon.yip@city.ac.uk)
 
