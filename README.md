@@ -24,22 +24,26 @@ The hybrid approach reveals complementary strengths; combined they characterise 
 - LightGBM achieves superior calibration and regression fidelity (68% Brier reduction, +17% AUC, +44% R²) for sustained risk assessment
 - TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
 
-The complete pipeline includes clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols), comprehensive feature engineering, model training & optimisation, robust evaluation, and interpretability tooling (SHAP vs. Saliency). 
-A deployment-lite inference system supports batch and per-patient predictions for reproducible, end-to-end use
-
 | Target           | Best Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
 | Maximum Risk     | TCN        | ROC AUC: 0.923           | Strong acute detection, high sensitivity |
 | Median Risk      | LightGBM   | ROC AUC: 0.972, Brier: 0.065 | Superior sustained risk calibration |
 | Percentage Time High | LightGBM | R²: 0.793                | Better regression fidelity for high-risk exposure |
 
-**Key Contributions:**
+The complete pipeline includes:
 
-- Demonstrated complementary strengths of tree-based vs temporal deep learning models
-- Built a unifying framework for comparing timestamp-level and aggregated patient-level feature pipelines
-- Conducted clinical validation of model outputs against physiological expectations
-- Produced interpretable outputs aligned with real-world clinical reasoning
-- Provided a reproducible, deployment-friendly inference workflow
+- Clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols)
+- Comprehensive feature engineering, model training and hyperparameter optimisation
+- Robust metric evaluation and interpretability tooling (SHAP vs. saliency)
+- A CLI inference system supporting batch predictions and per-patient lookup
+
+Overall the system demonstrates:
+
+- Clear division of strengths between temporal deep learning and gradient-boosted trees
+- Effective integration of timestamp-level and aggregated patient-level features into their respected pipelines
+- Predictive model behaviour consistent with physiological and clinical expectations
+- Interpretability that maps coherently onto established markers of physiological instability
+- A reproducible, end-to-end workflow suitable for further extension or deployment
 
 ![TCN Architecture](images/tcn_architecture_detailed.png)
 
@@ -794,7 +798,7 @@ Maintaining both feature sets ensures flexibility and robustness in model select
 
 #### 7.3.1 Architectural Structure
 
-![TCN Architecture](src/images/tcn_architecture_detailed.png)
+![TCN Architecture](images/tcn_architecture_detailed.png)
 
 1. **Causal Convolution (`CausalConv1d`) Layer**
   -	1D convolutions padded only on the left, trims the right → avoids future data leakage.
@@ -2187,8 +2191,8 @@ Exiting per-patient inference.
 1. The script lists all valid patient IDs from the test set
 2. Users enter a patient ID to view that patient’s predictions
 3. **Predictions:**
-  - **LightGBM section displays:** `max_risk` probability + `median_risk` probability + `pct_time_high` regression output (clipped at 0 if negative)  
-  - **TCN section displays:** `prob_max` + `prob_median` + `pct_time_high` (back-transformed via `expm1`, clipped ≥ 0)  
+  - **LightGBM section displays:** `max_risk` + `median_risk` + `pct_time_high` (clipped at 0 if negative)  
+  - **TCN section displays:** `prob_max` + `prob_median` + `pct_time_high` (back-transformed via `expm1`, clipped at 0 if negative)  
 4. Results are printed cleanly and instantly using precomputed batch outputs—no recomputation
 5. Typing `"no"` exits the loop and ends the session
 
