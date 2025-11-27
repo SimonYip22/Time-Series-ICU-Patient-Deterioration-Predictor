@@ -50,13 +50,100 @@ A deployment-lite inference system supports batch and per-patient predictions fo
 ---
 
 ## Table of Contents
-1. [Introduction](#introduction)
-2. [Clinical Motivation](#clinical-motivation)
-3. [Data Pipeline Overview](#data-pipeline-overview)
-4. [Phase 1: CO₂ Retainer Identification & NEWS2 Tracker](#phase-1-co2-retainer-identification--news2-tracker)
-5. [Phase 2: ML-Ready Feature Engineering](#phase-2-ml-ready-feature-engineering)
-6. [Phase 3: LightGBM Training & Validation](#phase-3-lightgbm-training--validation)
-7. [Next Steps](#next-steps)
+
+1. [Clinical Background & Motivation](#1-clinical-background--motivation)
+   - [1.1 The Problem With NEWS2](#11-the-problem-with-news2)
+   - [1.2 Clinical Escalation Context](#12-clinical-escalation-context)
+   - [1.3 Why Machine Learning Is Used](#13-why-machine-learning-is-used)
+2. [Project Goals & Contributions](#2-project-goals--contributions)
+   - [2.1 Primary Objectives](#21-primary-objectives)
+   - [2.2 Key Technical Contributions](#22-key-technical-contributions)
+3. [Phase 1 - Data Extraction & NEWS2 Computation](#3-phase-1---data-extraction--news2-computation)
+   - [3.1 Data Source: MIMIC-IV Demo (v2.2)](#31-data-source-mimic-iv-demo-v22)
+   - [3.2 NEWS2 Pipeline Overview](#32-news2-pipeline-overview)
+   - [3.3 Clinical Feature Extraction & NEWS2 Computation](#33-clinical-feature-extraction--news2-computation)
+4. [Phase 2 - Feature Engineering (Timestamp & Patient-Level)](#4-phase-2---feature-engineering-timestamp--patient-level)
+   - [4.1 Feature Overview](#41-feature-overview)
+   - [4.2 Timestamp-Level Features (for TCN)](#42-timestamp-level-features-for-tcn)
+   - [4.3 Patient-Level Features (for LightGBM)](#43-patient-level-features-for-lightgbm)
+5. [ML Modelling Strategy](#5-ml-modelling-strategy)
+   - [5.1 Bimodal Architecture Rationale](#51-bimodal-architecture-rationale)
+   - [5.2 Baseline Classical ML Model Selection](#52-baseline-classical-ml-model-selection)
+   - [5.3 Advanced Deep Learning Model Selection](#53-advanced-deep-learning-model-selection)
+   - [5.4 Patient-Level Outcome Design](#54-patient-level-outcome-design)
+   - [5.5 Final Model Comparison: LightGBM vs TCN](#55-final-model-comparison-lightgbm-vs-tcn)
+6. [Phase 3 — LightGBM Pipeline: Baseline Modelling & Hyperparameter Tuning](#6-phase-3-—-lightgbm-pipeline-baseline-modelling--hyperparameter-tuning)
+   - [6.1 Pipeline Overview](#61-pipeline-overview)
+   - [6.2 Baseline Cross-Validation](#62-baseline-cross-validation)
+   - [6.3 Hyperparameter Tuning](#63-hyperparameter-tuning)
+   - [6.4 Feature Importance](#64-feature-importance)
+   - [6.5 Deployment-style LightGBM models](#65-deployment-style-lightgbm-models)
+   - [6.6 Summary](#66-summary)
+   - [6.7 Why Phase 3 Matters](#67-why-phase-3-matters)
+7. [Phase 4 — Temporal Convolutional Network (TCN) Pipeline: Architecture & Training](#7-phase-4-—-temporal-convolutional-network-tcn-pipeline-architecture--training)
+   - [7.1 Pipeline Overview](#71-pipeline-overview)
+   - [7.2 Preprocessing Pipeline](#72-preprocessing-pipeline)
+   - [7.3 Network Architecture](#73-network-architecture)
+   - [7.4 Training Configuration](#74-training-configuration)
+   - [7.5 Training Pipeline Setup](#75-training-pipeline-setup)
+   - [7.6 Training & Validation Loop](#76-training--validation-loop)
+   - [7.7 Pipeline Outputs & Artifacts](#77-pipeline-outputs--artifacts)
+8. [Phase 5 – Evaluation: Metrics & Interpretation](#8-phase-5-–-evaluation-metrics--interpretation)
+   - [8.1 Evaluation Methodology & Adjustments](#81-evaluation-methodology--adjustments)
+   - [8.2 Evaluation Metrics Rationale](#82-evaluation-metrics-rationale)
+   - [8.3 LightGBM Evaluation Metrics](#83-lightgbm-evaluation-metrics)
+   - [8.4 TCN Evaluation Metrics](#84-tcn-evaluation-metrics)
+9. [Phase 6A: Comparative Analysis: LightGBM vs TCN](#9-phase-6a-comparative-analysis-lightgbm-vs-tcn)
+   - [9.1 Overview](#91-overview)
+   - [9.2 Comparative Analysis Framework](#92-comparative-analysis-framework)
+   - [9.3 Metrics Used for Comparison](#93-metrics-used-for-comparison)
+   - [9.4 Step 1 – Summary Metric Comparison (Quantitative)](#94-step-1-–-summary-metric-comparison-quantitative)
+   - [9.5 Step 2 – Numerical Diagnostics & Visualisation Analysis](#95-step-2-–-numerical-diagnostics--visualisation-analysis)
+   - [9.6 Final Integrated Summary](#96-final-integrated-summary)
+10. [Phase 6B: Interpretability – LightGBM SHAP vs TCN Saliency](#10-phase-6b-interpretability-–-lightgbm-shap-vs-tcn-saliency)
+    - [10.1 Why Interpretability Matters in Clinical ML](#101-why-interpretability-matters-in-clinical-ml)
+    - [10.2 How Interpretability Fits Into Phase 6](#102-how-interpretability-fits-into-phase-6)
+    - [10.3 LightGBM Interpretability: SHAP Background & Overview](#103-lightgbm-interpretability-shap-background--overview)
+    - [10.4 LightGBM Interpretability: SHAP Results & Interpretation](#104-lightgbm-interpretability-shap-results--interpretation)
+    - [10.5 TCN Interpretability: Saliency Overview & Rationale](#105-tcn-interpretability-saliency-overview--rationale)
+    - [10.6 TCN Interpretability: Saliency Results & Interpretation](#106-tcn-interpretability-saliency-results--interpretation)
+    - [10.7 SHAP vs Saliency: Cross-Model Interpretability](#107-shap-vs-saliency-cross-model-interpretability)
+11. [Phase 7: Inference Demonstration (Deployment-Lite)](#11-phase-7-inference-demonstration-deployment-lite)
+    - [11.1 Overview](#111-overview)
+    - [11.2 Deployment Rationale](#112-deployment-rationale)
+    - [11.3 Design Rationale](#113-design-rationale)
+    - [11.4 Unified Inference Pipeline](#114-unified-inference-pipeline)
+    - [11.5 CLI Inference Example Walkthrough](#115-cli-inference-example-walkthrough)
+12. [Methodological Rationale and Design Reflection](#12-methodological-rationale-and-design-reflection)
+    - [12.1 Purpose of the Comparative Design](#121-purpose-of-the-comparative-design)
+    - [12.2 Key Design Constraints and Trade-offs](#122-key-design-constraints-and-trade-offs)
+    - [12.3 Consequences for Model Performance](#123-consequences-for-model-performance)
+    - [12.4 Core Insights and Practical Implications](#124-core-insights-and-practical-implications)
+13. [Limitations](#13-limitations)
+    - [13.1 Overview](#131-overview)
+    - [13.2 Data & Cohort Constraints](#132-data--cohort-constraints)
+    - [13.3 Modelling & Target Design Constraints](#133-modelling--target-design-constraints)
+    - [13.4 Temporal & Architectural Constraints](#134-temporal--architectural-constraints)
+    - [13.5 Evaluation & Generalisation Constraints](#135-evaluation--generalisation-constraints)
+    - [13.6 Clinical Integration Constraints](#136-clinical-integration-constraints)
+14. [Future Work](#14-future-work)
+    - [14.1 Overview & Rationale](#141-overview--rationale)
+    - [14.2 Model & Feature Enhancements](#142-model--feature-enhancements)
+    - [14.3 Training, Optimisation & Model Robustness](#143-training-optimisation--model-robustness)
+    - [14.4 Deployment & External Validation](#144-deployment--external-validation)
+15. [Potential Clinical Integration](#15-potential-clinical-integration)
+    - [15.1 System Overview](#151-system-overview)
+    - [15.2 Real-Time Clinical Workflow Integration](#152-real-time-clinical-workflow-integration)
+    - [15.3 Calibration, Thresholding & Clinical Safety](#153-calibration-thresholding--clinical-safety)
+    - [15.4 Human–Machine Collaboration](#154-human–machine-collaboration)
+16. [Repository Structure](#16-repository-structure)
+17. [How to Run](#17-how-to-run)
+    - [17.1 Clone the Repository](#171-clone-the-repository)
+    - [17.2 Environment Setup](#172-environment-setup)
+    - [17.3 Pipeline Execution](#173-pipeline-execution)
+18. [Requirements & Dependencies](#18-requirements--dependencies)
+19. [License](#19-license)
+20. [Acknowledgments](#20-acknowledgments)
 
 ---
 
@@ -1555,7 +1642,8 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 ![Median Risk Plots](images/median_risk_comparison.png)
 
-### CSV-Based Analysis
+**CSV-Based Analysis**
+
 | Dimension | LightGBM | TCN_refined | Interpretation |
 |-----------|----------|-------------|----------------|
 | **ROC (AUC)** | **0.972** | 0.833 | LightGBM achieves stronger early discrimination for sustained risk |
@@ -1575,7 +1663,8 @@ Calibration metrics are introduced only in Phase 6 for three reasons:
 
 ![Regression Plots](src/images/pct_time_high_comparison.png)
 
-### CSV-Based Analysis
+**CSV-Based Analysis**
+
 | Dimension | LightGBM | TCN_refined | Interpretation |
 |-----------|----------|-------------|----------------|
 | **Scatter (`y_true` vs `y_pred`)** | tight along `y=x` | broader spread | LightGBM accurately reflects true exposure; TCN overestimates low-risk patients |
@@ -2151,9 +2240,9 @@ Terminal output design is intentionally minimal, readable, and aligned with depl
 
 ---
 
-## 12. Limitations
+## 13. Limitations
 
-### 12.1 Overview
+### 13.1 Overview
 - This project delivers a full end-to-end deterioration-risk pipeline, but several constraints limit generalisability, temporal expressiveness, and clinical applicability
 - These limitations reflect realistic conditions in applied healthcare ML and define clear directions for future development
 - **The main limiting factors are:**
@@ -2164,7 +2253,7 @@ Terminal output design is intentionally minimal, readable, and aligned with depl
 - **These reflect realistic applied healthcare ML constraints and define clear opportunities for future improvement:** larger multi-centre datasets, timestamp-level supervision, richer feature modalities, expanded temporal architectures, and clinician-validated interpretability
 
 ##
-### 12.2 Data & Cohort Constraints
+### 13.2 Data & Cohort Constraints
 - **Small cohort size:** The deep model (TCN) operates near the minimum data required for stable temporal learning. Limited patient diversity restricts generalisation and increases variance
 - **Single-centre dataset:** All data originate from one hospital, external validity, cross-site transferability, and demographic robustness remain untested
 - **Class imbalance:** `median_risk` required `pos_weight`; imbalance still affects calibration reliability
@@ -2172,33 +2261,33 @@ Terminal output design is intentionally minimal, readable, and aligned with depl
 - **NEWS2-only feature space:** No labs, medications, imaging, or high-frequency vitals are included. This constrains signal richness and reduces the benefit normally gained from temporal deep learning models
 
 ##
-### 12.3 Modelling & Target Design Constraints
+### 13.3 Modelling & Target Design Constraints
 - **Patient-level supervision only:** Both models predict patient-level summaries (`max_risk`, `median_risk`, `pct_time_high`); TCNs typically require timestamp-level labels to exploit temporal gradients; this setup weakens temporal learning and structurally favours LightGBM
 - **Aggregate/binary targets collapse temporal richness:** Deterioration trajectories are compressed into coarse summaries, this limits temporal model expressiveness and removes short-horizon prediction capability
 - **No ensembles or hybrid architectures:** Models were evaluated independently to preserve methodological clarity, ensemble methods may provide better absolute accuracy but were intentionally excluded
 - **Regression clipping:** Negative values are clipped to 0 in deployment-safe inference, this avoids invalid predictions but introduces minor structural bias
 
 ##
-### 12.4 Temporal & Architectural Constraints
+### 13.4 Temporal & Architectural Constraints
 - **Limited temporal receptive field:** The TCN uses three dilated blocks with small kernel size, long-range ICU dependencies and slow deterioration patterns are only partially captured
 - **Padded/truncated sequences:** Timelines are padded to a fixed length, very short or very long stays may lose informative context
 - **Under-utilisation of deep temporal structure:** Because labels are patient-level, the TCN compresses rich sequences into one scalar embedding; temporal gradients dilute across all timesteps, weakening event-level learning
 
 ##
-### 12.5 Evaluation & Generalisation Constraints
+### 13.5 Evaluation & Generalisation Constraints
 - **No external validation:** All evaluation is internal; true generalisation across hospitals, timelines, or care practices is unknown
 - **No temporal or prospective validation:** Tested only on historical, batch-mode data; real-time performance, drift behaviour, and robustness to streaming inputs remain unassessed
 
 ##
-### 12.6 Clinical Integration Constraints
+### 13.6 Clinical Integration Constraints
 - **No clinician review of interpretability outputs:** SHAP/saliency insights were not validated by domain experts
 - **No EHR or workflow integration:** The pipeline is technically robust but not yet implemented or tested in real decision-support environments
 
 ---
 
-## 13. Future Work
+## 14. Future Work
 
-### 13.1 Overview & Rationale
+### 14.1 Overview & Rationale
 
 - This end-to-end project establishes a fully reproducible cross-model deterioration-risk pipeline
 - Further work focuses on expanding temporal modelling capacity, enriching the clinical feature space, strengthening training and evaluation reliability, and progressing toward real-world deployment
@@ -2211,7 +2300,7 @@ Terminal output design is intentionally minimal, readable, and aligned with depl
 These extensions would allow the pipeline to evolve from a comparative research framework into a clinically actionable, temporally aware deterioration prediction system
 
 ##
-### 13.1 Model & Feature Enhancements
+### 14.2 Model & Feature Enhancements
 
 - **Expand temporal modelling capacity**  
   - Increase TCN depth, dilations, and kernel sizes to capture longer-range physiological trajectories 
@@ -2226,7 +2315,7 @@ These extensions would allow the pipeline to evolve from a comparative research 
   - Replace padding with continuous-time models, interpolation encoders, or learned temporal embeddings to preserve clinical time intervals and reduce artefacts from truncation
 
 ##
-### 13.2 Training, Optimisation & Model Robustness
+### 14.3 Training, Optimisation & Model Robustness
 
 - **Improved imbalance and uncertainty modelling**  
   - Evaluate focal loss or class-balanced loss for skewed classification targets, particularly median-risk
@@ -2238,7 +2327,7 @@ These extensions would allow the pipeline to evolve from a comparative research 
   - Benchmark the TCN against Temporal Fusion Transformers, RNNs, or hybrid convolution–attention architectures to understand performance boundaries under small-n ICU datasets
 
 ##
-### 13.3 Deployment & External Validation
+### 14.4 Deployment & External Validation
 
 - **Next Phase of Deployment: Cloud deployment**  
   - Expose the unified inference pipeline via FastAPI or Flask; deploy to Render, Hugging Face, or AWS  
@@ -2250,16 +2339,16 @@ These extensions would allow the pipeline to evolve from a comparative research 
 
 ---
 
-## 14. Potential Clinical Integration
+## 15. Potential Clinical Integration
 
-### 14.1 System Overview 
+### 15.1 System Overview 
 - A clinically deployable system would combine LightGBM for baseline risk, TCN for dynamic monitoring, and an ensemble alert strategy to maximise sensitivity while maintaining interpretability. 
 - With calibration, threshold optimisation, and clinician-friendly output formats, the current pipeline can evolve into a safe, transparent, real-time deterioration early-warning tool suitable for integration into hospital workflows
 - This section outlines how the current modelling pipeline could translate into a deployable clinical decision-support system
 - The emphasis is on real-time inference, clinically aligned alerting, and human–machine collaboration rather than automated decision-making
 
 ##
-### 14.2 Real-Time Clinical Workflow Integration
+### 15.2 Real-Time Clinical Workflow Integration
 - **Continuous early-warning inference:** The TCN (or future timestamp-level temporal model) can run at fixed intervals to produce evolving risk estimates, enabling continuous bedside monitoring
 - **Admission-time baseline risk stratification:** LightGBM provides a fast, interpretable assessment using static and aggregate features, supporting initial triage, bed management, and resource allocation
 - **Hybrid alerting architecture using:**
@@ -2269,20 +2358,20 @@ These extensions would allow the pipeline to evolve from a comparative research 
 - **Multi-horizon prediction windows:** Extending the TCN to output 1h, 4h, and 24h predicted risk trajectories would align model outputs with clinically meaningful timeframes and early escalation pathways
 
 ##
-### 14.3 Calibration, Thresholding & Clinical Safety
+### 15.3 Calibration, Thresholding & Clinical Safety
 - **Threshold optimisation using decision analysis:** Risk thresholds can be selected via decision curves, cost-sensitive optimisation, or false-alarm minimisation strategies tailored to ward or ICU capacity
 - **Calibration alignment across models:** A post-hoc calibration layer (e.g., isotonic regression) can map TCN probabilities onto a scale consistent with LightGBM, improving interpretability and harmonising ensemble alerts
 - **Fail-safe and fallback logic:** If temporal inputs degrade (missingness, corrupted sequences), the pipeline can revert to LightGBM-only predictions to maintain safety and continuity.
 
 ##
-### 14.4 Human–Machine Collaboration
+### 15.4 Human–Machine Collaboration
 - **Clinician-oriented output formats:** Predictions should be displayed as simple risk tiers (e.g., green/amber/red), supported by top-feature explanations from SHAP (LightGBM) and saliency (TCN)
 - **Actionable interpretability:** Feature-level drivers (e.g., worsening SpO₂, rising RR, hypotension) convert model outputs into clinically contextual signals that support—not replace—clinical reasoning
 - **Operational integration:** Outputs can be embedded into existing dashboards, electronic observations systems, or mobile alerting platforms, ensuring minimal workflow friction
 
 ---
 
-## 15. Repository Structure
+## 16. Repository Structure
 ```text
 Neural-Network-TimeSeries-ICU-Predictor/
 ├─ data/
@@ -2367,9 +2456,9 @@ Neural-Network-TimeSeries-ICU-Predictor/
 
 ---
 
-## 16. How to Run 
+## 17. How to Run 
 
-### 16.1 Clone the Repository
+### 17.1 Clone the Repository
 
 ```bash
 git clone https://github.com/SimonYip22/Neural-Network-TimeSeries-ICU-Predictor.git
@@ -2382,7 +2471,7 @@ cd Neural-Network-TimeSeries-ICU-Predictor
 - No external downloads are required
 
 ##
-### 16.2 Environment Setup
+### 17.2 Environment Setup
 
 1. Install `Python` ≥ 3.9 (any 3.9–3.11 version is compatible)
 2. Create a virtual environment
@@ -2400,11 +2489,11 @@ pip install -r requirements.txt
 - No other manual setup (CUDA, Docker, Makefile) is required
 
 ##
-### 16.3 Pipeline Execution
+### 17.3 Pipeline Execution
 
 Below is the full execution flow if you want to reproduce everything end-to-end
 
-#### 16.3.1 Phase 1: Extraction + NEWS2 Computation
+#### 17.3.1 Phase 1: Extraction + NEWS2 Computation
 
 ```bash
 python3 src/data_processing/extract_news2_vitals.py
@@ -2414,7 +2503,7 @@ python3 src/data_processing/compute_news2.py
 - Output → `data/interim_data/`
 - Contains extracted vital signs + NEWS2 scores
 
-#### 16.3.2 Phase 2: Feature Engineering
+#### 17.3.2 Phase 2: Feature Engineering
 
 ```bash
 python3 src/ml_data_prep/make_patient_features.py
@@ -2424,7 +2513,7 @@ python3 src/ml_data_prep/make_timestamp_features.py
 - Output → `data/processed_data/`
 - Contains patient-level + timestamp-level engineered features ready for ML pipelines
 
-#### 16.3.3 Phase 3: Train LightGBM
+#### 17.3.3 Phase 3: Train LightGBM
 
 ```bash
 python3 src/ml_models_lightgbm/tune_models.py
@@ -2434,7 +2523,7 @@ python3 src/ml_models_lightgbm/tune_models.py
 - Contains tuning logs, best parameters, tuning results
 - Final LightGBM models are retrained in Phase 5: Evaluation
 
-#### 16.3.4 Phase 4: Train TCN
+#### 17.3.4 Phase 4: Train TCN
 
 ```bash
 python3 src/ml_models_tcn/prepare_tcn_dataset.py
@@ -2445,7 +2534,7 @@ python3 src/prediction_diagnostics/tcn_training_script_refined.py
 - Outputs → `src/ml_models_tcn/prepared_datasets/` → sequence + mask tensors
 - Outputs → `src/prediction_diagnostics/trained_models_refined/` → model configuration, model weights (.pt), training log
 
-#### 16.3.5 Phase 5: Evaluation (Optional)
+#### 17.3.5 Phase 5: Evaluation (Optional)
 
 ```bash
 python3 src/predictions_evaluations/evaluate_lightgbm_testset.py
@@ -2455,7 +2544,7 @@ python3 src/predictions_evaluations/evaluate_tcn_testset_refined.py
 - Outputs → `src/prediction_evaluations/lightgbm_results` → LightGBM predictions + metrics + trained models (.pkl)
 - Outputs → `src/prediction_evaluations/tcn_results_refined` → TCN predictions + metrics 
 
-#### 16.3.6 Phase 6: Comparative Analysis & Interpretability (Optional)
+#### 17.3.6 Phase 6: Comparative Analysis & Interpretability (Optional)
 
 ```bash
 python3 src/results_finalisation/performance_analysis.py
@@ -2467,7 +2556,7 @@ python3 src/results_finalisation/saliency_analysis_tcn.py
 - Outputs → `src/results_finalisation/interpretability_lightgbm/` → SHAP CSVs + PNGs
 - Outputs → `src/results_finalisation/interpretability_tcn/` → Saliency CSVs + PNGs
 
-#### 16.3.7 Phase 7: Deployment-Lite Inference
+#### 17.3.7 Phase 7: Deployment-Lite Inference
 
 ```bash
 python3 src/scripts_inference/unified_inference.py
@@ -2479,7 +2568,7 @@ python3 src/scripts_inference/unified_inference.py
 
 ---
 
-## 17. Requirements & Dependencies
+## 18. Requirements & Dependencies
 
 ```text
 # Core scientific stack
@@ -2505,13 +2594,13 @@ tqdm>=4.66
 
 ---
 
-## 18. License
+## 19. License
 
 This project is licensed under the MIT License; see the [LICENSE](LICENSE) file for details
 
 ---
 
-## 19. Acknowledgments
+## 20. Acknowledgments
 
 - **MIMIC-IV Clinical Database Demo v2.2**
   - Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV (version 3.1)*. PhysioNet. [https://doi.org/10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58)  
