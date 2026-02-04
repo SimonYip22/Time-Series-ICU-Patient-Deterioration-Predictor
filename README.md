@@ -24,8 +24,6 @@ This repository contains code, preprocessed outputs, and documentation only; no 
 | `median_risk`     | LightGBM   | ***ROC-AUC*** = *0.972*; ***Brier Score*** = *0.065* | Superior sustained risk calibration |
 | `pct_time_high`   | LightGBM   | ***R²*** = *0.793*; ***RMSE*** = 0.038               | Higher fidelity estimation of high-risk exposure |
 
-_Performance of models on each outcome, showing key metrics and qualitative notes_
-
 ![TCN Architecture](images/tcn_architecture_detailed.png)
 
 _Temporal convolutional network (TCN) architecture used for timestamp-level prediction_
