@@ -24,11 +24,11 @@ The hybrid approach reveals complementary strengths; combined they characterise 
 - LightGBM achieves superior calibration and regression fidelity (+17% AUC, -68% Brier, +44% R²) for sustained risk assessment
 - TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
 
-| Target           | Best Model | Key Metric(s)             | Notes |
+| Target Outcome           | Best-Performing Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
 | `max_risk`        | TCN        | ***ROC-AUC:*** *0.923*           | Strong acute detection, high sensitivity |
 | `median_risk`     | LightGBM   | ***ROC-AUC:*** *0.972*; ***Brier:*** *0.065* | Superior sustained risk calibration |
-| `pct_time_high`   | LightGBM   | ***R²:*** *0.793*                | Better regression fidelity for high-risk exposure |
+| `pct_time_high`   | LightGBM   | ***R²:*** *0.793*; ***RMSE:*** 0.038               | Better regression fidelity for high-risk exposure |
 
 The complete pipeline workflow includes:
 
