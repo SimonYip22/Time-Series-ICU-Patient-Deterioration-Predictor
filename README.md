@@ -2,7 +2,7 @@
 
 ***Dual-Architecture Machine Learning System Using LightGBM & Temporal Convolutional Networks for Early Warning in Critical Care***
 
-DOI: [10.5281/zenodo.18487174](https://doi.org/10.5281/zenodo.18487174)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18487174.svg)](https://doi.org/10.5281/zenodo.18487174)
 
 ---
 
@@ -16,6 +16,8 @@ Models are trained and evaluated using the PhysioNet MIMIC-IV Clinical Demo v2.2
 
 The end-to-end pipeline includes clinically validated NEWS2 preprocessing (including CO₂ retainer logic, Glasgow Coma Scale mapping, and supplemental oxygen protocols), comprehensive feature engineering, model training with hyperparameter optimisation, robust metric evaluation, and a command-line inference interface supporting batch prediction and per-patient lookup. Overall, the system demonstrates physiologically plausible predictive behaviour, clinically meaningful interpretability, and a reproducible workflow suitable for extension to full clinical datasets or downstream deployment contexts.
 
+This repository contains code, preprocessed outputs, and documentation only; no raw clinical data is redistributed. Users must obtain the MIMIC-IV dataset directly from PhysioNet and comply with its data use requirements. The work is intended for research and educational use.
+
 | Target Outcome           | Best-Performing Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
 | `max_risk`        | TCN        | ***ROC-AUC*** = *0.923*           | Strong acute deterioration detection |
@@ -24,28 +26,7 @@ The end-to-end pipeline includes clinically validated NEWS2 preprocessing (inclu
 
 ![TCN Architecture](images/tcn_architecture_detailed.png)
 
----
-
-## Citation
-
-If you use this repository or its models in your work, please cite the official Zenodo publication:
-
-**Simon Yip (2026). _Time-Series ICU Patient Deterioration Predictor_. Zenodo.**  
-DOI: [https://doi.org/10.5281/zenodo.18487174](https://doi.org/10.5281/zenodo.18487174)
-
-For LaTeX users, the following BibTeX entry is provided:
-
-```bibtex
-@software{yip2026icu,
-  author = {Simon Yip},
-  title = {Time-Series ICU Patient Deterioration Predictor},
-  url = {https://doi.org/10.5281/zenodo.18487174},
-  year = {2026},
-  publisher = {Zenodo}
-}
-```
-
-**Note:** This Zenodo record contains the code, documentation, and image assets required to reproduce the system. For the complete repository including additional outputs or scripts, please see the [full GitHub repository](https://github.com/SimonYip22/Time-Series-ICU-Patient-Deterioration-Predictor)
+_Temporal convolutional network (TCN) architecture used for timestamp-level prediction_
 
 ---
 
@@ -144,7 +125,9 @@ For LaTeX users, the following BibTeX entry is provided:
     - [17.4 Pipeline Execution](#174-pipeline-execution)
 18. [Requirements & Dependencies](#18-requirements--dependencies)
 19. [License](#19-license)
-20. [Acknowledgments](#20-acknowledgments)
+20. [Copyright](#20-copyright)
+21. [Citation](#21-citation)
+22. [Acknowledgments](#22-acknowledgments)
 
 ---
 
@@ -2613,7 +2596,34 @@ This project is licensed under the MIT License; see the [LICENSE](LICENSE) file 
 
 ---
 
-## 20. Acknowledgments
+## 20. Copyright
+
+Copyright © 2026 Simon Yip. All rights reserved.  
+
+---
+
+## 21. Citation
+
+If you use this repository or its models, please cite the official Zenodo publication:
+
+Yip, S. (2026). Time-Series ICU Patient Deterioration Predictor (1.0.0). Zenodo.
+[https://doi.org/10.5281/zenodo.18487174](https://doi.org/10.5281/zenodo.18487174)
+
+BibTeX for LaTeX users:
+
+```bibtex
+@software{yip2026icu,
+  author = {Simon Yip},
+  title = {Time-Series ICU Patient Deterioration Predictor},
+  url = {https://doi.org/10.5281/zenodo.18487174},
+  year = {2026},
+  publisher = {Zenodo}
+}
+```
+
+---
+
+## 22. Acknowledgments
 
 **MIMIC-IV Clinical Database Demo v2.2**
 - Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). *MIMIC-IV (version 3.1)*. PhysioNet. [https://doi.org/10.13026/kpb9-mt58](https://doi.org/10.13026/kpb9-mt58)  
@@ -2630,12 +2640,12 @@ This project is licensed under the MIT License; see the [LICENSE](LICENSE) file 
 **ChatGPT**
 - Provided guidance throughout the project, including code explanations, debugging, project structure and architectural design
 
-All other components, including Python scripts, preprocessing, model training, and visualizations, were developed by the author. No additional proprietary datasets, papers, or external tutorials were required beyond those cited above
+All other components, including Python scripts, preprocessing, model training, and visualisations, were developed by the author. No additional proprietary datasets, papers, or external tutorials were required beyond those cited above
 
 ---
 
 **Project Status:** Core Development Complete  
-**Last Updated:** 27th November 2025  
+**Last Updated:** 4th February 2026  
 **Author & Maintainer:** Simon Yip - simon.yip@city.ac.uk
 
 ---
