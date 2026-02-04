@@ -8,44 +8,42 @@
 
 **Tech stack:** ***Python, PyTorch, Scikit-learn, LightGBM, pandas, NumPy***
 
-A dual-architecture early-warning system comparing gradient-boosted decision trees (LightGBM) against temporal convolutional networks (TCN) for predicting ICU patient deterioration across three NEWS2-derived clinical-risk outcomes: 
+This repository presents a dual-architecture machine learning system for early detection of clinical deterioration in intensive care unit (ICU) patients. The system compares gradient-boosted decision trees (LightGBM) with temporal convolutional networks (TCN) to model complementary aspects of physiological risk using routinely collected clinical observations. Three NEWS2-derived deterioration outcomes are considered: maximum risk level attained during the ICU stay (`max_risk`), median sustained risk level across the stay (`median_risk`), and the proportion of time spent in a high-risk state (`pct_time_high`).
 
-1. `max_risk`: Maximum risk level attained during ICU stay 
-2. `median_risk`: Average sustained risk level across ICU stay  
-3. `pct_time_high`: Percentage of time spent in high-risk state 
+Models are trained and evaluated using the PhysioNet MIMIC-IV Clinical Demo v2.2 dataset via two distinct feature-engineering pipelines. The TCN operates on high-resolution timestamp-level temporal features (96-hour windows, 171 features) to capture short-term physiological instability, while the LightGBM model uses patient-level aggregated tabular features (40 features) to characterise longer-term exposure to risk. Comparative evaluation indicates complementary performance profiles: LightGBM exhibits superior calibration and regression fidelity for sustained risk estimation, while TCNs show stronger sensitivity and discrimination for acute deterioration events. Performance is assessed using ROC-AUC, Brier score, and R², alongside interpretability analyses based on SHAP values and saliency methods.
 
-Models were trained on the PhysioNet MIMIC-IV Clinical Demo v2.2 dataset using dual feature-engineering pipelines:
-
-- 171 timestamp-level temporal features (96hr time-series) for TCN
-- 40 patient-level static-aggregated tabular features for LightGBM
-
-The hybrid approach reveals complementary strengths; combined they characterise short-term instability and longer-term exposure to physiological risk:
-
-- LightGBM achieves superior calibration and regression fidelity (+17% AUC, -68% Brier, +44% R²) for sustained risk assessment
-- TCN demonstrates stronger acute event discrimination (+9.3% AUC, superior sensitivity) for detecting rapid deterioration
+The end-to-end pipeline includes clinically validated NEWS2 preprocessing (including CO₂ retainer logic, Glasgow Coma Scale mapping, and supplemental oxygen protocols), comprehensive feature engineering, model training with hyperparameter optimisation, robust metric evaluation, and a command-line inference interface supporting batch prediction and per-patient lookup. Overall, the system demonstrates physiologically plausible predictive behaviour, clinically meaningful interpretability, and a reproducible workflow suitable for extension to full clinical datasets or downstream deployment contexts.
 
 | Target Outcome           | Best-Performing Model | Key Metric(s)             | Notes |
 |------------------|------------|--------------------------|-------|
-| `max_risk`        | TCN        | ***ROC-AUC:*** *0.923*           | Strong acute detection, high sensitivity |
-| `median_risk`     | LightGBM   | ***ROC-AUC:*** *0.972*; ***Brier:*** *0.065* | Superior sustained risk calibration |
-| `pct_time_high`   | LightGBM   | ***R²:*** *0.793*; ***RMSE:*** 0.038               | Better regression fidelity for high-risk exposure |
-
-The complete pipeline workflow includes:
-
-- Clinically validated NEWS2 preprocessing (CO₂ retainer logic, GCS mapping, supplemental O₂ protocols)
-- Comprehensive feature engineering, model training and hyperparameter optimisation
-- Robust metric evaluation and interpretability tooling (SHAP vs. saliency)
-- A CLI inference system supporting batch predictions and per-patient lookup
-
-Overall the system demonstrates:
-
-- Distinct strengths leveraged by temporal deep learning vs. gradient-boosted tree models
-- Effective integration of timestamp-level and aggregated patient-level features into model-specific pipelines
-- Predictive model behaviour consistent with physiological and clinical expectations
-- Interpretability aligned with clinically meaningful physiological markers 
-- A reproducible, end-to-end workflow ready for scaling to full clinical datasets or deployment environments
+| `max_risk`        | TCN        | ***ROC-AUC*** = *0.923*           | Strong acute deterioration detection |
+| `median_risk`     | LightGBM   | ***ROC-AUC*** = *0.972*; ***Brier Score*** = *0.065* | Superior sustained risk calibration |
+| `pct_time_high`   | LightGBM   | ***R²*** = *0.793*; ***RMSE*** = 0.038               | Higher fidelity estimation of high-risk exposure |
 
 ![TCN Architecture](images/tcn_architecture_detailed.png)
+
+---
+
+## Citation
+
+If you use this repository or its models in your work, please cite the official Zenodo publication:
+
+**Simon Yip (2026). _Time-Series ICU Patient Deterioration Predictor_. Zenodo.**  
+DOI: [https://doi.org/10.5281/zenodo.18487174](https://doi.org/10.5281/zenodo.18487174)
+
+For LaTeX users, the following BibTeX entry is provided:
+
+```bibtex
+@software{yip2026icu,
+  author = {Simon Yip},
+  title = {Time-Series ICU Patient Deterioration Predictor},
+  url = {https://doi.org/10.5281/zenodo.18487174},
+  year = {2026},
+  publisher = {Zenodo}
+}
+```
+
+**Note:** This Zenodo record contains the code, documentation, and image assets required to reproduce the system. For the complete repository including additional outputs or scripts, please see the [full GitHub repository](https://github.com/SimonYip22/Time-Series-ICU-Patient-Deterioration-Predictor)
 
 ---
 
@@ -139,8 +137,9 @@ Overall the system demonstrates:
 16. [Repository Structure](#16-repository-structure)
 17. [How to Run](#17-how-to-run)
     - [17.1 Clone the Repository](#171-clone-the-repository)
-    - [17.2 Environment Setup](#172-environment-setup)
-    - [17.3 Pipeline Execution](#173-pipeline-execution)
+    - [17.2 Prepare the Dataset](#172-prepare-the-dataset)
+    - [17.3 Environment Setup](#173-environment-setup)
+    - [17.4 Pipeline Execution](#174-pipeline-execution)
 18. [Requirements & Dependencies](#18-requirements--dependencies)
 19. [License](#19-license)
 20. [Acknowledgments](#20-acknowledgments)
@@ -2465,13 +2464,25 @@ git clone https://github.com/SimonYip22/Neural-Network-TimeSeries-ICU-Predictor.
 cd Neural-Network-TimeSeries-ICU-Predictor
 ```
 - **This repository already contains:**
-  - Example MIMIC-IV extracted files under `data/raw_data/`
   -	All preprocessing + modelling scripts
   - Pretrained models and inference artifacts
-- No external downloads are required
+  - No patient-level data are included
 
 ##
-### 17.2 Environment Setup
+### 17.2 Prepare the Dataset
+
+To run the system, you must obtain the MIMIC-IV Clinical Database Demo v2.2 directly from PhysioNet: [https://physionet.org/content/mimic-iv-demo/2.2/](https://physionet.org/content/mimic-iv-demo/2.2/) 
+
+After downloading, create a folder `data/raw_data/` inside the repository. Place the following files and folders from the MIMIC-IV demo into `data/raw_data/`:
+
+- `hosp/`  
+- `icu/`  
+- `demo_subject_id.csv`
+
+Once these files are in place, the preprocessing, training, and inference scripts will be able to access the dataset correctly
+
+##
+### 17.3 Environment Setup
 
 1. Install `Python` ≥ 3.9 (any 3.9–3.11 version is compatible)
 2. Create a virtual environment
@@ -2489,11 +2500,11 @@ pip install -r requirements.txt
 - No other manual setup (CUDA, Docker, Makefile) is required
 
 ##
-### 17.3 Pipeline Execution
+### 17.4 Pipeline Execution
 
 Below is the full execution flow if you want to reproduce everything end-to-end
 
-#### 17.3.1 Phase 1: Extraction + NEWS2 Computation
+#### 17.4.1 Phase 1: Extraction + NEWS2 Computation
 
 ```bash
 python3 src/data_processing/extract_news2_vitals.py
@@ -2503,7 +2514,7 @@ python3 src/data_processing/compute_news2.py
 - Output → `data/interim_data/`
 - Contains extracted vital signs + NEWS2 scores
 
-#### 17.3.2 Phase 2: Feature Engineering
+#### 17.4.2 Phase 2: Feature Engineering
 
 ```bash
 python3 src/ml_data_prep/make_patient_features.py
@@ -2513,7 +2524,7 @@ python3 src/ml_data_prep/make_timestamp_features.py
 - Output → `data/processed_data/`
 - Contains patient-level + timestamp-level engineered features ready for ML pipelines
 
-#### 17.3.3 Phase 3: Train LightGBM
+#### 17.4.3 Phase 3: Train LightGBM
 
 ```bash
 python3 src/ml_models_lightgbm/tune_models.py
@@ -2523,7 +2534,7 @@ python3 src/ml_models_lightgbm/tune_models.py
 - Contains tuning logs, best parameters, tuning results
 - Final LightGBM models are retrained in Phase 5: Evaluation
 
-#### 17.3.4 Phase 4: Train TCN
+#### 17.4.4 Phase 4: Train TCN
 
 ```bash
 python3 src/ml_models_tcn/prepare_tcn_dataset.py
@@ -2534,7 +2545,7 @@ python3 src/prediction_diagnostics/tcn_training_script_refined.py
 - Outputs → `src/ml_models_tcn/prepared_datasets/` → sequence + mask tensors
 - Outputs → `src/prediction_diagnostics/trained_models_refined/` → model configuration, model weights (.pt), training log
 
-#### 17.3.5 Phase 5: Evaluation (Optional)
+#### 17.4.5 Phase 5: Evaluation (Optional)
 
 ```bash
 python3 src/predictions_evaluations/evaluate_lightgbm_testset.py
@@ -2544,7 +2555,7 @@ python3 src/predictions_evaluations/evaluate_tcn_testset_refined.py
 - Outputs → `src/prediction_evaluations/lightgbm_results` → LightGBM predictions + metrics + trained models (.pkl)
 - Outputs → `src/prediction_evaluations/tcn_results_refined` → TCN predictions + metrics 
 
-#### 17.3.6 Phase 6: Comparative Analysis & Interpretability (Optional)
+#### 17.4.6 Phase 6: Comparative Analysis & Interpretability (Optional)
 
 ```bash
 python3 src/results_finalisation/performance_analysis.py
@@ -2556,7 +2567,7 @@ python3 src/results_finalisation/saliency_analysis_tcn.py
 - Outputs → `src/results_finalisation/interpretability_lightgbm/` → SHAP CSVs + PNGs
 - Outputs → `src/results_finalisation/interpretability_tcn/` → Saliency CSVs + PNGs
 
-#### 17.3.7 Phase 7: Deployment-Lite Inference
+#### 17.4.7 Phase 7: Deployment-Lite Inference
 
 ```bash
 python3 src/scripts_inference/unified_inference.py
