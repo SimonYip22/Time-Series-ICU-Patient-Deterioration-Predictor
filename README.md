@@ -2,6 +2,8 @@
 
 ***Dual-Architecture Machine Learning System Using LightGBM & Temporal Convolutional Networks for Early Warning in Critical Care***
 
+DOI: [10.5281/zenodo.18487174](https://doi.org/10.5281/zenodo.18487174)
+
 ---
 
 ## Executive Summary
