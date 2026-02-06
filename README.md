@@ -2604,7 +2604,9 @@ Copyright © 2026 Simon Yip. All rights reserved.
 
 ## 21. Citation
 
-If you use this repository or its models, please cite the official Zenodo publication:
+If you use this repository or its models as part of your work, please cite the official Zenodo publication
+
+AHA:
 
 ```markdown
 Yip, S. (2026). Time-Series ICU Patient Deterioration Predictor (1.0.0). Zenodo.
@@ -2614,7 +2616,7 @@ https://doi.org/10.5281/zenodo.18487174
 BibTeX for LaTeX users:
 
 ```bibtex
-@software{yip2026icu,
+@software{yip-2026-predictor,
   author = {Simon Yip},
   title = {Time-Series ICU Patient Deterioration Predictor},
   url = {https://doi.org/10.5281/zenodo.18487174},
